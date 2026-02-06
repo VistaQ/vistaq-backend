@@ -1,0 +1,8 @@
+**/node_modules
+dist/
+**/**/*.log
+tsconfig.tsbuildinfo
+.env.development
+.env.production
+.env.test
+credentials/*
