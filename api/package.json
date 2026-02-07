@@ -4,7 +4,7 @@
   "scripts": {
     "build": "npm run lint && tsc --project tsconfig.prod.json",
     "clean-install": "rm -rf ./node_modules && rm -r package-lock.json && npm i",
-    "dev": "ts-node ./src/main",
+    "dev": "node -r dotenv/config ./node_modules/.bin/ts-node ./src/main dotenv_config_path=./config/.env.development",
     "dev:watch": "nodemon --exec \"npm run dev\" --watch ./src --ext .ts",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -15,7 +15,10 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
+    "dotenv": "^17.2.4",
     "express": "^5.2.1",
+    "firebase": "^12.9.0",
+    "firebase-admin": "^13.6.1",
     "helmet": "^8.1.0",
     "morgan": "^1.10.1"
   },

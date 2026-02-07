@@ -61,7 +61,7 @@ app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
     res.status(status).json({ error: err.message });
   } else {
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Internal server error'
+      error: 'Internal server error',
     });
   }
   return next(err);

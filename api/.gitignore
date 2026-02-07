@@ -5,4 +5,4 @@ tsconfig.tsbuildinfo
 .env.development
 .env.production
 .env.test
-credentials/*
+serviceAccountKey.json
