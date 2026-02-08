@@ -343,14 +343,14 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
         ) {
           updateData.appointmentCompletedAt = Timestamp.now();
         }
+
+        if (body.salesPartsCompleted) {
+          updateData.salesPartsCompleted = body.salesPartsCompleted;
+        }
       }
 
       // Handle sales stage
       if (body.currentStage === 'sales') {
-        if (body.salesPartsCompleted) {
-          updateData.salesPartsCompleted = body.salesPartsCompleted;
-        }
-
         if (body.salesOutcome) {
           if (!['successful', 'unsuccessful'].includes(body.salesOutcome)) {
             res.status(HttpStatusCodes.BAD_REQUEST).json({
