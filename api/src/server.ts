@@ -4,7 +4,7 @@ import morgan from 'morgan';
 
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import { RouteError } from '@src/common/utils/route-errors';
-import router from '@src/routes/router';
+import router from '@src/routes';
 
 import EnvVars, { NodeEnvs } from './common/constants/env';
 
