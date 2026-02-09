@@ -1,10 +1,9 @@
 /**
- * Sales Management System Types
+ * Prospects Management System Types
  */
-
 import { Timestamp } from 'firebase-admin/firestore';
 
-export interface SaleRecord {
+export interface ProspectRecord {
   id?: string;
 
   // Stage tracking
@@ -15,7 +14,8 @@ export interface SaleRecord {
   }>;
 
   // Agent info (denormalized)
-  agentId: string;
+  uid: string; // Firebase Auth UID (for permissions)
+  agentCode: string; // Agent code (e.g., "A001")
   agentName: string;
   agentEmail: string;
   groupId: string;
@@ -53,17 +53,17 @@ export interface SaleRecord {
   updatedAt: Timestamp;
 }
 
-export interface CreateSaleRequest {
+export interface CreateProspectRequest {
   prospectName: string;
   prospectEmail: string;
   prospectPhone: string;
 }
 
-export interface UpdateSaleRequest {
+export interface UpdateProspectRequest {
   // Appointment fields
   appointmentDate?: string;
-  appointmentTime?: string;
   appointmentStatus?: string;
+  location?: string;
 
   // Sales fields
   salesPartsCompleted?: {
@@ -82,21 +82,21 @@ export interface UpdateSaleRequest {
   currentStage?: string;
 }
 
-export interface CreateSaleResponse {
+export interface CreateProspectResponse {
   success: boolean;
-  saleId: string;
+  prospectId: string;
   message?: string;
 }
 
-export interface GetSalesResponse {
-  sales: SaleRecord[];
+export interface GetProspectsResponse {
+  prospects: ProspectRecord[];
 }
 
-export interface GetSaleResponse {
-  sale: SaleRecord;
+export interface GetProspectResponse {
+  prospect: ProspectRecord;
 }
 
-export interface UpdateSaleResponse {
+export interface UpdateProspectResponse {
   success: boolean;
   message?: string;
 }

@@ -1,8 +1,8 @@
-# Sales Management API Documentation
+# Prospects Management API Documentation
 
 ## Overview
 
-The Sales Management System handles the complete 3-stage sales cycle:
+The Prospects Management System handles the complete 3-stage sales cycle:
 1. **Prospect** - Initial lead entry
 2. **Appointment** - Scheduling and tracking meetings
 3. **Sales** - Recording outcomes and products sold
@@ -20,7 +20,7 @@ The Sales Management System handles the complete 3-stage sales cycle:
 
 ## Authentication
 
-All sales endpoints require authentication via Firebase ID token.
+All prospects endpoints require authentication via Firebase ID token.
 
 **Headers:**
 ```
@@ -35,30 +35,30 @@ Authorization: Bearer <firebase_id_token>
 
 | Role | Can Create | Can View | Can Update |
 |------|-----------|----------|------------|
-| **agent** | Own sales | Own sales only | Own sales only |
-| **manager** | Own sales | Own + team sales (same groupId) | Own sales only |
-| **admin** | Own sales | All sales | All sales |
+| **agent** | Own prospects | Own prospects only | Own prospects only |
+| **manager** | Own prospects | Own + team prospects (same groupId) | Own prospects only |
+| **admin** | Own prospects | All prospects | All prospects |
 
 ### Permission Rules
 
-- **View Sales:**
-  - Agents: Only their own sales (`agentId === user.uid`)
-  - Managers: Their team's sales (`groupId === user.groupId`)
-  - Admins: All sales
+- **View Prospects:**
+  - Agents: Only their own prospects (`uid === user.uid`)
+  - Managers: Their team's prospects (`groupId === user.groupId`)
+  - Admins: All prospects
 
-- **Update Sales:**
-  - Agents: Only their own sales
-  - Admins: Any sales
+- **Update Prospects:**
+  - Agents: Only their own prospects
+  - Admins: Any prospects
 
 ---
 
 ## API Endpoints
 
-### 1. Create Sale (Prospect Stage)
+### 1. Create Prospect (Prospect Stage)
 
-**Endpoint:** `POST /api/sales`
+**Endpoint:** `POST /api/prospects`
 
-**Description:** Create a new sale record at the prospect stage.
+**Description:** Create a new prospect record at the prospect stage.
 
 **Required Role:** `agent`, `manager`
 
@@ -80,26 +80,28 @@ Authorization: Bearer <firebase_id_token>
 ```json
 {
   "success": true,
-  "saleId": "sale_abc123xyz",
-  "message": "Sale created successfully"
+  "prospectId": "prospect_abc123xyz",
+  "message": "Prospect created successfully"
 }
 ```
 
 **Auto-Generated Fields:**
-- `currentStage`: "prospect"
-- `agentId`, `agentName`, `agentEmail`: From authenticated user
+- `uid`: Firebase Auth UID (for permissions)
+- `agentCode`: Agent code from authenticated user (e.g., "A001")
+- `agentName`, `agentEmail`: From authenticated user
 - `groupId`, `groupName`: From authenticated user
+- `currentStage`: "prospect"
 - `prospectEnteredAt`: Current timestamp
 - `stageHistory`: Array with initial stage entry
 - `createdAt`, `updatedAt`: Current timestamp
 
 ---
 
-### 2. Get My Sales
+### 2. Get My Prospects
 
-**Endpoint:** `GET /api/sales/my-sales`
+**Endpoint:** `GET /api/prospects/my-prospects`
 
-**Description:** Get all sales for the authenticated user.
+**Description:** Get all prospects for the authenticated user.
 
 **Required Role:** Any authenticated user
 
@@ -109,14 +111,15 @@ Authorization: Bearer <firebase_id_token>
 **Response (200 OK):**
 ```json
 {
-  "sales": [
+  "prospects": [
     {
-      "id": "sale_abc123",
+      "id": "prospect_abc123",
       "currentStage": "prospect",
       "prospectName": "John Doe",
       "prospectEmail": "john@example.com",
       "prospectPhone": "+60123456789",
-      "agentId": "user123",
+      "uid": "firebase_uid_123",
+      "agentCode": "A001",
       "agentName": "Agent Smith",
       "groupId": "group456",
       "groupName": "Team Alpha",
@@ -128,21 +131,23 @@ Authorization: Bearer <firebase_id_token>
 
 ---
 
-### 3. Get Specific Sale
+### 3. Get Specific Prospect
 
-**Endpoint:** `GET /api/sales/:id`
+**Endpoint:** `GET /api/prospects/:id`
 
-**Description:** Get details of a specific sale by ID.
+**Description:** Get details of a specific prospect by ID.
 
-**Required Role:** User must have permission to view the sale
+**Required Role:** User must have permission to view the prospect
 
 **Response (200 OK):**
 ```json
 {
-  "sale": {
-    "id": "sale_abc123",
+  "prospect": {
+    "id": "prospect_abc123",
     "currentStage": "appointment",
     "prospectName": "John Doe",
+    "uid": "firebase_uid_123",
+    "agentCode": "A001",
     "appointmentDate": { "_seconds": 1234567890, "_nanoseconds": 0 },
     "appointmentTime": "10:00 AM",
     "appointmentStatus": "completed",
@@ -154,19 +159,19 @@ Authorization: Bearer <firebase_id_token>
 **Error (403 Forbidden):**
 ```json
 {
-  "error": "You do not have permission to view this sale"
+  "error": "You do not have permission to view this prospect"
 }
 ```
 
 ---
 
-### 4. Update Sale
+### 4. Update Prospect
 
-**Endpoint:** `PUT /api/sales/:id`
+**Endpoint:** `PUT /api/prospects/:id`
 
-**Description:** Update a sale record (move to next stage or update fields).
+**Description:** Update a prospect record (move to next stage or update fields).
 
-**Required Role:** Owner of the sale or admin
+**Required Role:** Owner of the prospect or admin
 
 **Request Body Examples:**
 
@@ -185,7 +190,7 @@ Authorization: Bearer <firebase_id_token>
 - Valid `appointmentStatus` values: `"not_done"`, `"completed"`, `"declined"`, `"kiv"`
 
 **Auto-Generated:**
-- `appointmentCompletedAt`: Set when status = "completed"
+- `appointmentCompletedAt`: Set when status = "completed" (only on first completion)
 - Stage added to `stageHistory`
 
 #### Update to Sales Stage (Successful):
@@ -219,7 +224,7 @@ Authorization: Bearer <firebase_id_token>
 - `totalACE`: Sum of all `aceAmount` values in `productsSold`
 
 **Auto-Generated:**
-- `salesCompletedAt`: Current timestamp
+- `salesCompletedAt`: Current timestamp (only on first completion)
 - Stage added to `stageHistory`
 
 #### Update to Sales Stage (Unsuccessful):
@@ -245,17 +250,22 @@ Authorization: Bearer <firebase_id_token>
 ```json
 {
   "success": true,
-  "message": "Sale updated successfully"
+  "message": "Prospect updated successfully"
 }
 ```
 
+**Important Note on Idempotency:**
+- `salesCompletedAt` and `appointmentCompletedAt` are set **only on first completion**
+- Calling the same endpoint multiple times with identical payload will preserve the original completion timestamps
+- This ensures accurate tracking of when prospects first completed each stage
+
 ---
 
-### 5. Get Group Sales
+### 5. Get Group Prospects
 
-**Endpoint:** `GET /api/sales/group/:groupId`
+**Endpoint:** `GET /api/prospects/group/:groupId`
 
-**Description:** Get all sales for a specific group.
+**Description:** Get all prospects for a specific group.
 
 **Required Role:** `manager` (own group only), `admin` (any group)
 
@@ -265,12 +275,13 @@ Authorization: Bearer <firebase_id_token>
 **Response (200 OK):**
 ```json
 {
-  "sales": [
+  "prospects": [
     {
-      "id": "sale_123",
+      "id": "prospect_123",
       "currentStage": "sales",
       "groupId": "group456",
       "groupName": "Team Alpha",
+      "agentCode": "A001",
       ...
     }
   ]
@@ -280,17 +291,17 @@ Authorization: Bearer <firebase_id_token>
 **Error (403 Forbidden):**
 ```json
 {
-  "error": "You do not have permission to view this group's sales"
+  "error": "You do not have permission to view this group's prospects"
 }
 ```
 
 ---
 
-### 6. Get All Sales (Admin Only)
+### 6. Get All Prospects (Admin Only)
 
-**Endpoint:** `GET /api/admin/all-sales`
+**Endpoint:** `GET /api/admin/all-prospects`
 
-**Description:** Get all sales across all groups and agents.
+**Description:** Get all prospects across all groups and agents.
 
 **Required Role:** `admin`
 
@@ -300,10 +311,11 @@ Authorization: Bearer <firebase_id_token>
 **Response (200 OK):**
 ```json
 {
-  "sales": [
+  "prospects": [
     {
-      "id": "sale_123",
+      "id": "prospect_123",
       "currentStage": "sales",
+      "agentCode": "A001",
       "agentName": "Agent Smith",
       "groupName": "Team Alpha",
       ...
@@ -316,10 +328,10 @@ Authorization: Bearer <firebase_id_token>
 
 ## Data Models
 
-### SaleRecord
+### ProspectRecord
 
 ```typescript
-interface SaleRecord {
+interface ProspectRecord {
   id?: string;
 
   // Stage tracking
@@ -330,7 +342,8 @@ interface SaleRecord {
   }>;
 
   // Agent info (denormalized)
-  agentId: string;
+  uid: string;              // Firebase Auth UID (for permissions)
+  agentCode: string;        // Agent code (e.g., "A001")
   agentName: string;
   agentEmail: string;
   groupId: string;
@@ -373,11 +386,11 @@ interface SaleRecord {
 
 ## Usage Examples
 
-### Complete Sales Flow
+### Complete Prospects Flow
 
 #### Step 1: Create Prospect
 ```bash
-curl -X POST http://localhost:3000/api/sales \
+curl -X POST http://localhost:3000/api/prospects \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -391,13 +404,13 @@ curl -X POST http://localhost:3000/api/sales \
 ```json
 {
   "success": true,
-  "saleId": "sale_abc123"
+  "prospectId": "prospect_abc123"
 }
 ```
 
 #### Step 2: Update to Appointment
 ```bash
-curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
+curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -410,7 +423,7 @@ curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
 
 #### Step 3: Complete Sale (Successful)
 ```bash
-curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
+curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -432,7 +445,7 @@ curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
 
 #### Alternative: Mark as Unsuccessful
 ```bash
-curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
+curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -477,7 +490,7 @@ curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
 #### Permission Denied
 ```json
 {
-  "error": "You do not have permission to update this sale"
+  "error": "You do not have permission to update this prospect"
 }
 ```
 
@@ -499,22 +512,22 @@ curl -X PUT http://localhost:3000/api/sales/sale_abc123 \
 
 ## Firestore Collection
 
-### Collection Name: `sales_records`
+### Collection Name: `prospects`
 
 ### Indexes Required
 
 Create these composite indexes in Firestore:
 
-1. **By Agent and Date:**
-   - Collection: `sales_records`
-   - Fields: `agentId` (Ascending), `createdAt` (Descending)
+1. **By Agent Code and Date:**
+   - Collection: `prospects`
+   - Fields: `agentCode` (Ascending), `createdAt` (Descending)
 
 2. **By Group and Date:**
-   - Collection: `sales_records`
+   - Collection: `prospects`
    - Fields: `groupId` (Ascending), `createdAt` (Descending)
 
 3. **By Date (for admin):**
-   - Collection: `sales_records`
+   - Collection: `prospects`
    - Fields: `createdAt` (Descending)
 
 ### Security Rules
@@ -523,10 +536,10 @@ Create these composite indexes in Firestore:
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /sales_records/{saleId} {
-      // Allow read if user is the agent, in the same group (manager), or admin
+    match /prospects/{prospectId} {
+      // Allow read if user is the agent (by uid), in the same group (manager), or admin
       allow read: if request.auth != null && (
-        resource.data.agentId == request.auth.uid ||
+        resource.data.uid == request.auth.uid ||
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager' &&
          resource.data.groupId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.groupId) ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
@@ -537,9 +550,9 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['agent', 'manager']
       );
 
-      // Allow update if owner or admin
+      // Allow update if owner (by uid) or admin
       allow update: if request.auth != null && (
-        resource.data.agentId == request.auth.uid ||
+        resource.data.uid == request.auth.uid ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
       );
     }
@@ -551,17 +564,23 @@ service cloud.firestore {
 
 ## Notes
 
-1. **Denormalization:** Agent and group information is stored directly in each sale record to optimize read performance and maintain historical accuracy.
+1. **Dual Identifiers:**
+   - `uid`: Firebase Auth UID - used for authentication and permissions
+   - `agentCode`: Business agent code (e.g., "A001") - used for business logic and reporting
 
-2. **Stage History:** The `stageHistory` array tracks when the sale moved between stages, useful for analytics and reporting.
+2. **Denormalization:** Agent and group information is stored directly in each prospect record to optimize read performance and maintain historical accuracy.
 
-3. **Timestamps:** All timestamps use Firebase Firestore `Timestamp` type, which includes seconds and nanoseconds.
+3. **Stage History:** The `stageHistory` array tracks when the prospect moved between stages, useful for analytics and reporting.
 
-4. **Auto-Calculation:** The `totalACE` field is automatically calculated as the sum of all `aceAmount` values in `productsSold`.
+4. **Timestamps:** All timestamps use Firebase Firestore `Timestamp` type, which includes seconds and nanoseconds.
 
-5. **Validation:** Stage-specific validations ensure data integrity at each step of the sales cycle.
+5. **Auto-Calculation:** The `totalACE` field is automatically calculated as the sum of all `aceAmount` values in `productsSold`.
 
-6. **Permissions:** The permission system ensures agents can only see their own sales while managers can monitor their team's performance.
+6. **Idempotency:** Completion timestamps (`salesCompletedAt`, `appointmentCompletedAt`) are set only once to preserve original completion times.
+
+7. **Validation:** Stage-specific validations ensure data integrity at each step of the sales cycle.
+
+8. **Permissions:** The permission system uses `uid` for access control while `agentCode` is used for business reporting.
 
 ---
 
@@ -573,13 +592,14 @@ service cloud.firestore {
 - [ ] Mark appointment as completed/declined/kiv
 - [ ] Complete successful sale with products
 - [ ] Record unsuccessful sale with reason
-- [ ] Test agent can only view own sales
-- [ ] Test manager can view team sales
-- [ ] Test admin can view all sales
+- [ ] Test agent can only view own prospects (by uid)
+- [ ] Test manager can view team prospects
+- [ ] Test admin can view all prospects
 - [ ] Test permission denial for unauthorized updates
 - [ ] Verify totalACE calculation
-- [ ] Verify timestamp generation
+- [ ] Verify timestamp generation and idempotency
 - [ ] Test stage history tracking
+- [ ] Verify agentCode is stored correctly
 
 ---
 
@@ -587,11 +607,12 @@ service cloud.firestore {
 
 Potential features to consider:
 
-1. **Bulk Operations:** Import/export sales data
+1. **Bulk Operations:** Import/export prospects data
 2. **Analytics:** Dashboard with sales metrics and conversion rates
 3. **Notifications:** Remind agents about upcoming appointments
-4. **Comments/Notes:** Add internal notes to sales records
-5. **Attachments:** Upload documents related to sales
+4. **Comments/Notes:** Add internal notes to prospect records
+5. **Attachments:** Upload documents related to prospects
 6. **Sales Pipeline:** Visual representation of stage progression
-7. **Reporting:** Generate reports by date range, agent, group, etc.
+7. **Reporting:** Generate reports by date range, agent code, group, etc.
 8. **Audit Log:** Track who made changes and when
+9. **Agent Performance:** Track metrics by agentCode for leaderboards

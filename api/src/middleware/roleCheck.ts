@@ -63,3 +63,23 @@ export const requireAdminOrManager = requireRole(['admin', 'manager']);
  * Middleware to require any staff role (admin, manager, or agent)
  */
 export const requireStaff = requireRole(['admin', 'manager', 'agent']);
+
+/**
+ * Middleware to require trainer or master_trainer role
+ */
+export const requireTrainer = requireRole(['admin', 'trainer', 'master_trainer']);
+
+/**
+ * Middleware to require group_leader role
+ */
+export const requireGroupLeader = requireRole(['admin', 'group_leader']);
+
+/**
+ * Middleware to require admin, trainer, or group_leader role
+ */
+export const requireAdminOrTrainerOrLeader = requireRole([
+  'admin',
+  'trainer',
+  'master_trainer',
+  'group_leader',
+]);

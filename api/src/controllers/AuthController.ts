@@ -74,7 +74,7 @@ async function login(req: Request, res: Response): Promise<void> {
         role: userData.role as UserRole,
         groupId: userData.groupId as string,
         groupName: userData.groupName as string,
-        agentId: userData.agentId as string,
+        agentCode: userData.agentCode as string,
         agency: userData.agency as string,
         location: userData.location as string,
       },
@@ -141,7 +141,7 @@ async function createUser(req: Request, res: Response): Promise<void> {
       role,
       groupId,
       groupName,
-      agentId,
+      agentCode,
       agency,
       location,
     } = req.body as CreateUserRequest;
@@ -186,7 +186,7 @@ async function createUser(req: Request, res: Response): Promise<void> {
       role,
       groupId: groupId || '',
       groupName: groupName || '',
-      agentId: agentId || '',
+      agentCode: agentCode || '',
       agency: agency || '',
       location: location || '',
       totalPoints: 0,
@@ -207,6 +207,7 @@ async function createUser(req: Request, res: Response): Promise<void> {
     const response: CreateUserResponse = {
       success: true,
       userId: userRecord.uid,
+      agentCode: agentCode || '',
       message: 'User created successfully',
     };
 
@@ -271,7 +272,7 @@ async function getCurrentUser(req: Request, res: Response): Promise<void> {
         role: req.user.role,
         groupId: req.user.groupId,
         groupName: req.user.groupName,
-        agentId: req.user.agentId,
+        agentCode: req.user.agentCode,
         agency: req.user.agency,
         location: req.user.location,
       },

@@ -1,19 +1,22 @@
 /**
- * Sales Controller - Handle sales management operations
+ * Prospects Controller - Handle prospects management operations
  */
 import { Request, Response } from 'express';
 import * as admin from 'firebase-admin';
 
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import {
-  createSaleRecord,
-  getAllSales,
-  getSaleById,
-  getSalesByAgent,
-  getSalesByGroup,
-  updateSaleRecord,
+  createProspectRecord,
+  getAllProspects,
+  getProspectById,
+  getProspectsByAgent,
+  getProspectsByGroup,
+  updateProspectRecord,
 } from '@src/services/firestoreService';
-import { CreateSaleRequest, UpdateSaleRequest } from '@src/types/sales.types';
+import {
+  CreateProspectRequest,
+  UpdateProspectRequest,
+} from '@src/types/prospects.types';
 
 const Timestamp = admin.firestore.Timestamp;
 
@@ -30,10 +33,10 @@ function isValidEmail(email: string): boolean {
 }
 
 /**
- * Check if user has permission to view a sale
+ * Check if user has permission to view a prospect
  */
-function canViewSale(
-  sale: { agentId: string; groupId: string },
+function canViewProspect(
+  prospect: { uid: string; groupId: string },
   userId: string,
   userRole: string,
   userGroupId: string,
@@ -43,13 +46,13 @@ function canViewSale(
     return true;
   }
 
-  // Manager can view their group's sales
-  if (userRole === 'manager' && sale.groupId === userGroupId) {
+  // Manager can view their group's prospects
+  if (userRole === 'manager' && prospect.groupId === userGroupId) {
     return true;
   }
 
-  // Agent can view their own sales
-  if (userRole === 'agent' && sale.agentId === userId) {
+  // Agent can view their own prospects (check by uid)
+  if (userRole === 'agent' && prospect.uid === userId) {
     return true;
   }
 
@@ -70,10 +73,13 @@ function calculateTotalACE(
 ******************************************************************************/
 
 /**
- * Create a new sale (prospect stage)
- * POST /sales
+ * Create a new prospect (prospect stage)
+ * POST /prospects
  */
-export async function createSale(req: Request, res: Response): Promise<void> {
+export async function createProspect(
+  req: Request,
+  res: Response,
+): Promise<void> {
   try {
     // Ensure user is authenticated
     if (!req.user) {
@@ -83,7 +89,7 @@ export async function createSale(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const body = req.body as CreateSaleRequest;
+    const body = req.body as CreateProspectRequest;
 
     // Validate required fields
     if (!body.prospectName || body.prospectName.trim().length < 2) {
@@ -107,17 +113,17 @@ export async function createSale(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Only agents and managers can create sales
+    // Only agents and managers can create prospects
     if (req.user.role !== 'agent' && req.user.role !== 'manager') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'Only agents and managers can create sales',
+        error: 'Only agents and managers can create prospects',
       });
       return;
     }
 
-    // Create sale record
+    // Create prospect record
     const now = Timestamp.now();
-    const saleData = {
+    const prospectData = {
       // Stage tracking
       currentStage: 'prospect' as const,
       stageHistory: [
@@ -128,7 +134,8 @@ export async function createSale(req: Request, res: Response): Promise<void> {
       ],
 
       // Agent info (denormalized)
-      agentId: req.user.uid,
+      uid: req.user.uid, // Firebase Auth UID (for permissions)
+      agentCode: req.user.agentCode, // Agent code (e.g., "A001")
       agentName: req.user.name,
       agentEmail: req.user.email,
       groupId: req.user.groupId,
@@ -145,26 +152,29 @@ export async function createSale(req: Request, res: Response): Promise<void> {
       updatedAt: now,
     };
 
-    const saleId = await createSaleRecord(saleData);
+    const prospectId = await createProspectRecord(prospectData);
 
     res.status(HttpStatusCodes.CREATED).json({
       success: true,
-      saleId,
-      message: 'Sale created successfully',
+      prospectId,
+      message: 'Prospect created successfully',
     });
   } catch (error) {
-    console.error('Error creating sale:', error);
+    console.error('Error creating prospect:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Failed to create sale',
+      error: 'Failed to create prospect',
     });
   }
 }
 
 /**
- * Get current user's sales
- * GET /sales/my-sales
+ * Get current user's prospects
+ * GET /prospects/my-prospects
  */
-export async function getMySales(req: Request, res: Response): Promise<void> {
+export async function getMyProspects(
+  req: Request,
+  res: Response,
+): Promise<void> {
   try {
     // Ensure user is authenticated
     if (!req.user) {
@@ -180,24 +190,24 @@ export async function getMySales(req: Request, res: Response): Promise<void> {
         ? parseInt(limitParam, 10)
         : undefined;
 
-    const sales = await getSalesByAgent(req.user.uid, limit);
+    const prospects = await getProspectsByAgent(req.user.agentCode, limit);
 
     res.status(HttpStatusCodes.OK).json({
-      sales,
+      prospects,
     });
   } catch (error) {
-    console.error('Error fetching my sales:', error);
+    console.error('Error fetching my prospects:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Failed to fetch sales',
+      error: 'Failed to fetch prospects',
     });
   }
 }
 
 /**
- * Get a specific sale by ID
- * GET /sales/:id
+ * Get a specific prospect by ID
+ * GET /prospects/:id
  */
-export async function getSale(req: Request, res: Response): Promise<void> {
+export async function getProspect(req: Request, res: Response): Promise<void> {
   try {
     // Ensure user is authenticated
     if (!req.user) {
@@ -207,51 +217,56 @@ export async function getSale(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const saleId = Array.isArray(req.params.id)
+    const prospectId = Array.isArray(req.params.id)
       ? req.params.id[0]
       : req.params.id;
 
-    if (!saleId) {
+    if (!prospectId) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'Sale ID is required',
+        error: 'Prospect ID is required',
       });
       return;
     }
 
-    // Fetch sale record
-    const sale = await getSaleById(saleId);
+    // Fetch prospect record
+    const prospect = await getProspectById(prospectId);
 
-    if (!sale) {
+    if (!prospect) {
       res.status(HttpStatusCodes.NOT_FOUND).json({
-        error: 'Sale not found',
+        error: 'Prospect not found',
       });
       return;
     }
 
     // Check permissions
-    if (!canViewSale(sale, req.user.uid, req.user.role, req.user.groupId)) {
+    if (
+      !canViewProspect(prospect, req.user.uid, req.user.role, req.user.groupId)
+    ) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'You do not have permission to view this sale',
+        error: 'You do not have permission to view this prospect',
       });
       return;
     }
 
     res.status(HttpStatusCodes.OK).json({
-      sale,
+      prospect,
     });
   } catch (error) {
-    console.error('Error fetching sale:', error);
+    console.error('Error fetching prospect:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Failed to fetch sale',
+      error: 'Failed to fetch prospect',
     });
   }
 }
 
 /**
- * Update a sale
- * PUT /sales/:id
+ * Update a prospect
+ * PUT /prospects/:id
  */
-export async function updateSale(req: Request, res: Response): Promise<void> {
+export async function updateProspect(
+  req: Request,
+  res: Response,
+): Promise<void> {
   try {
     // Ensure user is authenticated
     if (!req.user) {
@@ -261,33 +276,33 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const saleId = Array.isArray(req.params.id)
+    const prospectId = Array.isArray(req.params.id)
       ? req.params.id[0]
       : req.params.id;
 
-    if (!saleId) {
+    if (!prospectId) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'Sale ID is required',
+        error: 'Prospect ID is required',
       });
       return;
     }
 
-    const body = req.body as UpdateSaleRequest;
+    const body = req.body as UpdateProspectRequest;
 
-    // Fetch existing sale
-    const existingSale = await getSaleById(saleId);
+    // Fetch existing prospect
+    const existingProspect = await getProspectById(prospectId);
 
-    if (!existingSale) {
+    if (!existingProspect) {
       res.status(HttpStatusCodes.NOT_FOUND).json({
-        error: 'Sale not found',
+        error: 'Prospect not found',
       });
       return;
     }
 
-    // Check permissions - only the agent who created the sale or admin can update
-    if (req.user.role !== 'admin' && existingSale.agentId !== req.user.uid) {
+    // Check permissions - only the agent who created the prospect or admin can update
+    if (req.user.role !== 'admin' && existingProspect.uid !== req.user.uid) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'You do not have permission to update this sale',
+        error: 'You do not have permission to update this prospect',
       });
       return;
     }
@@ -299,7 +314,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
 
     // Handle stage transitions
     if (body.currentStage) {
-      const validStages = ['prospect', 'appointment', 'sales'];
+      const validStages = ['prospect', 'appointment', 'sales_outcome'];
       if (!validStages.includes(body.currentStage)) {
         res.status(HttpStatusCodes.BAD_REQUEST).json({
           error: 'Invalid stage value',
@@ -310,9 +325,9 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
       updateData.currentStage = body.currentStage;
 
       // Add to stage history if transitioning to a new stage
-      if (body.currentStage !== existingSale.currentStage) {
+      if (body.currentStage !== existingProspect.currentStage) {
         updateData.stageHistory = [
-          ...existingSale.stageHistory,
+          ...existingProspect.stageHistory,
           {
             stage: body.currentStage,
             enteredAt: Timestamp.now(),
@@ -322,10 +337,9 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
 
       // Handle appointment stage
       if (body.currentStage === 'appointment') {
-        if (!body.appointmentDate || !body.appointmentTime) {
+        if (!body.appointmentDate) {
           res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error:
-              'appointmentDate and appointmentTime are required for appointment stage',
+            error: 'appointmentDate is required for appointment stage',
           });
           return;
         }
@@ -333,13 +347,13 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
         updateData.appointmentDate = Timestamp.fromDate(
           new Date(body.appointmentDate),
         );
-        updateData.appointmentTime = body.appointmentTime;
         updateData.appointmentStatus = body.appointmentStatus || 'not_done';
+        updateData.location = body.location || null;
 
         // Set appointmentCompletedAt if status is completed and not already set
         if (
           body.appointmentStatus === 'completed' &&
-          !existingSale.appointmentCompletedAt
+          !existingProspect.appointmentCompletedAt
         ) {
           updateData.appointmentCompletedAt = Timestamp.now();
         }
@@ -350,7 +364,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
       }
 
       // Handle sales stage
-      if (body.currentStage === 'sales') {
+      if (body.currentStage === 'sales_outcome') {
         if (body.salesOutcome) {
           if (!['successful', 'unsuccessful'].includes(body.salesOutcome)) {
             res.status(HttpStatusCodes.BAD_REQUEST).json({
@@ -384,7 +398,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
           }
 
           // Only set salesCompletedAt if not already set (preserve original completion time)
-          if (!existingSale.salesCompletedAt) {
+          if (!existingProspect.salesCompletedAt) {
             updateData.salesCompletedAt = Timestamp.now();
           }
         }
@@ -397,12 +411,15 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
         );
       }
 
-      if (body.appointmentTime !== undefined) {
-        updateData.appointmentTime = body.appointmentTime;
-      }
-
       if (body.appointmentStatus !== undefined) {
-        const validStatuses = ['not_done', 'completed', 'declined', 'kiv'];
+        const validStatuses = [
+          'not_done',
+          'scheduled',
+          'rescheduled',
+          'completed',
+          'declined',
+          'kiv',
+        ];
         if (!validStatuses.includes(body.appointmentStatus)) {
           res.status(HttpStatusCodes.BAD_REQUEST).json({
             error: 'Invalid appointmentStatus value',
@@ -410,11 +427,12 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
           return;
         }
         updateData.appointmentStatus = body.appointmentStatus;
+        updateData.location = body.location || null;
 
         // Only set appointmentCompletedAt if not already set (preserve original completion time)
         if (
           body.appointmentStatus === 'completed' &&
-          !existingSale.appointmentCompletedAt
+          !existingProspect.appointmentCompletedAt
         ) {
           updateData.appointmentCompletedAt = Timestamp.now();
         }
@@ -430,9 +448,12 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
       }
 
       if (body.salesOutcome !== undefined) {
-        if (!['successful', 'unsuccessful'].includes(body.salesOutcome)) {
+        if (
+          !['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)
+        ) {
           res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error: 'salesOutcome must be "successful" or "unsuccessful"',
+            error:
+              'salesOutcome must be "successful", "unsuccessful", or "kiv"',
           });
           return;
         }
@@ -444,26 +465,26 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
       }
     }
 
-    // Update the sale record
-    await updateSaleRecord(saleId, updateData);
+    // Update the prospect record
+    await updateProspectRecord(prospectId, updateData);
 
     res.status(HttpStatusCodes.OK).json({
       success: true,
-      message: 'Sale updated successfully',
+      message: 'Prospect updated successfully',
     });
   } catch (error) {
-    console.error('Error updating sale:', error);
+    console.error('Error updating prospect:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Failed to update sale',
+      error: 'Failed to update prospect',
     });
   }
 }
 
 /**
- * Get all sales (admin only)
- * GET /admin/all-sales
+ * Get all prospects (admin only)
+ * GET /admin/all-prospects
  */
-export async function getAdminAllSales(
+export async function getAdminAllProspects(
   req: Request,
   res: Response,
 ): Promise<void> {
@@ -490,24 +511,24 @@ export async function getAdminAllSales(
         ? parseInt(limitParam, 10)
         : undefined;
 
-    const sales = await getAllSales(limit);
+    const prospects = await getAllProspects(limit);
 
     res.status(HttpStatusCodes.OK).json({
-      sales,
+      prospects,
     });
   } catch (error) {
-    console.error('Error fetching all sales:', error);
+    console.error('Error fetching all prospects:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Failed to fetch sales',
+      error: 'Failed to fetch prospects',
     });
   }
 }
 
 /**
- * Get group sales (manager/admin only)
- * GET /sales/group/:groupId
+ * Get group prospects (manager/admin only)
+ * GET /prospects/group/:groupId
  */
-export async function getGroupSales(
+export async function getGroupProspects(
   req: Request,
   res: Response,
 ): Promise<void> {
@@ -534,7 +555,7 @@ export async function getGroupSales(
     // Check permissions
     if (req.user.role === 'agent') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'You do not have permission to view group sales',
+        error: 'You do not have permission to view group prospects',
       });
       return;
     }
@@ -542,7 +563,7 @@ export async function getGroupSales(
     // Manager can only view their own group
     if (req.user.role === 'manager' && req.user.groupId !== groupId) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: "You do not have permission to view this group's sales",
+        error: "You do not have permission to view this group's prospects",
       });
       return;
     }
@@ -554,15 +575,15 @@ export async function getGroupSales(
         ? parseInt(limitParam, 10)
         : undefined;
 
-    const sales = await getSalesByGroup(groupId, limit);
+    const prospects = await getProspectsByGroup(groupId, limit);
 
     res.status(HttpStatusCodes.OK).json({
-      sales,
+      prospects,
     });
   } catch (error) {
-    console.error('Error fetching group sales:', error);
+    console.error('Error fetching group prospects:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Failed to fetch group sales',
+      error: 'Failed to fetch group prospects',
     });
   }
 }
@@ -572,10 +593,10 @@ export async function getGroupSales(
 ******************************************************************************/
 
 export default {
-  createSale,
-  getMySales,
-  getSale,
-  updateSale,
-  getAdminAllSales,
-  getGroupSales,
+  createProspect,
+  getMyProspects,
+  getProspect,
+  updateProspect,
+  getAdminAllProspects,
+  getGroupProspects,
 };
