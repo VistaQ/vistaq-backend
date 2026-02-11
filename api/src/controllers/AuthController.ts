@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import * as admin from 'firebase-admin';
 import { FirebaseError } from 'firebase/app';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
@@ -9,9 +10,13 @@ import {
   CreateUserResponse,
   LoginRequest,
   LoginResponse,
+  RegisterRequest,
+  RegisterResponse,
   User,
   UserRole,
 } from '@src/types/auth.types';
+
+const FieldValue = admin.firestore.FieldValue;
 
 /******************************************************************************
                                 Controller
@@ -120,13 +125,38 @@ async function login(req: Request, res: Response): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function generatePermissions(role: string): string[] {
+  switch (role) {
+    case 'admin':
+      return ['*'];
+    case 'master_trainer':
+    case 'trainer':
+      return ['view_managed_groups', 'view_managed_sales', 'view_managed_users'];
+    case 'group_leader':
+      return ['view_own_group', 'view_team_sales', 'create_sales', 'view_own_sales'];
+    case 'agent':
+      return ['create_sales', 'view_own_sales'];
+    default:
+      return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 /**
  * Create new user (admin only)
  * POST /api/auth/create-user
  */
 async function createUser(req: Request, res: Response): Promise<void> {
   try {
-    // Check if requester is admin
+    // -------------------------------------------------------------------------
+    // Step 1 — Admin guard
+    // -------------------------------------------------------------------------
+
     if (!req.user || req.user.role !== 'admin') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'Only administrators can create users',
@@ -139,14 +169,16 @@ async function createUser(req: Request, res: Response): Promise<void> {
       password,
       name,
       role,
-      groupId,
-      groupName,
       agentCode,
       agency,
       location,
+      phone,
     } = req.body as CreateUserRequest;
 
-    // Validate required fields
+    // -------------------------------------------------------------------------
+    // Step 2 — Validate base fields
+    // -------------------------------------------------------------------------
+
     if (!email || !password || !name || !role) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
         error: 'Email, password, name, and role are required',
@@ -154,7 +186,6 @@ async function createUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Validate password strength
     if (password.length < 6) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
         error: 'Password must be at least 6 characters long',
@@ -162,88 +193,115 @@ async function createUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Validate role
-    const validRoles = ['admin', 'manager', 'agent', 'viewer'];
+    const validRoles = ['admin', 'master_trainer', 'trainer', 'group_leader', 'agent'];
     if (!validRoles.includes(role)) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'Invalid role. Must be one of: admin, manager, agent, viewer',
+        error: 'Invalid role. Must be one of: admin, master_trainer, trainer, group_leader, agent',
       });
       return;
     }
 
-    // Create user in Firebase Auth using Admin SDK
-    const userRecord = await adminAuth.createUser({
-      email,
-      password,
-      emailVerified: false,
-      disabled: false,
-    });
+    // -------------------------------------------------------------------------
+    // Step 3 — Role-based validation
+    // -------------------------------------------------------------------------
 
-    // Prepare user data for Firestore
-    const userData: Omit<User, 'uid'> = {
+    const isMemberRole = role === 'agent' || role === 'group_leader';
+    const isTrainerRole = role === 'trainer' || role === 'master_trainer';
+
+    if (isMemberRole) {
+      if (!agentCode || agentCode.trim().length === 0) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'Agents and group leaders must have an agent code',
+        });
+        return;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 4 — Create Firebase Auth account
+    // -------------------------------------------------------------------------
+
+    let userRecord: admin.auth.UserRecord;
+
+    try {
+      userRecord = await adminAuth.createUser({
+        email,
+        password,
+        emailVerified: true,
+        disabled: false,
+      });
+    } catch (authError) {
+      const code =
+        authError instanceof FirebaseError
+          ? authError.code
+          : (authError as { code?: string }).code;
+
+      if (code === 'auth/email-already-exists') {
+        res.status(HttpStatusCodes.CONFLICT).json({ error: 'Email already exists' });
+        return;
+      }
+      if (code === 'auth/invalid-email') {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
+        return;
+      }
+      if (code === 'auth/weak-password') {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({ error: 'Password is too weak' });
+        return;
+      }
+
+      console.error('[createUser] Firebase Auth error:', authError);
+      res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Failed to create user' });
+      return;
+    }
+
+    const uid = userRecord.uid;
+
+    // -------------------------------------------------------------------------
+    // Step 5 — Build and write Firestore user document
+    // -------------------------------------------------------------------------
+
+    const userData: Record<string, unknown> = {
       email,
       name,
+      phone: phone ?? '',
+      location: location ?? '',
+      agency: agency ?? '',
       role,
-      groupId: groupId || '',
-      groupName: groupName || '',
-      agentCode: agentCode || '',
-      agency: agency || '',
-      location: location || '',
-      totalPoints: 0,
+      permissions: generatePermissions(role),
+      groupId: null,
+      groupName: null,
+      agentCode: isMemberRole ? agentCode!.trim() : null,
+      managedGroupIds: isTrainerRole ? [] : null,
       totalProspects: 0,
       totalAppointments: 0,
       totalSales: 0,
       totalACE: 0,
-      currentBadge: 'Rookie',
+      totalPoints: 0,
+      currentBadge: isMemberRole ? 'Rookie' : null,
+      currentBadgeColor: isMemberRole ? 'gray' : null,
       status: 'active',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     };
 
-    // Create user document in Firestore
-    await db.collection('users').doc(userRecord.uid).set(userData);
+    await db.collection('users').doc(uid).set(userData);
 
-    // Prepare response
+    // -------------------------------------------------------------------------
+    // Step 6 — Return success
+    // -------------------------------------------------------------------------
+
+    console.log(`[createUser] Created ${role} ${uid} (${email})`);
+
     const response: CreateUserResponse = {
       success: true,
-      userId: userRecord.uid,
-      agentCode: agentCode || '',
+      userId: uid,
+      agentCode: isMemberRole ? agentCode!.trim() : undefined,
       message: 'User created successfully',
     };
 
     res.status(HttpStatusCodes.CREATED).json(response);
   } catch (error) {
-    // Handle Firebase Auth errors
-    if (error instanceof FirebaseError) {
-      switch (error.code) {
-        case 'auth/email-already-exists':
-          res.status(HttpStatusCodes.CONFLICT).json({
-            error: 'Email already exists',
-          });
-          return;
-
-        case 'auth/invalid-email':
-          res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error: 'Invalid email format',
-          });
-          return;
-
-        case 'auth/weak-password':
-          res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error: 'Password is too weak',
-          });
-          return;
-
-        default:
-          console.error('Firebase error:', error.code, error.message);
-          res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
-            error: 'Failed to create user',
-          });
-          return;
-      }
-    }
-
-    console.error('Create user error:', error);
+    console.error('[createUser] Unexpected error:', error);
     res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
       error: 'Internal server error',
     });
@@ -285,6 +343,222 @@ async function getCurrentUser(req: Request, res: Response): Promise<void> {
   }
 }
 
+/**
+ * Agent self-registration
+ * POST /api/auth/register
+ *
+ * Public endpoint — no authentication required.
+ * Creates a Firebase Auth account + Firestore user document for an agent,
+ * adds them to an existing group, and returns a ready-to-use ID token.
+ */
+async function register(req: Request, res: Response): Promise<void> {
+  try {
+    const { fullName, agentCode, email, password, groupId, acknowledged } =
+      req.body as RegisterRequest;
+
+    // -------------------------------------------------------------------------
+    // Step 1 — Validate required fields
+    // -------------------------------------------------------------------------
+
+    if (!fullName || !agentCode || !email || !password || !groupId) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'fullName, agentCode, email, password, and groupId are required',
+      });
+      return;
+    }
+
+    if (fullName.trim().length < 2) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Full name must be at least 2 characters',
+      });
+      return;
+    }
+
+    // Basic email format check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Invalid email format',
+      });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Password must be at least 6 characters',
+      });
+      return;
+    }
+
+    // Privacy policy acknowledgment is mandatory
+    if (!acknowledged) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'You must acknowledge the privacy policy',
+      });
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 2 — Ensure agentCode is unique
+    // -------------------------------------------------------------------------
+
+    const agentCodeSnapshot = await db
+      .collection('users')
+      .where('agentCode', '==', agentCode.trim())
+      .limit(1)
+      .get();
+
+    if (!agentCodeSnapshot.empty) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Agent code already exists',
+      });
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 3 — Verify the target group exists
+    // -------------------------------------------------------------------------
+
+    const groupDoc = await db.collection('groups').doc(groupId).get();
+
+    if (!groupDoc.exists) {
+      res.status(HttpStatusCodes.NOT_FOUND).json({
+        error: 'Group not found',
+      });
+      return;
+    }
+
+    const groupData = groupDoc.data()!;
+    const groupName = groupData.name as string;
+
+    // -------------------------------------------------------------------------
+    // Step 4 — Create Firebase Auth account (Admin SDK)
+    // -------------------------------------------------------------------------
+
+    let userRecord: admin.auth.UserRecord;
+
+    try {
+      userRecord = await adminAuth.createUser({
+        email,
+        password,
+        emailVerified: true,
+        disabled: false,
+      });
+    } catch (authError) {
+      // Check both client-SDK FirebaseError and admin-SDK error shapes
+      const code =
+        authError instanceof FirebaseError
+          ? authError.code
+          : (authError as { code?: string }).code;
+
+      if (code === 'auth/email-already-exists') {
+        res.status(HttpStatusCodes.CONFLICT).json({
+          error: 'Email already registered',
+        });
+        return;
+      }
+
+      console.error('[Register] Firebase Auth createUser error:', authError);
+      res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+        error: 'Failed to create account',
+      });
+      return;
+    }
+
+    const uid = userRecord.uid;
+
+    // -------------------------------------------------------------------------
+    // Step 5 — Create Firestore user document
+    // -------------------------------------------------------------------------
+
+    const newUser = {
+      email,
+      name: fullName.trim(),
+      phone: '',
+      location: '',
+      agency: '',
+
+      role: 'agent' as UserRole,
+      permissions: ['view_own_sales', 'create_sales'],
+
+      groupId,
+      groupName,
+
+      agentCode: agentCode.trim(),
+      managedGroupIds: null,
+
+      totalProspects: 0,
+      totalAppointments: 0,
+      totalSales: 0,
+      totalACE: 0,
+      totalPoints: 0,
+      currentBadge: 'Rookie',
+      currentBadgeColor: 'gray',
+
+      status: 'active',
+
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    await db.collection('users').doc(uid).set(newUser);
+
+    // -------------------------------------------------------------------------
+    // Step 6 — Add user to the group's member list
+    // -------------------------------------------------------------------------
+
+    await db
+      .collection('groups')
+      .doc(groupId)
+      .update({
+        memberIds: FieldValue.arrayUnion(uid),
+        memberCount: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+    // -------------------------------------------------------------------------
+    // Step 7 — Auto-login via Client SDK to get a usable ID token
+    // -------------------------------------------------------------------------
+
+    const userCredential = await signInWithEmailAndPassword(
+      clientAuth,
+      email,
+      password,
+    );
+
+    const token = await userCredential.user.getIdToken();
+
+    // -------------------------------------------------------------------------
+    // Step 8 — Return success response
+    // -------------------------------------------------------------------------
+
+    console.log(
+      `[Register] Agent ${uid} (${agentCode}) registered and joined group ${groupId} (${groupName})`,
+    );
+
+    const response: RegisterResponse = {
+      success: true,
+      token,
+      user: {
+        uid,
+        email,
+        name: fullName.trim(),
+        role: 'agent',
+        groupId,
+        groupName,
+        agentCode: agentCode.trim(),
+      },
+    };
+
+    res.status(HttpStatusCodes.CREATED).json(response);
+  } catch (error) {
+    console.error('[Register] Unexpected error:', error);
+    res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Internal server error',
+    });
+  }
+}
+
 /******************************************************************************
                                 Export
 ******************************************************************************/
@@ -293,4 +567,5 @@ export default {
   login,
   createUser,
   getCurrentUser,
+  register,
 } as const;

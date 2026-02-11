@@ -12,10 +12,11 @@ export interface UpdateUserRequest {
   location?: string;
 
   // Admin only fields
+  email?: string;
   agency?: string;
   role?: UserRole;
-  groupId?: string | null;
   status?: UserStatus;
+
 }
 
 export interface UpdateUserStatusRequest {

@@ -27,7 +27,12 @@ export interface User {
   updatedAt: Date;
 }
 
-export type UserRole = 'admin' | 'manager' | 'agent' | 'viewer' | 'trainer' | 'master_trainer' | 'group_leader';
+export type UserRole =
+  | 'admin'
+  | 'master_trainer'
+  | 'trainer'
+  | 'group_leader'
+  | 'agent';
 
 export type UserStatus = 'active' | 'inactive' | 'suspended';
 
@@ -56,11 +61,12 @@ export interface CreateUserRequest {
   password: string;
   name: string;
   role: UserRole;
-  groupId: string;
-  groupName: string;
-  agentCode: string;
-  agency: string;
-  location: string;
+  // Required for agents and group leaders
+  agentCode?: string;
+  // Optional profile fields
+  agency?: string;
+  location?: string;
+  phone?: string;
 }
 
 export interface CreateUserResponse {
@@ -68,6 +74,29 @@ export interface CreateUserResponse {
   userId: string;
   agentCode?: string;
   message: string;
+}
+
+export interface RegisterRequest {
+  fullName: string;
+  agentCode: string;
+  email: string;
+  password: string;
+  groupId: string;
+  acknowledged: boolean;
+}
+
+export interface RegisterResponse {
+  success: boolean;
+  token: string;
+  user: {
+    uid: string;
+    email: string;
+    name: string;
+    role: string;
+    groupId: string;
+    groupName: string;
+    agentCode: string;
+  };
 }
 
 // Extend Express Request to include user

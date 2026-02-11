@@ -17,6 +17,7 @@ import {
   UserData,
 } from '@src/types/user.types';
 
+const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
 const USERS_COLLECTION = 'users';
 const GROUPS_COLLECTION = 'groups';
@@ -81,18 +82,23 @@ function canViewUser(
     return true;
   }
 
-  // Trainer/Master Trainer can view users in their managed groups
+  // Master Trainer can view agents and group leaders
   if (
-    (requester.role === 'trainer' || requester.role === 'master_trainer') &&
-    requester.managedGroupIds &&
-    Array.isArray(requester.managedGroupIds)
+    requester.role === 'master_trainer' &&
+    (targetUser.role === 'agent' || targetUser.role === 'group_leader')
   ) {
-    if (
-      targetUser.groupId &&
-      requester.managedGroupIds.includes(targetUser.groupId)
-    ) {
-      return true;
-    }
+    return true;
+  }
+
+  // Trainer can view users in their managed groups
+  if (
+    requester.role === 'trainer' &&
+    requester.managedGroupIds &&
+    Array.isArray(requester.managedGroupIds) &&
+    targetUser.groupId &&
+    requester.managedGroupIds.includes(targetUser.groupId)
+  ) {
+    return true;
   }
 
   // Group Leader can view users in their own group
@@ -139,10 +145,182 @@ function isValidRole(role: string): boolean {
     'trainer',
     'group_leader',
     'agent',
-    'manager',
-    'viewer',
   ];
   return validRoles.includes(role);
+}
+
+// Discriminated union returned by handleRoleChange so callers can send the
+// correct HTTP status code without catching generic errors.
+type RoleChangeResult =
+  | {
+      ok: true;
+      // Extra fields to merge into the main user document update
+      additionalUpdates: Record<string, unknown>;
+      // Other documents to update atomically in the same batch
+      sideEffects: Array<{
+        ref: admin.firestore.DocumentReference;
+        data: Record<string, unknown>;
+      }>;
+    }
+  | { ok: false; statusCode: number; error: string };
+
+/**
+ * Validate a role transition and compute all side-effect writes needed to
+ * keep the users and groups collections consistent.
+ *
+ * Returns either an error (with the HTTP status code to use) or the extra
+ * fields to add to the main user update plus any additional document writes
+ * that must be committed atomically alongside the user update.
+ *
+ * Handles four cases:
+ *   1. agent          → group_leader      (promote; update group leadership)
+ *   2. group_leader   → agent             (demote;  requires newLeaderId)
+ *   3. any            → trainer/master_trainer (validate no group membership)
+ *   4. trainer/master_trainer → agent/group_leader (validate no managed groups)
+ */
+async function handleRoleChange(
+  userId: string,
+  userData: admin.firestore.DocumentData,
+  currentRole: string,
+  newRole: string,
+  updateData: UpdateUserRequest,
+): Promise<RoleChangeResult> {
+  const additionalUpdates: Record<string, unknown> = {};
+  const sideEffects: Array<{
+    ref: admin.firestore.DocumentReference;
+    data: Record<string, unknown>;
+  }> = [];
+
+  const fromTrainer =
+    currentRole === 'trainer' || currentRole === 'master_trainer';
+  const toTrainer = newRole === 'trainer' || newRole === 'master_trainer';
+
+  const effectiveGroupId: string | null =
+    (userData.groupId as string | null) ?? null;
+
+  // ---------------------------------------------------------------------------
+  // Case 3: Any role → Trainer / Master Trainer
+  // Trainers are not members of groups; block if one is set (or being set).
+  // ---------------------------------------------------------------------------
+  if (toTrainer) {
+    if (effectiveGroupId) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: 'Trainers cannot be members of groups. Remove from group first.',
+      };
+    }
+
+    // Ensure managedGroupIds is initialised for brand-new trainers
+    if (!userData.managedGroupIds) {
+      additionalUpdates.managedGroupIds = [];
+    }
+
+    return { ok: true, additionalUpdates, sideEffects };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Case 4: Trainer / Master Trainer → Agent / Group Leader
+  // Must have no managed groups before transitioning away from trainer roles.
+  // ---------------------------------------------------------------------------
+  if (fromTrainer) {
+    const managedGroupIds: string[] = Array.isArray(userData.managedGroupIds)
+      ? userData.managedGroupIds
+      : [];
+
+    if (managedGroupIds.length > 0) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error:
+          'Cannot change role while managing groups. Reassign groups first.',
+      };
+    }
+
+    // Clear the trainer-only field
+    additionalUpdates.managedGroupIds = null;
+
+    // Fall through: if destination is group_leader, Case 1 logic below will
+    // also run to update the group's leadership fields.
+  }
+
+  // ---------------------------------------------------------------------------
+  // Case 2: Group Leader → Agent
+  // Clear the group's leadership fields. The frontend handles role changes
+  // separately — the admin will promote the new leader in a second request.
+  // ---------------------------------------------------------------------------
+  if (currentRole === 'group_leader' && newRole === 'agent') {
+    // Find the group this user currently leads (if any)
+    const groupsSnapshot = await db
+      .collection(GROUPS_COLLECTION)
+      .where('leaderId', '==', userId)
+      .limit(1)
+      .get();
+
+    if (!groupsSnapshot.empty) {
+      const groupRef = groupsSnapshot.docs[0].ref;
+
+      // Clear leadership fields so the group doesn't hold a stale reference
+      sideEffects.push({
+        ref: groupRef,
+        data: {
+          leaderId: null,
+          leaderName: null,
+          leaderEmail: null,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      });
+
+      console.log(
+        `[RoleChange] Cleared leadership of group ${groupsSnapshot.docs[0].id} (${userId} demoted to agent)`,
+      );
+    }
+
+    return { ok: true, additionalUpdates, sideEffects };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Case 1: Any non-trainer role → Group Leader
+  // (Covers agent → group_leader and trainer → group_leader via Case 4 above.)
+  // Update the target group's leadership to point to this user.
+  // ---------------------------------------------------------------------------
+  if (newRole === 'group_leader') {
+    if (!effectiveGroupId) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error:
+          'User must be assigned to a group before becoming a group leader',
+      };
+    }
+
+    const groupRef = db.collection(GROUPS_COLLECTION).doc(effectiveGroupId);
+    const groupDoc = await groupRef.get();
+
+    if (!groupDoc.exists) {
+      return {
+        ok: false,
+        statusCode: 404,
+        error: 'Group not found',
+      };
+    }
+
+    sideEffects.push({
+      ref: groupRef,
+      data: {
+        leaderId: userId,
+        leaderName: userData.name as string,
+        leaderEmail: userData.email as string,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+    });
+
+    console.log(
+      `[RoleChange] User ${userId} promoted to group_leader of group ${effectiveGroupId}`,
+    );
+  }
+
+  return { ok: true, additionalUpdates, sideEffects };
 }
 
 /******************************************************************************
@@ -189,10 +367,7 @@ export async function getMe(req: Request, res: Response): Promise<void> {
  * Get a specific user by ID
  * GET /users/:userId
  */
-export async function getUserById(
-  req: Request,
-  res: Response,
-): Promise<void> {
+export async function getUserById(req: Request, res: Response): Promise<void> {
   try {
     if (!req.user) {
       res.status(HttpStatusCodes.UNAUTHORIZED).json({
@@ -258,12 +433,12 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Only admin and trainers can view all users
+    // Only admin, master trainers, and trainers can view all users
     const isAdmin = req.user.role === 'admin';
-    const isTrainer =
-      req.user.role === 'trainer' || req.user.role === 'master_trainer';
+    const isMasterTrainer = req.user.role === 'master_trainer';
+    const isTrainer = req.user.role === 'trainer';
 
-    if (!isAdmin && !isTrainer) {
+    if (!isAdmin && !isMasterTrainer && !isTrainer) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'You do not have permission to view users',
       });
@@ -292,7 +467,12 @@ export async function getAllUsers(req: Request, res: Response): Promise<void> {
       query = query.where('status', '==', status);
     }
 
-    // If trainer (not admin), only show users in their managed groups
+    // Master Trainer sees all agents and group leaders
+    if (isMasterTrainer) {
+      query = query.where('role', 'in', ['agent', 'group_leader']);
+    }
+
+    // If trainer (not admin or master trainer), only show users in their managed groups
     if (isTrainer && !isAdmin) {
       const managedGroupIds = req.user.managedGroupIds || [];
 
@@ -387,15 +567,16 @@ export async function getUsersByGroup(
 
     // Check permissions
     const isAdmin = req.user.role === 'admin';
+    const isMasterTrainer = req.user.role === 'master_trainer';
     const isTrainerOfGroup =
-      (req.user.role === 'trainer' || req.user.role === 'master_trainer') &&
+      req.user.role === 'trainer' &&
       req.user.managedGroupIds?.includes(groupId);
     const isGroupLeader =
       req.user.role === 'group_leader' && req.user.groupId === groupId;
 
-    if (!isAdmin && !isTrainerOfGroup && !isGroupLeader) {
+    if (!isAdmin && !isMasterTrainer && !isTrainerOfGroup && !isGroupLeader) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'You do not have permission to view this group\'s users',
+        error: "You do not have permission to view this group's users",
       });
       return;
     }
@@ -453,9 +634,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    console.log(
-      `[UpdateUser] User ${req.user.uid} updating user ${userId}...`,
-    );
+    console.log(`[UpdateUser] User ${req.user.uid} updating user ${userId}...`);
 
     // Fetch target user
     const targetUser = await getUserDocument(userId);
@@ -479,10 +658,20 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
 
     const updateData = req.body as UpdateUserRequest;
 
-    // Validate update data
+    // Collects all fields to write to the target user document
     const updates: Record<string, unknown> = {};
 
-    // Fields that all users can update for themselves
+    // Side-effect writes to other documents (group, new leader) accumulated
+    // during role-change handling and committed atomically with the user update.
+    let sideEffects: Array<{
+      ref: admin.firestore.DocumentReference;
+      data: Record<string, unknown>;
+    }> = [];
+
+    // -------------------------------------------------------------------------
+    // Fields all authenticated users can update on their own profile
+    // -------------------------------------------------------------------------
+
     if (updateData.name !== undefined) {
       if (updateData.name.trim().length < 2) {
         res.status(HttpStatusCodes.BAD_REQUEST).json({
@@ -501,12 +690,43 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       updates.location = updateData.location.trim();
     }
 
+    // -------------------------------------------------------------------------
     // Admin-only fields
+    // -------------------------------------------------------------------------
+
     if (adminUpdate) {
+      if (updateData.email !== undefined) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(updateData.email)) {
+          res.status(HttpStatusCodes.BAD_REQUEST).json({
+            error: 'Invalid email format',
+          });
+          return;
+        }
+
+        // Update Firebase Auth first — will throw if email already exists
+        try {
+          await adminAuth.updateUser(userId, { email: updateData.email });
+        } catch (authError) {
+          const code = (authError as { code?: string }).code;
+          if (code === 'auth/email-already-exists') {
+            res.status(HttpStatusCodes.CONFLICT).json({
+              error: 'Email already in use',
+            });
+            return;
+          }
+          throw authError;
+        }
+
+        updates.email = updateData.email;
+        console.log(`[UpdateUser] Email updated for ${userId}`);
+      }
+
       if (updateData.agency !== undefined) {
         updates.agency = updateData.agency.trim();
       }
 
+      // Role change — validate first, then delegate consistency work to helper
       if (updateData.role !== undefined) {
         if (!isValidRole(updateData.role)) {
           res.status(HttpStatusCodes.BAD_REQUEST).json({
@@ -514,31 +734,39 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
           });
           return;
         }
-        updates.role = updateData.role;
-        console.log(`[UpdateUser] Updating role to ${updateData.role}`);
-      }
 
-      if (updateData.groupId !== undefined) {
-        if (updateData.groupId === null) {
-          // Remove from group
-          updates.groupId = null;
-          updates.groupName = null;
-          console.log('[UpdateUser] Removing user from group');
-        } else {
-          // Verify group exists
-          const group = await getGroupDocument(updateData.groupId);
-          if (!group) {
-            res.status(HttpStatusCodes.NOT_FOUND).json({
-              error: 'Group not found',
+        const currentRole = targetUser.role as string;
+        const newRole = updateData.role;
+
+        if (currentRole !== newRole) {
+          console.log(
+            `[UpdateUser] Role change for ${userId}: ${currentRole} → ${newRole}`,
+          );
+
+          const roleChangeResult = await handleRoleChange(
+            userId,
+            targetUser,
+            currentRole,
+            newRole,
+            updateData,
+          );
+
+          if (!roleChangeResult.ok) {
+            res.status(roleChangeResult.statusCode).json({
+              error: roleChangeResult.error,
             });
             return;
           }
-          updates.groupId = updateData.groupId;
-          updates.groupName = group.name;
-          console.log(
-            `[UpdateUser] Adding user to group ${updateData.groupId} (${group.name})`,
-          );
+
+          // Merge any extra fields the role change requires on the user doc
+          Object.assign(updates, roleChangeResult.additionalUpdates);
+          sideEffects = roleChangeResult.sideEffects;
         }
+
+        updates.role = newRole;
+        console.log(
+          `[AUDIT] Admin ${req.user.uid} changed role of ${userId} from ${targetUser.role} to ${newRole}`,
+        );
       }
 
       if (updateData.status !== undefined) {
@@ -556,11 +784,11 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
         console.log(`[UpdateUser] Updating status to ${updateData.status}`);
       }
     } else {
-      // Non-admin trying to update admin-only fields
+      // Non-admin trying to update restricted fields
       if (
+        updateData.email !== undefined ||
         updateData.agency !== undefined ||
         updateData.role !== undefined ||
-        updateData.groupId !== undefined ||
         updateData.status !== undefined
       ) {
         res.status(HttpStatusCodes.FORBIDDEN).json({
@@ -571,7 +799,6 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       }
     }
 
-    // Check if there are any updates
     if (Object.keys(updates).length === 0) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
         error: 'No valid fields to update',
@@ -579,15 +806,26 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Add updated timestamp
     updates.updatedAt = Timestamp.now();
 
-    // Update user document
-    await db.collection(USERS_COLLECTION).doc(userId).update(updates);
+    // -------------------------------------------------------------------------
+    // Commit everything atomically: main user update + all side effects
+    // -------------------------------------------------------------------------
 
-    console.log(`[UpdateUser] User ${userId} updated successfully`);
+    const batch = db.batch();
+    batch.update(db.collection(USERS_COLLECTION).doc(userId), updates);
+    for (const { ref, data } of sideEffects) {
+      batch.update(ref, data);
+    }
+    await batch.commit();
 
-    // Log admin actions
+    console.log(
+      `[UpdateUser] User ${userId} updated successfully` +
+        (sideEffects.length > 0
+          ? ` (+ ${sideEffects.length} related document(s) updated)`
+          : ''),
+    );
+
     if (adminUpdate) {
       console.log(
         `[AUDIT] Admin ${req.user.uid} updated user ${userId}:`,
@@ -678,7 +916,9 @@ export async function updateUserStatus(
       // Continue even if auth update fails
     }
 
-    console.log(`[UpdateUserStatus] User ${userId} status updated to ${status}`);
+    console.log(
+      `[UpdateUserStatus] User ${userId} status updated to ${status}`,
+    );
     console.log(
       `[AUDIT] Admin ${req.user.uid} changed user ${userId} status to ${status}`,
     );
@@ -748,8 +988,7 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
 
     // Check if trainer with assigned groups
     if (
-      (targetUser.role === 'trainer' ||
-        targetUser.role === 'master_trainer') &&
+      (targetUser.role === 'trainer' || targetUser.role === 'master_trainer') &&
       targetUser.managedGroupIds &&
       Array.isArray(targetUser.managedGroupIds) &&
       targetUser.managedGroupIds.length > 0
