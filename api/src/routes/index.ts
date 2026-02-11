@@ -5,14 +5,14 @@
  * for authentication and authorization.
  */
 import express from 'express';
-
-import { authenticate } from '@src/middleware/auth';
-import { requireRole } from '@src/middleware/roleCheck';
+import { authenticate } from 'middleware/auth';
+import { requireRole } from 'middleware/roleCheck';
 
 // Import all controllers
 import authController from '@src/controllers/AuthController';
-import prospectsController from '@src/controllers/prospectsController';
+import eventController from '@src/controllers/eventController';
 import groupController from '@src/controllers/groupController';
+import prospectsController from '@src/controllers/prospectsController';
 import userController from '@src/controllers/userController';
 
 const router = express.Router();
@@ -23,6 +23,7 @@ const router = express.Router();
 
 // Authentication
 router.post('/auth/login', authController.login);
+router.post('/auth/register', authController.register);
 
 /******************************************************************************
                     PROTECTED ROUTES (Authentication required)
@@ -124,6 +125,51 @@ router.get('/groups/:groupId', groupController.getGroup);
  */
 router.get('/groups', groupController.getAllGroups);
 
+// ===== EVENT ENDPOINTS =====
+
+/**
+ * POST /events
+ * Create a new event/meetup
+ * Accessible by: Admin, Master Trainer, Trainer
+ */
+router.post('/events', eventController.createEvent);
+
+/**
+ * GET /events/my-events
+ * Get upcoming events relevant to the authenticated user's groups
+ * Accessible by: All authenticated users
+ * NOTE: Must be registered before /events/:eventId to avoid param collision
+ */
+router.get('/events/my-events', eventController.getMyEvents);
+
+/**
+ * GET /events
+ * Get all events with optional filters (status, groupId)
+ * Accessible by: Admin only
+ */
+router.get('/events', eventController.getAllEvents);
+
+/**
+ * GET /events/:eventId
+ * Get a specific event by ID
+ * Accessible by: All authenticated users (role-restricted)
+ */
+router.get('/events/:eventId', eventController.getEvent);
+
+/**
+ * PUT /events/:eventId
+ * Update an event
+ * Accessible by: Admin (any event), Creator (own event)
+ */
+router.put('/events/:eventId', eventController.updateEvent);
+
+/**
+ * DELETE /events/:eventId
+ * Delete an event
+ * Accessible by: Admin (any event), Creator (own event)
+ */
+router.delete('/events/:eventId', eventController.deleteEvent);
+
 /******************************************************************************
                         ADMIN ONLY ROUTES
 ******************************************************************************/
@@ -173,6 +219,13 @@ router.get(
   prospectsController.getAdminAllProspects,
 );
 
+/**
+ * DELETE /prospects/:id
+ * Delete a prospect
+ * Accessible by: Admin (any prospect), Agent/Group Leader (own prospects only)
+ */
+router.delete('/prospects/:id', prospectsController.deleteProspect);
+
 // ===== ADMIN - GROUP MANAGEMENT =====
 
 /**
@@ -180,7 +233,11 @@ router.get(
  * Create a new group
  * Accessible by: Admin only
  */
-router.post('/admin/groups', requireRole(['admin']), groupController.createGroup);
+router.post(
+  '/admin/groups',
+  requireRole(['admin']),
+  groupController.createGroup,
+);
 
 /**
  * PUT /admin/groups/:groupId
