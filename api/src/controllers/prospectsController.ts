@@ -7,6 +7,7 @@ import * as admin from 'firebase-admin';
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import {
   createProspectRecord,
+  deleteProspectRecord,
   getAllProspects,
   getProspectById,
   getProspectsByAgent,
@@ -40,19 +41,23 @@ function canViewProspect(
   userId: string,
   userRole: string,
   userGroupId: string,
+  managedGroupIds?: string[],
 ): boolean {
-  // Admin can view all
-  if (userRole === 'admin') {
+  // Admin and Master Trainer can view all
+  if (userRole === 'admin' || userRole === 'master_trainer') {
     return true;
   }
 
-  // Manager can view their group's prospects
-  if (userRole === 'manager' && prospect.groupId === userGroupId) {
+  // Trainer can view prospects in their managed groups
+  if (userRole === 'trainer' && managedGroupIds?.includes(prospect.groupId)) {
     return true;
   }
 
-  // Agent can view their own prospects (check by uid)
-  if (userRole === 'agent' && prospect.uid === userId) {
+  // Group leader and agent can only view their own prospects
+  if (
+    (userRole === 'group_leader' || userRole === 'agent') &&
+    prospect.uid === userId
+  ) {
     return true;
   }
 
@@ -113,10 +118,10 @@ export async function createProspect(
       return;
     }
 
-    // Only agents and managers can create prospects
-    if (req.user.role !== 'agent' && req.user.role !== 'manager') {
+    // Only agents and group leaders can create prospects
+    if (req.user.role !== 'agent' && req.user.role !== 'group_leader') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'Only agents and managers can create prospects',
+        error: 'Only agents and group leaders can create prospects',
       });
       return;
     }
@@ -240,7 +245,7 @@ export async function getProspect(req: Request, res: Response): Promise<void> {
 
     // Check permissions
     if (
-      !canViewProspect(prospect, req.user.uid, req.user.role, req.user.groupId)
+      !canViewProspect(prospect, req.user.uid, req.user.role, req.user.groupId, req.user.managedGroupIds)
     ) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'You do not have permission to view this prospect',
@@ -525,7 +530,7 @@ export async function getAdminAllProspects(
 }
 
 /**
- * Get group prospects (manager/admin only)
+ * Get group prospects (group_leader/admin only)
  * GET /prospects/group/:groupId
  */
 export async function getGroupProspects(
@@ -553,20 +558,27 @@ export async function getGroupProspects(
     }
 
     // Check permissions
-    if (req.user.role === 'agent') {
+    const role = req.user.role;
+
+    if (role === 'agent' || role === 'group_leader') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'You do not have permission to view group prospects',
       });
       return;
     }
 
-    // Manager can only view their own group
-    if (req.user.role === 'manager' && req.user.groupId !== groupId) {
+    // Trainer can only view their managed groups
+    if (
+      role === 'trainer' &&
+      !req.user.managedGroupIds?.includes(groupId)
+    ) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: "You do not have permission to view this group's prospects",
       });
       return;
     }
+
+    // admin and master_trainer can view any group
 
     // Admin can view any group
     const limitParam = req.query.limit;
@@ -588,6 +600,68 @@ export async function getGroupProspects(
   }
 }
 
+/**
+ * Delete a prospect (admin only)
+ * DELETE /admin/prospects/:id
+ */
+export async function deleteProspect(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(HttpStatusCodes.UNAUTHORIZED).json({
+        error: 'Authentication required',
+      });
+      return;
+    }
+
+    const prospectId = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
+
+    if (!prospectId) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Prospect ID is required',
+      });
+      return;
+    }
+
+    const prospect = await getProspectById(prospectId);
+
+    if (!prospect) {
+      res.status(HttpStatusCodes.NOT_FOUND).json({
+        error: 'Prospect not found',
+      });
+      return;
+    }
+
+    const isAdmin = req.user.role === 'admin';
+    const isOwner = prospect.uid === req.user.uid;
+
+    if (!isAdmin && !isOwner) {
+      res.status(HttpStatusCodes.FORBIDDEN).json({
+        error: 'You do not have permission to delete this prospect',
+      });
+      return;
+    }
+
+    await deleteProspectRecord(prospectId);
+
+    console.log(`[AUDIT] User ${req.user.uid} (${req.user.role}) deleted prospect ${prospectId}`);
+
+    res.status(HttpStatusCodes.OK).json({
+      success: true,
+      message: 'Prospect deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting prospect:', error);
+    res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Failed to delete prospect',
+    });
+  }
+}
+
 /******************************************************************************
                             Export
 ******************************************************************************/
@@ -597,6 +671,7 @@ export default {
   getMyProspects,
   getProspect,
   updateProspect,
+  deleteProspect,
   getAdminAllProspects,
   getGroupProspects,
 };

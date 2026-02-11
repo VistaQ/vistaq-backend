@@ -169,3 +169,14 @@ export async function updateProspectRecord(
     throw new Error('Failed to update prospect record');
   }
 }
+
+export async function deleteProspectRecord(
+  prospectId: string,
+): Promise<void> {
+  try {
+    await db.collection(PROSPECTS_COLLECTION).doc(prospectId).delete();
+  } catch (error) {
+    console.error('Error deleting prospect record:', error);
+    throw new Error('Failed to delete prospect record');
+  }
+}
