@@ -12,10 +12,9 @@ export interface Group {
   leaderName: string;
   leaderEmail: string;
 
-  // Trainer
-  trainerId: string;
-  trainerName: string;
-  trainerType: 'trainer' | 'master_trainer';
+  // Trainers (multiple trainers can manage a group)
+  trainerIds: string[];
+  trainerNames: string[];
 
   // Members
   memberIds: string[];
@@ -38,14 +37,14 @@ export interface Group {
 
 export interface CreateGroupRequest {
   name: string;
-  trainerId: string;
+  trainerIds: string[];
   leaderId: string;
   memberIds: string[];
 }
 
 export interface UpdateGroupRequest {
   name?: string;
-  trainerId?: string;
+  trainerIds?: string[];
   leaderId?: string;
   memberIds?: string[];
 }

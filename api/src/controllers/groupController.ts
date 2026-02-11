@@ -136,7 +136,7 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const { name, trainerId, leaderId, memberIds } = req.body as CreateGroupRequest;
+    const { name, trainerIds, leaderId, memberIds } = req.body as CreateGroupRequest;
 
     // Validate required fields
     if (!name || name.trim().length < 3) {
@@ -146,9 +146,9 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (!trainerId) {
+    if (!trainerIds || !Array.isArray(trainerIds) || trainerIds.length === 0) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'trainerId is required',
+        error: 'trainerIds is required and must be a non-empty array',
       });
       return;
     }
@@ -175,27 +175,29 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    console.log(`[CreateGroup] Validating trainer ${trainerId}...`);
+    console.log(`[CreateGroup] Validating ${trainerIds.length} trainer(s)...`);
 
-    // Verify trainer exists and has correct role
-    const trainerCheck = await verifyUserRole(trainerId, ['trainer', 'master_trainer']);
-    if (!trainerCheck.valid) {
-      res.status(
-        trainerCheck.error?.includes('not found')
-          ? HttpStatusCodes.NOT_FOUND
-          : HttpStatusCodes.FORBIDDEN
-      ).json({
-        error: trainerCheck.error,
-      });
-      return;
+    // Verify each trainer exists and has correct role
+    const trainerNames: string[] = [];
+    for (const trainerId of trainerIds) {
+      const trainerCheck = await verifyUserRole(trainerId, ['trainer', 'master_trainer']);
+      if (!trainerCheck.valid) {
+        res.status(
+          trainerCheck.error?.includes('not found')
+            ? HttpStatusCodes.NOT_FOUND
+            : HttpStatusCodes.FORBIDDEN
+        ).json({
+          error: trainerCheck.error,
+        });
+        return;
+      }
+      trainerNames.push(trainerCheck.user!.name);
     }
-
-    const trainerUser = trainerCheck.user!;
 
     console.log(`[CreateGroup] Validating leader ${leaderId}...`);
 
-    // Verify leader exists and has correct role
-    const leaderCheck = await verifyUserRole(leaderId, ['group_leader']);
+    // Verify leader exists and has an eligible role (agent gets promoted on creation)
+    const leaderCheck = await verifyUserRole(leaderId, ['agent', 'group_leader']);
     if (!leaderCheck.valid) {
       res.status(
         leaderCheck.error?.includes('not found')
@@ -235,10 +237,9 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
       leaderName: leaderUser.name,
       leaderEmail: leaderUser.email,
 
-      // Trainer
-      trainerId,
-      trainerName: trainerUser.name,
-      trainerType: trainerUser.role as 'trainer' | 'master_trainer',
+      // Trainers
+      trainerIds,
+      trainerNames,
 
       // Members
       memberIds,
@@ -271,12 +272,24 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
       });
     }
 
-    // Update trainer's managed groups
-    const trainerRef = db.collection(USERS_COLLECTION).doc(trainerId);
-    batch.update(trainerRef, {
-      managedGroupIds: FieldValue.arrayUnion(groupRef.id),
-      updatedAt: Timestamp.now(),
-    });
+    // Promote leader to group_leader if they are currently an agent
+    if (leaderUser.role === 'agent') {
+      const leaderRef = db.collection(USERS_COLLECTION).doc(leaderId);
+      batch.update(leaderRef, {
+        role: 'group_leader',
+        updatedAt: Timestamp.now(),
+      });
+      console.log(`[CreateGroup] Promoted ${leaderId} to group_leader`);
+    }
+
+    // Update each trainer's managed groups
+    for (const trainerId of trainerIds) {
+      const trainerRef = db.collection(USERS_COLLECTION).doc(trainerId);
+      batch.update(trainerRef, {
+        managedGroupIds: FieldValue.arrayUnion(groupRef.id),
+        updatedAt: Timestamp.now(),
+      });
+    }
 
     await batch.commit();
 
@@ -322,10 +335,10 @@ export async function updateGroup(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const { name, trainerId, leaderId, memberIds } = req.body as UpdateGroupRequest;
+    const { name, trainerIds, leaderId, memberIds } = req.body as UpdateGroupRequest;
 
     // At least one field must be provided
-    if (!name && !trainerId && !leaderId && !memberIds) {
+    if (!name && !trainerIds && !leaderId && !memberIds) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
         error: 'At least one field to update is required',
       });
@@ -352,53 +365,65 @@ export async function updateGroup(req: Request, res: Response): Promise<void> {
       updatedAt: Timestamp.now(),
     };
 
-    let newTrainerId = existingGroup.trainerId;
     let newLeaderId = existingGroup.leaderId;
     let newMemberIds = existingGroup.memberIds;
 
-    // Handle trainer update
-    if (trainerId && trainerId !== existingGroup.trainerId) {
-      console.log(`[UpdateGroup] Updating trainer from ${existingGroup.trainerId} to ${trainerId}...`);
-
-      const trainerCheck = await verifyUserRole(trainerId, ['trainer', 'master_trainer']);
-      if (!trainerCheck.valid) {
-        res.status(
-          trainerCheck.error?.includes('not found')
-            ? HttpStatusCodes.NOT_FOUND
-            : HttpStatusCodes.FORBIDDEN
-        ).json({
-          error: trainerCheck.error,
+    // Handle trainers update
+    if (trainerIds !== undefined) {
+      if (!Array.isArray(trainerIds) || trainerIds.length === 0) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'trainerIds must be a non-empty array',
         });
         return;
       }
 
-      const newTrainer = trainerCheck.user!;
+      console.log(`[UpdateGroup] Updating trainers for group ${groupId}...`);
 
-      // Remove group from old trainer's managedGroupIds
-      const oldTrainerRef = db.collection(USERS_COLLECTION).doc(existingGroup.trainerId);
-      batch.update(oldTrainerRef, {
-        managedGroupIds: FieldValue.arrayRemove(groupId),
-        updatedAt: Timestamp.now(),
-      });
+      // Verify each new trainer
+      const newTrainerNames: string[] = [];
+      for (const tid of trainerIds) {
+        const trainerCheck = await verifyUserRole(tid, ['trainer', 'master_trainer']);
+        if (!trainerCheck.valid) {
+          res.status(
+            trainerCheck.error?.includes('not found')
+              ? HttpStatusCodes.NOT_FOUND
+              : HttpStatusCodes.FORBIDDEN
+          ).json({
+            error: trainerCheck.error,
+          });
+          return;
+        }
+        newTrainerNames.push(trainerCheck.user!.name);
+      }
 
-      // Add group to new trainer's managedGroupIds
-      const newTrainerRef = db.collection(USERS_COLLECTION).doc(trainerId);
-      batch.update(newTrainerRef, {
-        managedGroupIds: FieldValue.arrayUnion(groupId),
-        updatedAt: Timestamp.now(),
-      });
+      // Remove group from trainers no longer assigned
+      const trainersToRemove = existingGroup.trainerIds.filter((id) => !trainerIds.includes(id));
+      for (const tid of trainersToRemove) {
+        batch.update(db.collection(USERS_COLLECTION).doc(tid), {
+          managedGroupIds: FieldValue.arrayRemove(groupId),
+          updatedAt: Timestamp.now(),
+        });
+      }
 
-      updates.trainerId = trainerId;
-      updates.trainerName = newTrainer.name;
-      updates.trainerType = newTrainer.role;
-      newTrainerId = trainerId;
+      // Add group to newly assigned trainers
+      const trainersToAdd = trainerIds.filter((id) => !existingGroup.trainerIds.includes(id));
+      for (const tid of trainersToAdd) {
+        batch.update(db.collection(USERS_COLLECTION).doc(tid), {
+          managedGroupIds: FieldValue.arrayUnion(groupId),
+          updatedAt: Timestamp.now(),
+        });
+      }
+
+      updates.trainerIds = trainerIds;
+      updates.trainerNames = newTrainerNames;
     }
 
     // Handle leader update
     if (leaderId && leaderId !== existingGroup.leaderId) {
       console.log(`[UpdateGroup] Updating leader from ${existingGroup.leaderId} to ${leaderId}...`);
 
-      const leaderCheck = await verifyUserRole(leaderId, ['group_leader']);
+      // Accept agent or group_leader — role will be updated automatically
+      const leaderCheck = await verifyUserRole(leaderId, ['agent', 'group_leader']);
       if (!leaderCheck.valid) {
         res.status(
           leaderCheck.error?.includes('not found')
@@ -420,6 +445,24 @@ export async function updateGroup(req: Request, res: Response): Promise<void> {
         });
         return;
       }
+
+      // Demote the old leader back to agent (if one exists)
+      if (existingGroup.leaderId) {
+        const oldLeaderRef = db.collection(USERS_COLLECTION).doc(existingGroup.leaderId);
+        batch.update(oldLeaderRef, {
+          role: 'agent',
+          updatedAt: Timestamp.now(),
+        });
+        console.log(`[UpdateGroup] Demoted old leader ${existingGroup.leaderId} to agent`);
+      }
+
+      // Promote the new leader to group_leader
+      const newLeaderRef = db.collection(USERS_COLLECTION).doc(leaderId);
+      batch.update(newLeaderRef, {
+        role: 'group_leader',
+        updatedAt: Timestamp.now(),
+      });
+      console.log(`[UpdateGroup] Promoted ${leaderId} to group_leader`);
 
       updates.leaderId = leaderId;
       updates.leaderName = newLeader.name;
@@ -472,8 +515,21 @@ export async function updateGroup(req: Request, res: Response): Promise<void> {
         });
       }
 
-      // Add new members
+      // Add new members — if already in another group, remove them from it first
       for (const memberId of membersToAdd) {
+        const memberDoc = await db.collection(USERS_COLLECTION).doc(memberId).get();
+        const memberData = memberDoc.data();
+
+        if (memberData?.groupId && memberData.groupId !== groupId) {
+          const oldGroupRef = db.collection(GROUPS_COLLECTION).doc(memberData.groupId);
+          batch.update(oldGroupRef, {
+            memberIds: FieldValue.arrayRemove(memberId),
+            memberCount: FieldValue.increment(-1),
+            updatedAt: Timestamp.now(),
+          });
+          console.log(`[UpdateGroup] Removed member ${memberId} from previous group ${memberData.groupId}`);
+        }
+
         const memberRef = db.collection(USERS_COLLECTION).doc(memberId);
         batch.update(memberRef, {
           groupId,
@@ -579,12 +635,13 @@ export async function deleteGroup(req: Request, res: Response): Promise<void> {
       });
     }
 
-    // Remove group from trainer's managedGroupIds
-    const trainerRef = db.collection(USERS_COLLECTION).doc(group.trainerId);
-    batch.update(trainerRef, {
-      managedGroupIds: FieldValue.arrayRemove(groupId),
-      updatedAt: Timestamp.now(),
-    });
+    // Remove group from all trainers' managedGroupIds
+    for (const trainerId of group.trainerIds) {
+      batch.update(db.collection(USERS_COLLECTION).doc(trainerId), {
+        managedGroupIds: FieldValue.arrayRemove(groupId),
+        updatedAt: Timestamp.now(),
+      });
+    }
 
     // Delete group document
     const groupRef = db.collection(GROUPS_COLLECTION).doc(groupId);
@@ -648,14 +705,15 @@ export async function getGroup(req: Request, res: Response): Promise<void> {
 
     // Check permissions
     const isAdmin = req.user.role === 'admin';
+    const isMasterTrainer = req.user.role === 'master_trainer';
     const isTrainerOfGroup =
-      (req.user.role === 'trainer' || req.user.role === 'master_trainer') &&
+      req.user.role === 'trainer' &&
       req.user.managedGroupIds?.includes(groupId);
     const isGroupLeader =
       req.user.role === 'group_leader' &&
       req.user.groupId === groupId;
 
-    if (!isAdmin && !isTrainerOfGroup && !isGroupLeader) {
+    if (!isAdmin && !isMasterTrainer && !isTrainerOfGroup && !isGroupLeader) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'You do not have permission to view this group',
       });
@@ -718,8 +776,8 @@ export async function getAllGroups(req: Request, res: Response): Promise<void> {
 
     let groups: Group[] = [];
 
-    // Admin sees all groups
-    if (req.user.role === 'admin') {
+    // Admin and Master Trainer see all groups
+    if (req.user.role === 'admin' || req.user.role === 'master_trainer') {
       const snapshot = await db.collection(GROUPS_COLLECTION).orderBy('name').get();
       groups = snapshot.docs.map((doc) => ({
         id: doc.id,
@@ -727,7 +785,7 @@ export async function getAllGroups(req: Request, res: Response): Promise<void> {
       })) as Group[];
     }
     // Trainers see only their managed groups
-    else if (req.user.role === 'trainer' || req.user.role === 'master_trainer') {
+    else if (req.user.role === 'trainer') {
       const managedGroupIds = req.user.managedGroupIds || [];
 
       if (managedGroupIds.length === 0) {
