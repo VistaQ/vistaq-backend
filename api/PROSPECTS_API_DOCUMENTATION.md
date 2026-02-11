@@ -5,7 +5,7 @@
 The Prospects Management System handles the complete 3-stage sales cycle:
 1. **Prospect** - Initial lead entry
 2. **Appointment** - Scheduling and tracking meetings
-3. **Sales** - Recording outcomes and products sold
+3. **Sales Outcome** - Recording outcomes and products sold
 
 ## Table of Contents
 
@@ -33,22 +33,21 @@ Authorization: Bearer <firebase_id_token>
 
 ### User Roles
 
-| Role | Can Create | Can View | Can Update |
-|------|-----------|----------|------------|
-| **agent** | Own prospects | Own prospects only | Own prospects only |
-| **manager** | Own prospects | Own + team prospects (same groupId) | Own prospects only |
-| **admin** | Own prospects | All prospects | All prospects |
+| Role | Can Create | Can View Own | Can View Group | Can Update | Can Delete |
+|------|-----------|-------------|----------------|------------|------------|
+| **agent** | ✅ | ✅ Own only (by `uid`) | ❌ | ✅ Own only | ✅ Own only |
+| **group_leader** | ✅ | ✅ Own only (by `uid`) | ❌ | ✅ Own only | ✅ Own only |
+| **trainer** | ❌ | ❌ | ✅ Managed groups only | ❌ | ❌ |
+| **master_trainer** | ❌ | ✅ Any prospect | ✅ Any group | ❌ | ❌ |
+| **admin** | ❌ | ✅ Any prospect | ✅ Any group | ✅ Any | ✅ Any |
 
 ### Permission Rules
 
-- **View Prospects:**
-  - Agents: Only their own prospects (`uid === user.uid`)
-  - Managers: Their team's prospects (`groupId === user.groupId`)
-  - Admins: All prospects
-
-- **Update Prospects:**
-  - Agents: Only their own prospects
-  - Admins: Any prospects
+- **Create Prospects:** agents and group leaders only
+- **View by ID (`GET /prospects/:id`):** Admin and Master Trainer can view any prospect. Trainer can view prospects in their managed groups. Group Leader and Agent can only view their own prospects (matched by `uid`).
+- **View group prospects (`GET /prospects/group/:groupId`):** Admin, Master Trainer, and Trainer (managed groups only) can access. Group Leaders and Agents are blocked (403).
+- **Update Prospects:** owner (`uid` match) or admin only
+- **Delete Prospect (`DELETE /prospects/:id`):** Admin can delete any prospect. Agent and Group Leader can delete their own prospects only (checked via `prospect.uid === req.user.uid`).
 
 ---
 
@@ -60,7 +59,7 @@ Authorization: Bearer <firebase_id_token>
 
 **Description:** Create a new prospect record at the prospect stage.
 
-**Required Role:** `agent`, `manager`
+**Required Role:** `agent`, `group_leader`
 
 **Request Body:**
 ```json
@@ -87,7 +86,7 @@ Authorization: Bearer <firebase_id_token>
 
 **Auto-Generated Fields:**
 - `uid`: Firebase Auth UID (for permissions)
-- `agentCode`: Agent code from authenticated user (e.g., "A001")
+- `agentCode`: Agent code from authenticated user (e.g., "AGT47291")
 - `agentName`, `agentEmail`: From authenticated user
 - `groupId`, `groupName`: From authenticated user
 - `currentStage`: "prospect"
@@ -119,7 +118,7 @@ Authorization: Bearer <firebase_id_token>
       "prospectEmail": "john@example.com",
       "prospectPhone": "+60123456789",
       "uid": "firebase_uid_123",
-      "agentCode": "A001",
+      "agentCode": "AGT47291",
       "agentName": "Agent Smith",
       "groupId": "group456",
       "groupName": "Team Alpha",
@@ -147,7 +146,7 @@ Authorization: Bearer <firebase_id_token>
     "currentStage": "appointment",
     "prospectName": "John Doe",
     "uid": "firebase_uid_123",
-    "agentCode": "A001",
+    "agentCode": "AGT47291",
     "appointmentDate": { "_seconds": 1234567890, "_nanoseconds": 0 },
     "appointmentTime": "10:00 AM",
     "appointmentStatus": "completed",
@@ -180,23 +179,33 @@ Authorization: Bearer <firebase_id_token>
 {
   "currentStage": "appointment",
   "appointmentDate": "2025-02-10T10:00:00Z",
-  "appointmentTime": "10:00 AM",
-  "appointmentStatus": "completed"
+  "appointmentStatus": "completed",
+  "location": "KL Sentral",
+  "salesPartsCompleted": {
+    "social": true,
+    "factFinding": false,
+    "presentation": false
+  }
 }
 ```
 
 **Validation:**
-- Moving to appointment stage requires `appointmentDate` and `appointmentTime`
-- Valid `appointmentStatus` values: `"not_done"`, `"completed"`, `"declined"`, `"kiv"`
+- `appointmentDate` is required when moving to appointment stage
+- `appointmentStatus` defaults to `"not_done"` if not provided
+- Valid `appointmentStatus` values: `"not_done"`, `"scheduled"`, `"rescheduled"`, `"completed"`, `"declined"`, `"kiv"`
+
+**Optional fields:**
+- `location`: Meeting location (string)
+- `salesPartsCompleted`: Track which parts have been done
 
 **Auto-Generated:**
-- `appointmentCompletedAt`: Set when status = "completed" (only on first completion)
+- `appointmentCompletedAt`: Set when status = `"completed"` (only on first completion)
 - Stage added to `stageHistory`
 
-#### Update to Sales Stage (Successful):
+#### Update to Sales Outcome Stage (Successful):
 ```json
 {
-  "currentStage": "sales",
+  "currentStage": "sales_outcome",
   "salesPartsCompleted": {
     "social": true,
     "factFinding": true,
@@ -227,10 +236,10 @@ Authorization: Bearer <firebase_id_token>
 - `salesCompletedAt`: Current timestamp (only on first completion)
 - Stage added to `stageHistory`
 
-#### Update to Sales Stage (Unsuccessful):
+#### Update to Sales Outcome Stage (Unsuccessful):
 ```json
 {
-  "currentStage": "sales",
+  "currentStage": "sales_outcome",
   "salesOutcome": "unsuccessful",
   "unsuccessfulReason": "Customer decided not to proceed"
 }
@@ -242,9 +251,13 @@ Authorization: Bearer <firebase_id_token>
 #### Update Individual Fields (Without Stage Change):
 ```json
 {
-  "appointmentStatus": "declined"
+  "appointmentStatus": "rescheduled",
+  "appointmentDate": "2025-03-01T14:00:00Z",
+  "location": "Petaling Jaya"
 }
 ```
+
+Valid `salesOutcome` values for field-only updates: `"successful"`, `"unsuccessful"`, `"kiv"`
 
 **Response (200 OK):**
 ```json
@@ -267,7 +280,7 @@ Authorization: Bearer <firebase_id_token>
 
 **Description:** Get all prospects for a specific group.
 
-**Required Role:** `manager` (own group only), `admin` (any group)
+**Required Role:** `trainer` (managed groups only), `master_trainer` (any group), `admin` (any group). Group Leaders and Agents are **blocked** (403 Forbidden).
 
 **Query Parameters:**
 - `limit` (optional): Number of records to return
@@ -315,12 +328,52 @@ Authorization: Bearer <firebase_id_token>
     {
       "id": "prospect_123",
       "currentStage": "sales",
-      "agentCode": "A001",
+      "agentCode": "AGT47291",
       "agentName": "Agent Smith",
       "groupName": "Team Alpha",
       ...
     }
   ]
+}
+```
+
+---
+
+### 7. Delete Prospect
+
+**Endpoint:** `DELETE /api/prospects/:id`
+
+**Description:** Permanently deletes a prospect record from Firestore. This action is irreversible. A server-side audit log entry is written on successful deletion.
+
+**Required Role:** `admin` (any prospect), `agent` or `group_leader` (own prospects only, checked via `prospect.uid === req.user.uid`)
+
+**URL Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | The Firestore document ID of the prospect |
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Prospect deleted successfully"
+}
+```
+
+**Error Responses:**
+
+| Status | Reason |
+|--------|--------|
+| `401 Unauthorized` | No valid auth token |
+| `403 Forbidden` | Requesting user is not the owner and is not an admin |
+| `404 Not Found` | No prospect with the given ID exists |
+| `500 Internal Server Error` | Unexpected server error |
+
+**Error (403 Forbidden) — non-owner attempting deletion:**
+```json
+{
+  "error": "You do not have permission to delete this prospect"
 }
 ```
 
@@ -335,7 +388,7 @@ interface ProspectRecord {
   id?: string;
 
   // Stage tracking
-  currentStage: 'prospect' | 'appointment' | 'sales';
+  currentStage: 'prospect' | 'appointment' | 'sales_outcome';
   stageHistory: Array<{
     stage: string;
     enteredAt: Timestamp;
@@ -343,7 +396,7 @@ interface ProspectRecord {
 
   // Agent info (denormalized)
   uid: string;              // Firebase Auth UID (for permissions)
-  agentCode: string;        // Agent code (e.g., "A001")
+  agentCode: string;        // Agent code (e.g., "AGT47291")
   agentName: string;
   agentEmail: string;
   groupId: string;
@@ -358,7 +411,8 @@ interface ProspectRecord {
   // Appointment stage
   appointmentDate?: Timestamp;
   appointmentTime?: string;
-  appointmentStatus?: 'not_done' | 'completed' | 'declined' | 'kiv';
+  location?: string;
+  appointmentStatus?: 'not_done' | 'scheduled' | 'rescheduled' | 'completed' | 'declined' | 'kiv';
   appointmentCompletedAt?: Timestamp;
 
   // Sales stage
@@ -372,7 +426,7 @@ interface ProspectRecord {
     aceAmount: number;
   }>;
   totalACE?: number;
-  salesOutcome?: 'successful' | 'unsuccessful';
+  salesOutcome?: 'successful' | 'unsuccessful' | 'kiv';
   unsuccessfulReason?: string;
   salesCompletedAt?: Timestamp;
 
@@ -416,8 +470,8 @@ curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
   -d '{
     "currentStage": "appointment",
     "appointmentDate": "2025-02-10T10:00:00Z",
-    "appointmentTime": "10:00 AM",
-    "appointmentStatus": "completed"
+    "appointmentStatus": "completed",
+    "location": "KL Sentral"
   }'
 ```
 
@@ -427,7 +481,7 @@ curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "currentStage": "sales",
+    "currentStage": "sales_outcome",
     "salesPartsCompleted": {
       "social": true,
       "factFinding": true,
@@ -449,7 +503,7 @@ curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "currentStage": "sales",
+    "currentStage": "sales_outcome",
     "salesOutcome": "unsuccessful",
     "unsuccessfulReason": "Customer not interested"
   }'
@@ -537,17 +591,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /prospects/{prospectId} {
-      // Allow read if user is the agent (by uid), in the same group (manager), or admin
+      // Allow read if user is the agent (by uid), in the same group (group_leader), or admin
       allow read: if request.auth != null && (
         resource.data.uid == request.auth.uid ||
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager' &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'group_leader' &&
          resource.data.groupId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.groupId) ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
       );
 
-      // Allow create if authenticated as agent or manager
+      // Allow create if authenticated as agent or group_leader
       allow create: if request.auth != null && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['agent', 'manager']
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['agent', 'group_leader']
       );
 
       // Allow update if owner (by uid) or admin
@@ -566,7 +620,7 @@ service cloud.firestore {
 
 1. **Dual Identifiers:**
    - `uid`: Firebase Auth UID - used for authentication and permissions
-   - `agentCode`: Business agent code (e.g., "A001") - used for business logic and reporting
+   - `agentCode`: Business code supplied by the client at user creation - used for business logic and reporting; `GET /prospects/my-prospects` queries by `agentCode`
 
 2. **Denormalization:** Agent and group information is stored directly in each prospect record to optimize read performance and maintain historical accuracy.
 
@@ -593,13 +647,40 @@ service cloud.firestore {
 - [ ] Complete successful sale with products
 - [ ] Record unsuccessful sale with reason
 - [ ] Test agent can only view own prospects (by uid)
-- [ ] Test manager can view team prospects
+- [ ] Test group_leader can view team prospects
 - [ ] Test admin can view all prospects
 - [ ] Test permission denial for unauthorized updates
 - [ ] Verify totalACE calculation
 - [ ] Verify timestamp generation and idempotency
 - [ ] Test stage history tracking
 - [ ] Verify agentCode is stored correctly
+
+---
+
+## Changelog
+
+### Version 1.3.0 (2026-02-12)
+- Updated `DELETE /prospects/:id`: endpoint moved from `/admin/prospects/:id` to `/prospects/:id`. Admin can delete any prospect; Agent and Group Leader can delete their own prospects only (ownership checked via `prospect.uid === req.user.uid`). Added 403 response for non-owners attempting to delete another user's prospect.
+
+### Version 1.2.0 (2026-02-12)
+- New endpoint: `DELETE /admin/prospects/:id` — Admin only, permanently deletes a prospect record
+- `GET /prospects/:id` (`canViewProspect`): Master Trainer can now view any prospect (same as Admin). Trainer can view prospects in managed groups. Group Leader and Agent can only view their own prospects (by `uid`).
+- `GET /prospects/group/:groupId`: Group Leaders and Agents are now blocked (403). Only Admin, Master Trainer, and Trainer (managed groups only) can access this endpoint.
+- Updated permissions table to add `Can Delete` column and reflect accurate per-role access
+
+### Version 1.1.0 (2026-02-11)
+- **Breaking:** renamed stage `"sales"` → `"sales_outcome"` to match actual controller value
+- Fixed appointment stage: `appointmentTime` is not required (only `appointmentDate` is)
+- Added `location` field to appointment stage (optional)
+- Added missing `appointmentStatus` values: `"scheduled"` and `"rescheduled"`
+- Added `"kiv"` as valid `salesOutcome` value for field-only updates
+- Fixed `GET /prospects/group/:groupId` permissions: trainers/master_trainers can also view any group's prospects
+- Updated `agentCode` examples and notes to reflect client-supplied value
+- Updated permissions table to include trainer/master_trainer row
+- Added `location` field to `ProspectRecord` interface
+
+### Version 1.0.0 (Initial Release)
+- Initial Prospects Management API documentation
 
 ---
 

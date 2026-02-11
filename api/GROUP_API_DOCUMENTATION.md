@@ -17,15 +17,15 @@ All endpoints require authentication via Bearer token unless specified otherwise
 
 **Authentication**: Required (Admin only)
 
-**Description**: Creates a new group with a trainer, leader, and members.
+**Description**: Creates a new group with one or more trainers, a leader, and members.
 
 **Request Body**:
 ```typescript
 {
-  name: string;          // Required, min 3 characters
-  trainerId: string;     // Required, must be Firebase UID of trainer/master_trainer
-  leaderId: string;      // Required, must be Firebase UID of group_leader
-  memberIds: string[];   // Required, array of Firebase UIDs (must include leaderId)
+  name: string;           // Required, min 3 characters
+  trainerIds: string[];   // Required, non-empty array of Firebase UIDs of trainer/master_trainer users
+  leaderId: string;       // Required, must be Firebase UID of group_leader
+  memberIds: string[];    // Required, array of Firebase UIDs (must include leaderId)
 }
 ```
 
@@ -33,7 +33,7 @@ All endpoints require authentication via Bearer token unless specified otherwise
 ```json
 {
   "name": "MDRT STAR",
-  "trainerId": "dJ4kL9mN2pQ8rS6tU0vW",
+  "trainerIds": ["dJ4kL9mN2pQ8rS6tU0vW", "xY9zA0bC1dE2fG3hI4jK"],
   "leaderId": "aB1cD2eF3gH4iJ5kL6mN",
   "memberIds": [
     "aB1cD2eF3gH4iJ5kL6mN",
@@ -72,6 +72,11 @@ All endpoints require authentication via Bearer token unless specified otherwise
   "error": "User dJ4kL9mN2pQ8rS6tU0vW does not have required role (expected: trainer or master_trainer, got: agent)"
 }
 ```
+```json
+{
+  "error": "trainerIds must be a non-empty array"
+}
+```
 
 - **404 Not Found**:
 ```json
@@ -82,14 +87,15 @@ All endpoints require authentication via Bearer token unless specified otherwise
 
 **Validations**:
 - Name: Required, minimum 3 characters
-- trainerId: Must exist and have role 'trainer' or 'master_trainer'
-- leaderId: Must exist, have role 'group_leader', and be in memberIds
+- trainerIds: Must be a non-empty array; each UID must exist and have role 'trainer' or 'master_trainer'
+- leaderId: Must exist, have role `agent` or `group_leader`, and be in memberIds. If the user is an `agent`, they are automatically promoted to `group_leader` in the same atomic batch.
 - memberIds: Required non-empty array, all users must exist
 
 **Side Effects**:
 - Creates group document in Firestore
 - Updates all members' `groupId` and `groupName` fields
-- Adds groupId to trainer's `managedGroupIds` array
+- Adds groupId to each trainer's `managedGroupIds` array
+- If `leaderId` user has role `agent`, promotes them to `group_leader`
 
 ---
 
@@ -107,10 +113,10 @@ All endpoints require authentication via Bearer token unless specified otherwise
 **Request Body**:
 ```typescript
 {
-  name?: string;          // Optional, min 3 characters if provided
-  trainerId?: string;     // Optional, must be Firebase UID of trainer/master_trainer
-  leaderId?: string;      // Optional, must be Firebase UID of group_leader
-  memberIds?: string[];   // Optional, array of Firebase UIDs (must include leaderId)
+  name?: string;            // Optional, min 3 characters if provided
+  trainerIds?: string[];    // Optional, full replacement list of trainer UIDs (must be trainer or master_trainer)
+  leaderId?: string;        // Optional, Firebase UID of agent or group_leader (will be promoted)
+  memberIds?: string[];     // Optional, array of Firebase UIDs (must include leaderId)
 }
 ```
 
@@ -158,14 +164,15 @@ All endpoints require authentication via Bearer token unless specified otherwise
 **Validations**:
 - At least one field must be provided
 - If name provided: minimum 3 characters
-- If trainerId provided: must exist and have correct role
-- If leaderId provided: must be in memberIds (existing or provided)
+- If trainerIds provided: must be a non-empty array; each UID must exist and have correct role
+- If leaderId provided: must have role `agent` or `group_leader`; must be in memberIds (existing or provided)
 - If memberIds provided: non-empty array, all must exist, must include current/new leaderId
 
 **Side Effects**:
 - Updates group document
-- If trainer changed: updates both old and new trainer's `managedGroupIds`
-- If members changed: updates removed members (clears groupId/groupName) and new members (sets groupId/groupName)
+- If trainerIds changed: removes groupId from dropped trainers' `managedGroupIds`; adds groupId to newly added trainers' `managedGroupIds`
+- If leader changed: old leader's role demoted to `agent`; new user's role promoted to `group_leader`
+- If members changed: removed members have `groupId`/`groupName` cleared to null; added members have `groupId`/`groupName` set. If an added member is already in another group, they are automatically removed from that previous group atomically (group's `memberIds` and `memberCount` updated).
 - If name changed: updates all current members' `groupName`
 
 ---
@@ -208,7 +215,7 @@ All endpoints require authentication via Bearer token unless specified otherwise
 **Side Effects**:
 - Deletes group document from Firestore
 - Clears `groupId` and `groupName` for all members
-- Removes groupId from trainer's `managedGroupIds`
+- Removes groupId from all trainers' `managedGroupIds`
 
 ---
 
@@ -238,9 +245,8 @@ All endpoints require authentication via Bearer token unless specified otherwise
     "leaderId": "aB1cD2eF3gH4iJ5kL6mN",
     "leaderName": "John Doe",
     "leaderEmail": "john.doe@example.com",
-    "trainerId": "dJ4kL9mN2pQ8rS6tU0vW",
-    "trainerName": "Jane Smith",
-    "trainerType": "master_trainer",
+    "trainerIds": ["dJ4kL9mN2pQ8rS6tU0vW", "xY9zA0bC1dE2fG3hI4jK"],
+    "trainerNames": ["Jane Smith", "Mark Lee"],
     "memberIds": [
       "aB1cD2eF3gH4iJ5kL6mN",
       "oP7qR8sT9uV0wX1yZ2aB",
@@ -267,7 +273,7 @@ All endpoints require authentication via Bearer token unless specified otherwise
       "uid": "aB1cD2eF3gH4iJ5kL6mN",
       "name": "John Doe",
       "email": "john.doe@example.com",
-      "agentCode": "A001",
+      "agentCode": "AGT47291",
       "totalPoints": 2000,
       "totalProspects": 60,
       "totalAppointments": 40,
@@ -280,7 +286,7 @@ All endpoints require authentication via Bearer token unless specified otherwise
       "uid": "oP7qR8sT9uV0wX1yZ2aB",
       "name": "Alice Johnson",
       "email": "alice.j@example.com",
-      "agentCode": "A002",
+      "agentCode": "AGT81234",
       "totalPoints": 1500,
       "totalProspects": 45,
       "totalAppointments": 30,
@@ -293,7 +299,7 @@ All endpoints require authentication via Bearer token unless specified otherwise
       "uid": "cD3eF4gH5iJ6kL7mN8oP",
       "name": "Bob Williams",
       "email": "bob.w@example.com",
-      "agentCode": "A003",
+      "agentCode": "AGT63047",
       "totalPoints": 1500,
       "totalProspects": 45,
       "totalAppointments": 30,
@@ -348,9 +354,8 @@ All endpoints require authentication via Bearer token unless specified otherwise
       "leaderId": "aB1cD2eF3gH4iJ5kL6mN",
       "leaderName": "John Doe",
       "leaderEmail": "john.doe@example.com",
-      "trainerId": "dJ4kL9mN2pQ8rS6tU0vW",
-      "trainerName": "Jane Smith",
-      "trainerType": "master_trainer",
+      "trainerIds": ["dJ4kL9mN2pQ8rS6tU0vW", "xY9zA0bC1dE2fG3hI4jK"],
+      "trainerNames": ["Jane Smith", "Mark Lee"],
       "memberIds": ["aB1cD2eF3gH4iJ5kL6mN", "oP7qR8sT9uV0wX1yZ2aB"],
       "memberCount": 2,
       "totalProspects": 150,
@@ -368,9 +373,8 @@ All endpoints require authentication via Bearer token unless specified otherwise
       "leaderId": "qR9sT0uV1wX2yZ3aB4cD",
       "leaderName": "Sarah Miller",
       "leaderEmail": "sarah.m@example.com",
-      "trainerId": "dJ4kL9mN2pQ8rS6tU0vW",
-      "trainerName": "Jane Smith",
-      "trainerType": "master_trainer",
+      "trainerIds": ["dJ4kL9mN2pQ8rS6tU0vW"],
+      "trainerNames": ["Jane Smith"],
       "memberIds": ["qR9sT0uV1wX2yZ3aB4cD", "eF5gH6iJ7kL8mN9oP0qR"],
       "memberCount": 2,
       "totalProspects": 80,
@@ -415,10 +419,9 @@ interface Group {
   leaderName: string;
   leaderEmail: string;
 
-  // Trainer
-  trainerId: string;
-  trainerName: string;
-  trainerType: 'trainer' | 'master_trainer';
+  // Trainers
+  trainerIds: string[];
+  trainerNames: string[];
 
   // Members
   memberIds: string[];
@@ -456,6 +459,21 @@ interface GroupMember {
   status: string;
 }
 ```
+
+---
+
+## User Creation and Group Assignment
+
+When users are created via `POST /admin/users`, group documents are updated automatically as a side effect — no separate group update call is needed:
+
+| User Role Created | Group Side Effect |
+|-------------------|-------------------|
+| `agent` | `memberIds` += uid; `memberCount` incremented |
+| `group_leader` | `memberIds` += uid; `memberCount` incremented; `leaderId`, `leaderName`, `leaderEmail` set |
+| `trainer` / `master_trainer` | UID appended to `trainerIds`, name appended to `trainerNames` on all groups in `managedGroupIds` |
+| `admin` | No group side effects |
+
+See `USER_API_DOCUMENTATION.md` → §7 (Create User) for full details.
 
 ---
 
@@ -504,7 +522,7 @@ curl -X POST http://localhost:3000/api/admin/groups \
   -H "Content-Type: application/json" \
   -d '{
     "name": "MDRT STAR",
-    "trainerId": "trainer-uid-123",
+    "trainerIds": ["trainer-uid-123", "trainer-uid-456"],
     "leaderId": "leader-uid-456",
     "memberIds": ["leader-uid-456", "agent-uid-789"]
   }'
@@ -557,6 +575,23 @@ curl -X DELETE http://localhost:3000/api/admin/groups/xyz789abc123def456 \
 ---
 
 ## Changelog
+
+### Version 1.3.0 (2026-02-12)
+- `createGroup`: `leaderId` now accepts `agent` OR `group_leader` role — agents are automatically promoted to `group_leader` in the same atomic batch write
+- `updateGroup`: when adding a member who is already in another group, they are automatically removed from their previous group atomically (previous group's `memberIds` and `memberCount` are updated in the same batch)
+
+### Version 1.2.0 (2026-02-11)
+- Multi-trainer support: `trainerId`/`trainerName`/`trainerType` replaced by `trainerIds: string[]` and `trainerNames: string[]` in Group data model
+- `POST /admin/groups`: `trainerId` field replaced by `trainerIds` (non-empty array)
+- `PUT /admin/groups/:groupId`: `trainerId` field replaced by `trainerIds` (full replacement list); diff logic removes group from dropped trainers and adds to new trainers
+- `DELETE /admin/groups/:groupId`: group removed from all trainers in `trainerIds`
+- Updated all request body schemas, example JSON, TypeScript interfaces, response examples, and cURL samples
+
+### Version 1.1.0 (2026-02-11)
+- Corrected `leaderId` validation for Update Group: accepts `agent` or `group_leader` role (not `group_leader` only) — the user is promoted automatically
+- Expanded Update Group side effects to document leader demotion/promotion and trainer `managedGroupIds` sync
+- Updated `agentCode` examples to use a realistic client-supplied value
+- Added "User Creation and Group Assignment" section cross-referencing `POST /admin/users` side effects
 
 ### Version 1.0.0 (Initial Release)
 - Created group management system

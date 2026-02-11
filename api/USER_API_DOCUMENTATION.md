@@ -332,9 +332,9 @@ Content-Type: application/json
   "name": "John Doe",
   "phone": "+60123456789",
   "location": "Kuala Lumpur",
+  "email": "new.email@example.com",
   "agency": "ABC Insurance",
   "role": "group_leader",
-  "groupId": "group123",
   "status": "active"
 }
 ```
@@ -355,9 +355,9 @@ Content-Type: application/json
 | name | string | No | User's full name (min 2 chars) |
 | phone | string | No | Phone number |
 | location | string | No | Location/city |
+| email | string | Yes | Email address — updates both Firebase Auth and Firestore; returns 409 if already in use |
 | agency | string | Yes | Insurance agency name |
 | role | string | Yes | User role (admin, master_trainer, trainer, group_leader, agent) |
-| groupId | string \| null | Yes | Group ID (set to null to remove from group) |
 | status | string | Yes | User status (active, inactive, suspended) |
 
 **Success Response (200 OK):**
@@ -389,17 +389,18 @@ Content-Type: application/json
     "error": "You can only update your name, phone, and location. Other fields require admin privileges."
   }
   ```
-- `404 Not Found`: User or group not found
+- `404 Not Found`: User not found
   ```json
   { "error": "User not found" }
   ```
+- `409 Conflict`: Email already in use (only when updating `email`)
   ```json
-  { "error": "Group not found" }
+  { "error": "Email already in use" }
   ```
 
 **Notes:**
-- When updating `groupId`, the system automatically fetches and updates `groupName`
-- Setting `groupId` to `null` will clear both `groupId` and `groupName`
+- Group assignment is handled exclusively by the Group API (`PUT /admin/groups/:groupId`). The `groupId` field is not accepted in this endpoint.
+- When updating `email`, both Firebase Auth and Firestore are updated atomically. Returns 409 if the email is already in use by another account.
 - Admin actions are logged for audit purposes
 
 ---
@@ -408,7 +409,7 @@ Content-Type: application/json
 
 Updates a user's status and enables/disables their Firebase Auth account.
 
-**Endpoint:** `PATCH /users/:userId/status`
+**Endpoint:** `PATCH /admin/users/:userId/status`
 
 **Authorization:** Admin only
 
@@ -462,11 +463,146 @@ Content-Type: application/json
 
 ---
 
-### 7. Delete User
+### 7. Create User (Admin)
+
+Creates a new user account. All users start unassigned to any group. Group assignment is done separately via `PUT /admin/groups/:groupId` after user creation.
+
+**Endpoint:** `POST /admin/users`
+
+**Authorization:** Admin only
+
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```typescript
+{
+  "email": string,          // Required
+  "password": string,       // Required — min 6 characters
+  "name": string,           // Required
+  "role": UserRole,         // Required — see roles below
+
+  // For role "agent" or "group_leader" only
+  "agentCode": string,      // Required for agent/group_leader — supplied by client
+
+  // Optional profile fields
+  "agency": string,
+  "location": string,
+  "phone": string
+}
+```
+
+**Role/Field Rules:**
+
+| Role | `agentCode` |
+|------|-------------|
+| `admin` | Not allowed |
+| `master_trainer` | Not allowed |
+| `trainer` | Not allowed |
+| `group_leader` | Required |
+| `agent` | Required |
+
+**Success Response (201 Created):**
+```json
+{
+  "success": true,
+  "userId": "uid_abc123",
+  "agentCode": "AGT47291",
+  "message": "User created successfully"
+}
+```
+
+> `agentCode` is only present in the response for `agent` and `group_leader` roles (echoed back from the request).
+
+**Behaviour Notes:**
+
+- All users are created with `groupId: null` and `groupName: null`.
+- Trainers and master trainers are created with `managedGroupIds: []`.
+- Group assignment is done exclusively via the Group API (`PUT /admin/groups/:groupId`).
+
+**Error Responses:**
+```json
+// Missing agentCode for agent/group_leader
+{ "error": "Agents and group leaders must have an agent code" }
+
+// Email already in use
+{ "error": "Email already exists" }
+```
+
+**Status Codes:**
+- `201 Created`: User created
+- `400 Bad Request`: Validation failure
+- `401 Unauthorized`: Not authenticated
+- `403 Forbidden`: Not admin
+- `409 Conflict`: Email already exists
+
+**Examples:**
+
+Create agent:
+```json
+{
+  "email": "agent@example.com",
+  "password": "password123",
+  "name": "John Doe",
+  "role": "agent",
+  "agentCode": "AGT47291",
+  "agency": "Prudential",
+  "location": "Kuala Lumpur"
+}
+```
+
+Create group leader:
+```json
+{
+  "email": "leader@example.com",
+  "password": "password123",
+  "name": "Team Leader",
+  "role": "group_leader",
+  "agentCode": "GL-001"
+}
+```
+
+Create trainer:
+```json
+{
+  "email": "trainer@example.com",
+  "password": "password123",
+  "name": "Coach Ahmad",
+  "role": "trainer",
+  "agency": "Prudential"
+}
+```
+
+Create master trainer:
+```json
+{
+  "email": "master@example.com",
+  "password": "password123",
+  "name": "Senior Master",
+  "role": "master_trainer"
+}
+```
+
+Create admin:
+```json
+{
+  "email": "admin2@example.com",
+  "password": "password123",
+  "name": "System Admin",
+  "role": "admin"
+}
+```
+
+---
+
+### 9. Delete User
 
 Permanently deletes a user from Firebase Auth and Firestore.
 
-**Endpoint:** `DELETE /users/:userId`
+**Endpoint:** `DELETE /admin/users/:userId`
 
 **Authorization:** Admin only
 
@@ -529,36 +665,52 @@ Authorization: Bearer <admin-token>
 
 ```typescript
 interface UserData {
-  uid: string;                   // Firebase Auth UID
-  email: string;                 // Email address
-  name: string;                  // Full name
-  phone: string;                 // Phone number
-  location: string;              // Location/city
-  agency: string;                // Insurance agency name
+  uid: string;                    // Firebase Auth UID
+  email: string;                  // Email address
+  name: string;                   // Full name
+  phone: string;                  // Phone number
+  location: string;               // Location/city
+  agency: string;                 // Insurance agency name
 
-  role: UserRole;                // User role
-  permissions: string[];         // Array of permissions
+  role: UserRole;                 // User role
+  permissions: string[];          // Auto-generated from role at creation
 
-  groupId: string | null;        // Group ID (null if not in a group)
-  groupName: string | null;      // Group name (null if not in a group)
+  // Agents and group leaders only — null for trainers/admins
+  groupId: string | null;
+  groupName: string | null;
 
-  agentCode: string | null;      // Agent code (null for non-agents)
-  managedGroupIds?: string[] | null; // For trainers - groups they manage
+  // Agents and group leaders only — supplied by client at creation, null for others
+  agentCode: string | null;
 
-  totalProspects: number;        // Total prospects created
-  totalAppointments: number;     // Total appointments scheduled
-  totalSales: number;            // Total sales closed
-  totalACE: number;              // Total ACE value
-  totalPoints: number;           // Total gamification points
-  currentBadge: string;          // Current badge name
-  currentBadgeColor?: string;    // Badge color
+  // Trainers and master trainers only — null for agents/group leaders/admins
+  managedGroupIds: string[] | null;
 
-  status: UserStatus;            // Account status
+  totalProspects: number;
+  totalAppointments: number;
+  totalSales: number;
+  totalACE: number;
+  totalPoints: number;
 
-  createdAt: Timestamp | Date;   // Creation timestamp
-  updatedAt: Timestamp | Date;   // Last update timestamp
+  // Agents and group leaders only — null for trainers/admins
+  currentBadge: string | null;
+  currentBadgeColor: string | null;
+
+  status: UserStatus;
+
+  createdAt: Timestamp | Date;
+  updatedAt: Timestamp | Date;
 }
 ```
+
+**Permissions by role (auto-assigned at creation):**
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | `["*"]` |
+| `master_trainer` | `["view_managed_groups", "view_managed_sales", "view_managed_users"]` |
+| `trainer` | `["view_managed_groups", "view_managed_sales", "view_managed_users"]` |
+| `group_leader` | `["view_own_group", "view_team_sales", "create_sales", "view_own_sales"]` |
+| `agent` | `["create_sales", "view_own_sales"]` |
 
 ### UserRole
 
@@ -568,9 +720,7 @@ type UserRole =
   | 'master_trainer'
   | 'trainer'
   | 'group_leader'
-  | 'agent'
-  | 'manager'
-  | 'viewer';
+  | 'agent';
 ```
 
 ### UserStatus
@@ -590,8 +740,9 @@ type UserStatus = 'active' | 'inactive' | 'suspended';
 | GET /users | ✅ All | ✅ Managed groups | ✅ Managed groups | ❌ | ❌ |
 | GET /users/group/:groupId | ✅ All | ✅ Managed groups | ✅ Managed groups | ✅ Own group | ❌ |
 | PUT /users/:userId | ✅ All fields | ❌ | ❌ | ✅ Self (limited) | ✅ Self (limited) |
-| PATCH /users/:userId/status | ✅ | ❌ | ❌ | ❌ | ❌ |
-| DELETE /users/:userId | ✅ | ❌ | ❌ | ❌ | ❌ |
+| POST /admin/users | ✅ | ❌ | ❌ | ❌ | ❌ |
+| PATCH /admin/users/:userId/status | ✅ | ❌ | ❌ | ❌ | ❌ |
+| DELETE /admin/users/:userId | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 ---
 
@@ -622,13 +773,31 @@ curl -X PUT \
   http://localhost:3000/api/users/<your-user-id>
 ```
 
-**Admin: Update user role and group:**
+**Admin: Update user role:**
 ```bash
 curl -X PUT \
   -H "Authorization: Bearer <admin-token>" \
   -H "Content-Type: application/json" \
-  -d '{"role": "group_leader", "groupId": "group123"}' \
+  -d '{"role": "group_leader"}' \
   http://localhost:3000/api/users/<user-id>
+```
+
+**Admin: Create an agent:**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"agent@example.com","password":"password123","name":"John Doe","role":"agent","agentCode":"AGT47291"}' \
+  http://localhost:3000/api/admin/users
+```
+
+**Admin: Create a trainer:**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"trainer@example.com","password":"password123","name":"Coach Ahmad","role":"trainer"}' \
+  http://localhost:3000/api/admin/users
 ```
 
 **Admin: Deactivate a user:**
@@ -637,14 +806,14 @@ curl -X PATCH \
   -H "Authorization: Bearer <admin-token>" \
   -H "Content-Type: application/json" \
   -d '{"status": "inactive"}' \
-  http://localhost:3000/api/users/<user-id>/status
+  http://localhost:3000/api/admin/users/<user-id>/status
 ```
 
 **Admin: Delete a user:**
 ```bash
 curl -X DELETE \
   -H "Authorization: Bearer <admin-token>" \
-  http://localhost:3000/api/users/<user-id>
+  http://localhost:3000/api/admin/users/<user-id>
 ```
 
 ### Using JavaScript (Fetch API)
@@ -725,6 +894,24 @@ Common HTTP status codes:
 Currently, there are no rate limits enforced. This may change in production.
 
 ## Changelog
+
+### Version 1.3.0 (2026-02-12)
+- `UpdateUserRequest`: added `email` field (admin only) — updates both Firebase Auth and Firestore; returns 409 if email already in use
+- `UpdateUserRequest`: removed `groupId` field — group assignment is handled exclusively by the Group API (`PUT /admin/groups/:groupId`)
+- `updateUser`: `handleRoleChange` no longer requires `groupId` when transitioning trainer → agent/group_leader
+- Updated Update User request body examples, field table, notes, and error responses accordingly
+
+### Version 1.2.0 (2026-02-12)
+- `groupId` and `managedGroupIds` removed from `CreateUserRequest`; group assignment is now done exclusively via the Group API (`PUT /admin/groups/:groupId`)
+- Trainers and master trainers are created with `managedGroupIds: []`; agents and group leaders are created with `groupId: null`
+- Removed group side-effect operations from user creation (no longer updates group documents at creation time)
+
+### Version 1.1.0 (2026-02-11)
+- Added `POST /admin/users` endpoint for admin user creation
+- `agentCode` is required in the request body for `agent` and `group_leader` roles; always supplied by the client
+- `permissions` array is auto-assigned based on role at creation time
+- Corrected admin endpoint paths: status and delete now under `/admin/users/`
+- Updated `UserData` model to clarify per-role nullability of `groupId`, `agentCode`, `managedGroupIds`, `currentBadge`, `currentBadgeColor`
 
 ### Version 1.0.0 (2024-01-15)
 - Initial release of User Management API

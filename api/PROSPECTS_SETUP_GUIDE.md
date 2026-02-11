@@ -105,12 +105,13 @@ console.log('Token:', token);
 
 | Method | Endpoint | Description | Required Role |
 |--------|----------|-------------|---------------|
-| POST | `/prospects` | Create new prospect | agent, manager |
-| GET | `/prospects/my-prospects` | Get own prospects | Any |
-| GET | `/prospects/:id` | Get specific prospect | Owner/manager/admin |
-| PUT | `/prospects/:id` | Update prospect | Owner/admin |
-| GET | `/prospects/group/:groupId` | Get group prospects | manager, admin |
-| GET | `/admin/all-prospects` | Get all prospects | admin |
+| POST | `/prospects` | Create new prospect | `agent`, `group_leader` |
+| GET | `/prospects/my-prospects` | Get own prospects | Any authenticated |
+| GET | `/prospects/:id` | Get specific prospect | Own (`uid` match) / `trainer` (managed groups) / `master_trainer` (any) / `admin` (any) |
+| PUT | `/prospects/:id` | Update prospect | Owner (`uid` match) / `admin` |
+| GET | `/prospects/group/:groupId` | Get group prospects | `trainer` (managed groups), `master_trainer`, `admin` |
+| GET | `/admin/all-prospects` | Get all prospects | `admin` |
+| DELETE | `/prospects/:id` | Delete a prospect (permanent) | `admin` (any), `agent`/`group_leader` (own only) |
 
 ---
 
@@ -142,7 +143,7 @@ curl -X POST http://localhost:3000/api/prospects \
 ```json
 {
   "uid": "firebase_auth_uid",       // For permissions
-  "agentCode": "A001",              // Agent's business code
+  "agentCode": "AGT47291",          // Agent's business code (supplied by client)
   "agentName": "Agent Smith",
   "groupId": "group123",
   "prospectName": "John Doe",
@@ -167,8 +168,8 @@ curl -X PUT http://localhost:3000/api/prospects/PROSPECT_ID \
   -d '{
     "currentStage": "appointment",
     "appointmentDate": "2025-02-15T14:00:00Z",
-    "appointmentTime": "2:00 PM",
-    "appointmentStatus": "completed"
+    "appointmentStatus": "completed",
+    "location": "KL Sentral"
   }'
 ```
 
@@ -179,7 +180,7 @@ curl -X PUT http://localhost:3000/api/prospects/PROSPECT_ID \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
   -H "Content-Type: application/json" \
   -d '{
-    "currentStage": "sales",
+    "currentStage": "sales_outcome",
     "salesPartsCompleted": {
       "social": true,
       "factFinding": true,
@@ -204,12 +205,12 @@ curl -X PUT http://localhost:3000/api/prospects/PROSPECT_ID \
 
 ### Issue: "You do not have permission to view this prospect"
 **Solution:**
-- Agents can only view their own prospects (checked by `uid`)
-- Managers can view their team's prospects (same groupId)
-- Admins can view all prospects
+- Agents and Group Leaders can only view their own prospects (checked by `uid`)
+- Trainers can view prospects belonging to their managed groups
+- Master Trainers and Admins can view all prospects
 
-### Issue: "appointmentDate and appointmentTime are required"
-**Solution:** When moving to appointment stage, both fields are mandatory.
+### Issue: "appointmentDate is required for appointment stage"
+**Solution:** When moving to appointment stage, `appointmentDate` is required. `appointmentStatus` defaults to `"not_done"` if not provided.
 
 ### Issue: "productsSold is required when salesOutcome is 'successful'"
 **Solution:** Successful sales must include at least one product with aceAmount.
@@ -235,19 +236,21 @@ curl -X PUT http://localhost:3000/api/prospects/PROSPECT_ID \
    └─ Auto-create: stageHistory entry
 
 2. APPOINTMENT STAGE
-   ├─ Agent adds: appointmentDate, appointmentTime
-   ├─ Agent sets: appointmentStatus
+   ├─ Agent adds: appointmentDate (required)
+   ├─ Agent sets: appointmentStatus (default: "not_done")
+   ├─ Agent sets: location (optional)
+   ├─ Agent sets: salesPartsCompleted (optional)
    ├─ Auto-set: currentStage = "appointment"
    ├─ Auto-set: appointmentCompletedAt (if status = "completed", only once)
    └─ Auto-append: stageHistory entry
 
-3. SALES STAGE
+3. SALES OUTCOME STAGE
    ├─ Agent selects: salesPartsCompleted (social, factFinding, presentation)
-   ├─ Agent adds: productsSold with aceAmount
-   ├─ Agent sets: salesOutcome ("successful" or "unsuccessful")
+   ├─ Agent sets: salesOutcome ("successful", "unsuccessful", or "kiv")
+   ├─ If successful: require productsSold (with aceAmount per product)
    ├─ If unsuccessful: require unsuccessfulReason
    ├─ Auto-calculate: totalACE (sum of aceAmount)
-   ├─ Auto-set: currentStage = "sales"
+   ├─ Auto-set: currentStage = "sales_outcome"
    ├─ Auto-set: salesCompletedAt (only once)
    └─ Auto-append: stageHistory entry
 ```
@@ -256,11 +259,13 @@ curl -X PUT http://localhost:3000/api/prospects/PROSPECT_ID \
 
 ## 🎓 Permission Matrix
 
-| Role | Create Prospects | View Own Prospects | View Team Prospects | View All Prospects | Update Own Prospects | Update Any Prospects |
-|------|-----------------|-------------------|--------------------|--------------------|---------------------|---------------------|
-| **agent** | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| **manager** | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| **admin** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Role | Create | View Own (by `uid`) | View Group | View All | Update Own | Update Any | Delete |
+|------|--------|---------------------|------------|----------|------------|------------|--------|
+| **agent** | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ Own only |
+| **group_leader** | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ Own only |
+| **trainer** | ❌ | ❌ | ✅ Managed groups | ❌ | ❌ | ❌ | ❌ |
+| **master_trainer** | ❌ | ✅ Any | ✅ Any group | ❌ | ❌ | ❌ | ❌ |
+| **admin** | ❌ | ✅ Any | ✅ Any | ✅ | ❌ | ✅ | ✅ Any |
 
 ---
 
@@ -271,7 +276,7 @@ The system uses two identifiers for flexibility:
 | Field | Type | Purpose | Example | Set By |
 |-------|------|---------|---------|--------|
 | **uid** | System | Firebase Auth UID for permissions | `"xyz123abc..."` | Firebase Auth |
-| **agentCode** | Business | Agent's business code for reporting | `"A001"` | Admin during user creation |
+| **agentCode** | Business | Agent's business code for reporting | `"AGT47291"` | Supplied by client at user creation |
 
 ### Why Both?
 
@@ -283,7 +288,7 @@ The system uses two identifiers for flexibility:
 {
   "id": "prospect_123",
   "uid": "firebase_xyz_abc_123",      // For: Permission checks
-  "agentCode": "A001",                // For: Business reporting, agent display
+  "agentCode": "AGT47291",            // For: Business reporting, agent display
   "agentName": "John Smith",
   "prospectName": "Jane Doe",
   // ...
@@ -341,10 +346,10 @@ const prospects = await getProspectsByAgent("A001");
 ## ✅ Pre-Launch Checklist
 
 - [ ] Firestore indexes created for agentCode and groupId
-- [ ] Test user accounts created with agentCode field populated
+- [ ] Test user accounts created via `POST /admin/users` with agentCode supplied
 - [ ] All endpoints tested (create, read, update)
 - [ ] Error handling verified
-- [ ] Permission system tested (agent, manager, admin)
+- [ ] Permission system tested (agent, group_leader, trainer, admin)
 - [ ] Production environment variables set
 - [ ] Monitoring and logging configured
 - [ ] Security rules updated in Firestore
@@ -358,10 +363,10 @@ const prospects = await getProspectsByAgent("A001");
 If you encounter any issues:
 1. Check the logs for error messages
 2. Verify Firestore indexes are created
-3. Ensure user roles and agentCode are correctly set
+3. Ensure user roles are correctly set and agentCode was supplied when the user was created
 4. Review the API documentation
 5. Check Firebase Console for quota limits
-6. Verify that `agentCode` field exists in User records
+6. Verify that `agentCode` field exists in User records (must be supplied when creating users via `POST /admin/users`)
 
 ---
 
