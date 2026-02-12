@@ -5,7 +5,7 @@
  * assigned to one or more groups.
  *
  * Permission summary:
- *   Create  — Admin, Master Trainer, Trainer (trainers: own managed groups only)
+ *   Create  — Admin, Master Trainer, Trainer (own managed groups only), Group Leader (own group only)
  *   Read    — Admin (all), Trainer (managed groups), Group Leader/Agent (own group)
  *   Update  — Admin (any), Creator (own event)
  *   Delete  — Admin (any), Creator (own event)
@@ -112,7 +112,7 @@ function canViewEvent(
 /**
  * Create a new event
  * POST /events
- * Accessible by: Admin, Master Trainer, Trainer
+ * Accessible by: Admin, Master Trainer, Trainer, Group Leader
  */
 export async function createEvent(req: Request, res: Response): Promise<void> {
   try {
@@ -126,7 +126,7 @@ export async function createEvent(req: Request, res: Response): Promise<void> {
     // Only designated roles can create events
     if (!EVENT_CREATOR_ROLES.includes(req.user.role as EventCreatorRole)) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
-        error: 'Only admins, master trainers, and trainers can create events',
+        error: 'Only admins, master trainers, trainers, and group leaders can create events',
       });
       return;
     }

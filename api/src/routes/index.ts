@@ -130,7 +130,7 @@ router.get('/groups', groupController.getAllGroups);
 /**
  * POST /events
  * Create a new event/meetup
- * Accessible by: Admin, Master Trainer, Trainer
+ * Accessible by: Admin, Master Trainer, Trainer, Group Leader
  */
 router.post('/events', eventController.createEvent);
 
