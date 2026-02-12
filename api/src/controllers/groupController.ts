@@ -138,7 +138,7 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
 
     const { name, trainerIds, leaderId, memberIds } = req.body as CreateGroupRequest;
 
-    // Validate required fields
+    // name is the only required field
     if (!name || name.trim().length < 3) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
         error: 'Group name is required and must be at least 3 characters',
@@ -146,106 +146,100 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (!trainerIds || !Array.isArray(trainerIds) || trainerIds.length === 0) {
+    // trainerIds must be an array if provided
+    if (trainerIds !== undefined && !Array.isArray(trainerIds)) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'trainerIds is required and must be a non-empty array',
+        error: 'trainerIds must be an array',
       });
       return;
     }
 
-    if (!leaderId) {
+    // memberIds must be an array if provided; default to empty
+    if (memberIds !== undefined && !Array.isArray(memberIds)) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'leaderId is required',
+        error: 'memberIds must be an array',
       });
       return;
     }
+    const effectiveMemberIds: string[] = Array.isArray(memberIds) ? memberIds : [];
 
-    if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
-      res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'memberIds is required and must be a non-empty array',
-      });
-      return;
-    }
-
-    // Verify leaderId is in memberIds
-    if (!memberIds.includes(leaderId)) {
+    // If leaderId is provided it must be present in effectiveMemberIds
+    if (leaderId && !effectiveMemberIds.includes(leaderId)) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
         error: 'Leader must be included in memberIds array',
       });
       return;
     }
 
-    console.log(`[CreateGroup] Validating ${trainerIds.length} trainer(s)...`);
-
-    // Verify each trainer exists and has correct role
+    // Validate each trainer
+    const effectiveTrainerIds: string[] = Array.isArray(trainerIds) ? trainerIds : [];
     const trainerNames: string[] = [];
-    for (const trainerId of trainerIds) {
-      const trainerCheck = await verifyUserRole(trainerId, ['trainer', 'master_trainer']);
-      if (!trainerCheck.valid) {
+
+    if (effectiveTrainerIds.length > 0) {
+      console.log(`[CreateGroup] Validating ${effectiveTrainerIds.length} trainer(s)...`);
+      for (const tid of effectiveTrainerIds) {
+        const trainerCheck = await verifyUserRole(tid, ['trainer', 'master_trainer']);
+        if (!trainerCheck.valid) {
+          res.status(
+            trainerCheck.error?.includes('not found')
+              ? HttpStatusCodes.NOT_FOUND
+              : HttpStatusCodes.FORBIDDEN,
+          ).json({ error: trainerCheck.error });
+          return;
+        }
+        trainerNames.push(trainerCheck.user!.name);
+      }
+    }
+
+    // Validate leader if provided
+    let leaderUser: admin.firestore.DocumentData | undefined;
+    if (leaderId) {
+      console.log(`[CreateGroup] Validating leader ${leaderId}...`);
+      const leaderCheck = await verifyUserRole(leaderId, ['agent', 'group_leader']);
+      if (!leaderCheck.valid) {
         res.status(
-          trainerCheck.error?.includes('not found')
+          leaderCheck.error?.includes('not found')
             ? HttpStatusCodes.NOT_FOUND
-            : HttpStatusCodes.FORBIDDEN
-        ).json({
-          error: trainerCheck.error,
-        });
+            : HttpStatusCodes.FORBIDDEN,
+        ).json({ error: leaderCheck.error });
         return;
       }
-      trainerNames.push(trainerCheck.user!.name);
+      leaderUser = leaderCheck.user!;
     }
 
-    console.log(`[CreateGroup] Validating leader ${leaderId}...`);
-
-    // Verify leader exists and has an eligible role (agent gets promoted on creation)
-    const leaderCheck = await verifyUserRole(leaderId, ['agent', 'group_leader']);
-    if (!leaderCheck.valid) {
-      res.status(
-        leaderCheck.error?.includes('not found')
-          ? HttpStatusCodes.NOT_FOUND
-          : HttpStatusCodes.FORBIDDEN
-      ).json({
-        error: leaderCheck.error,
-      });
-      return;
-    }
-
-    const leaderUser = leaderCheck.user!;
-
-    console.log(`[CreateGroup] Validating ${memberIds.length} members...`);
-
-    // Verify all members exist
-    const membersCheck = await verifyUsersExist(memberIds);
-    if (!membersCheck.valid) {
-      res.status(HttpStatusCodes.NOT_FOUND).json({
-        error: membersCheck.error,
-      });
-      return;
+    // Validate members exist if any are provided
+    if (effectiveMemberIds.length > 0) {
+      console.log(`[CreateGroup] Validating ${effectiveMemberIds.length} member(s)...`);
+      const membersCheck = await verifyUsersExist(effectiveMemberIds);
+      if (!membersCheck.valid) {
+        res.status(HttpStatusCodes.NOT_FOUND).json({ error: membersCheck.error });
+        return;
+      }
     }
 
     console.log('[CreateGroup] All validations passed. Creating group...');
 
-    // Use batch write for atomic operation
+    // Atomic batch write
     const batch = db.batch();
-
-    // Create group document
     const groupRef = db.collection(GROUPS_COLLECTION).doc();
+
     const groupData = {
       name: name.trim(),
 
-      // Leadership
-      leaderId,
-      leaderName: leaderUser.name,
-      leaderEmail: leaderUser.email,
+      // Leadership — null until assigned
+      leaderId: leaderId || null,
+      leaderName: leaderUser?.name || null,
+      leaderEmail: leaderUser?.email || null,
 
       // Trainers
-      trainerIds,
+      trainerIds: effectiveTrainerIds,
       trainerNames,
 
       // Members
-      memberIds,
-      memberCount: memberIds.length,
+      memberIds: effectiveMemberIds,
+      memberCount: effectiveMemberIds.length,
 
-      // Performance stats (initialized to zero)
+      // Performance stats (initialised to zero)
       totalProspects: 0,
       totalAppointments: 0,
       totalSales: 0,
@@ -262,10 +256,9 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
 
     batch.set(groupRef, groupData);
 
-    // Update all members' group info
-    for (const memberId of memberIds) {
-      const memberRef = db.collection(USERS_COLLECTION).doc(memberId);
-      batch.update(memberRef, {
+    // Update all members' groupId / groupName
+    for (const memberId of effectiveMemberIds) {
+      batch.update(db.collection(USERS_COLLECTION).doc(memberId), {
         groupId: groupRef.id,
         groupName: name.trim(),
         updatedAt: Timestamp.now(),
@@ -273,19 +266,17 @@ export async function createGroup(req: Request, res: Response): Promise<void> {
     }
 
     // Promote leader to group_leader if they are currently an agent
-    if (leaderUser.role === 'agent') {
-      const leaderRef = db.collection(USERS_COLLECTION).doc(leaderId);
-      batch.update(leaderRef, {
+    if (leaderId && leaderUser?.role === 'agent') {
+      batch.update(db.collection(USERS_COLLECTION).doc(leaderId), {
         role: 'group_leader',
         updatedAt: Timestamp.now(),
       });
       console.log(`[CreateGroup] Promoted ${leaderId} to group_leader`);
     }
 
-    // Update each trainer's managed groups
-    for (const trainerId of trainerIds) {
-      const trainerRef = db.collection(USERS_COLLECTION).doc(trainerId);
-      batch.update(trainerRef, {
+    // Add group to each trainer's managedGroupIds
+    for (const tid of effectiveTrainerIds) {
+      batch.update(db.collection(USERS_COLLECTION).doc(tid), {
         managedGroupIds: FieldValue.arrayUnion(groupRef.id),
         updatedAt: Timestamp.now(),
       });

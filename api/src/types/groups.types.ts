@@ -7,10 +7,10 @@ export interface Group {
   id: string;
   name: string;
 
-  // Leadership
-  leaderId: string;
-  leaderName: string;
-  leaderEmail: string;
+  // Leadership (null until a leader is assigned)
+  leaderId: string | null;
+  leaderName: string | null;
+  leaderEmail: string | null;
 
   // Trainers (multiple trainers can manage a group)
   trainerIds: string[];
@@ -37,9 +37,9 @@ export interface Group {
 
 export interface CreateGroupRequest {
   name: string;
-  trainerIds: string[];
-  leaderId: string;
-  memberIds: string[];
+  trainerIds?: string[];
+  leaderId?: string;
+  memberIds?: string[];
 }
 
 export interface UpdateGroupRequest {
