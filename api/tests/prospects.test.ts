@@ -135,11 +135,15 @@ describe('Prospects API', () => {
       expect(res.body.error).toMatch(/prospectEmail/i);
     });
 
-    it('TC-P08 — missing prospectPhone returns 400', async () => {
-      const { prospectPhone: _, ...body } = validProspect();
-      const res = await createProspect(f.users.agent_star_1.token, body);
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/prospectPhone/i);
+    it('TC-P08 — prospect with only prospectName (no email or phone) returns 201', async () => {
+      const res = await createProspect(f.users.agent_star_1.token, {
+        prospectName: 'Name Only Prospect',
+      });
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({
+        success: true,
+        prospectId: expect.any(String),
+      });
     });
   });
 
@@ -302,7 +306,7 @@ describe('Prospects API', () => {
     // Each test that modifies state gets its own fresh prospect to avoid order
     // dependencies. All are tracked for cleanup via createProspect().
 
-    it('TC-P23 — prospect → appointment with valid appointmentDate returns 200', async () => {
+    it('TC-P23 — prospect → appointment with appointmentDate and optional fields returns 200', async () => {
       const created = await createProspect(
         f.users.agent_star_1.token,
         validProspect({ prospectName: 'Stage Appt Test' }),
@@ -314,6 +318,9 @@ describe('Prospects API', () => {
         .send({
           currentStage: 'appointment',
           appointmentDate: '2027-07-01T10:00:00.000Z',
+          appointmentStartTime: '10:00',
+          appointmentEndTime: '11:00',
+          appointmentLocation: 'Head Office, Level 3',
         });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -430,6 +437,30 @@ describe('Prospects API', () => {
         });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/unsuccessfulReason/i);
+    });
+
+    it('TC-P41 — appointment → sales_outcome kiv returns 200', async () => {
+      const created = await createProspect(
+        f.users.agent_star_1.token,
+        validProspect({ prospectName: 'Sales KIV Test' }),
+      );
+      const id = created.body.prospectId as string;
+
+      await auth(f.users.agent_star_1.token)
+        .put(`/api/prospects/${id}`)
+        .send({
+          currentStage: 'appointment',
+          appointmentDate: '2027-07-01T10:00:00.000Z',
+        });
+
+      const res = await auth(f.users.agent_star_1.token)
+        .put(`/api/prospects/${id}`)
+        .send({
+          currentStage: 'sales_outcome',
+          salesOutcome: 'kiv',
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
     });
 
     it('TC-P29 — invalid stage value returns 400', async () => {
