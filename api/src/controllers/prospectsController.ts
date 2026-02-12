@@ -141,8 +141,8 @@ export async function createProspect(
 
       // Prospect data
       prospectName: body.prospectName.trim(),
-      prospectEmail: body.prospectEmail?.trim().toLowerCase() || undefined,
-      prospectPhone: body.prospectPhone?.trim() || undefined,
+      ...(body.prospectEmail && { prospectEmail: body.prospectEmail.trim().toLowerCase() }),
+      ...(body.prospectPhone && { prospectPhone: body.prospectPhone.trim() }),
       prospectEnteredAt: now,
 
       // Metadata
