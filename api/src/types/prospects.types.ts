@@ -7,7 +7,7 @@ export interface ProspectRecord {
   id?: string;
 
   // Stage tracking
-  currentStage: 'prospect' | 'appointment' | 'sales';
+  currentStage: 'prospect' | 'appointment' | 'sales_outcome';
   stageHistory: Array<{
     stage: string;
     enteredAt: Timestamp;
@@ -23,14 +23,16 @@ export interface ProspectRecord {
 
   // Prospect stage
   prospectName: string;
-  prospectEmail: string;
-  prospectPhone: string;
+  prospectEmail?: string;
+  prospectPhone?: string;
   prospectEnteredAt?: Timestamp;
 
   // Appointment stage
   appointmentDate?: Timestamp;
-  appointmentTime?: string;
-  appointmentStatus?: 'not_done' | 'completed' | 'declined' | 'kiv';
+  appointmentStartTime?: string;
+  appointmentEndTime?: string;
+  appointmentLocation?: string;
+  appointmentStatus?: 'not_done' | 'scheduled' | 'rescheduled' | 'completed' | 'declined' | 'kiv';
   appointmentCompletedAt?: Timestamp;
 
   // Sales stage
@@ -44,7 +46,7 @@ export interface ProspectRecord {
     aceAmount: number;
   }>;
   totalACE?: number;
-  salesOutcome?: 'successful' | 'unsuccessful';
+  salesOutcome?: 'successful' | 'unsuccessful' | 'kiv';
   unsuccessfulReason?: string;
   salesCompletedAt?: Timestamp;
 
@@ -55,15 +57,17 @@ export interface ProspectRecord {
 
 export interface CreateProspectRequest {
   prospectName: string;
-  prospectEmail: string;
-  prospectPhone: string;
+  prospectEmail?: string;
+  prospectPhone?: string;
 }
 
 export interface UpdateProspectRequest {
   // Appointment fields
   appointmentDate?: string;
+  appointmentStartTime?: string;
+  appointmentEndTime?: string;
+  appointmentLocation?: string;
   appointmentStatus?: string;
-  location?: string;
 
   // Sales fields
   salesPartsCompleted?: {

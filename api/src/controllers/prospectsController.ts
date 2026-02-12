@@ -104,16 +104,9 @@ export async function createProspect(
       return;
     }
 
-    if (!body.prospectEmail || !isValidEmail(body.prospectEmail)) {
+    if (body.prospectEmail && !isValidEmail(body.prospectEmail)) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'Valid prospectEmail is required',
-      });
-      return;
-    }
-
-    if (!body.prospectPhone || body.prospectPhone.trim().length === 0) {
-      res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'prospectPhone is required',
+        error: 'Invalid prospectEmail format',
       });
       return;
     }
@@ -148,8 +141,8 @@ export async function createProspect(
 
       // Prospect data
       prospectName: body.prospectName.trim(),
-      prospectEmail: body.prospectEmail.trim().toLowerCase(),
-      prospectPhone: body.prospectPhone.trim(),
+      prospectEmail: body.prospectEmail?.trim().toLowerCase() || undefined,
+      prospectPhone: body.prospectPhone?.trim() || undefined,
       prospectEnteredAt: now,
 
       // Metadata
@@ -352,8 +345,10 @@ export async function updateProspect(
         updateData.appointmentDate = Timestamp.fromDate(
           new Date(body.appointmentDate),
         );
+        updateData.appointmentStartTime = body.appointmentStartTime || null;
+        updateData.appointmentEndTime = body.appointmentEndTime || null;
+        updateData.appointmentLocation = body.appointmentLocation || null;
         updateData.appointmentStatus = body.appointmentStatus || 'not_done';
-        updateData.location = body.location || null;
 
         // Set appointmentCompletedAt if status is completed and not already set
         if (
@@ -371,9 +366,9 @@ export async function updateProspect(
       // Handle sales stage
       if (body.currentStage === 'sales_outcome') {
         if (body.salesOutcome) {
-          if (!['successful', 'unsuccessful'].includes(body.salesOutcome)) {
+          if (!['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)) {
             res.status(HttpStatusCodes.BAD_REQUEST).json({
-              error: 'salesOutcome must be "successful" or "unsuccessful"',
+              error: 'salesOutcome must be "successful", "unsuccessful", or "kiv"',
             });
             return;
           }
@@ -400,6 +395,11 @@ export async function updateProspect(
             }
             updateData.productsSold = body.productsSold;
             updateData.totalACE = calculateTotalACE(body.productsSold);
+          } else if (body.salesOutcome === 'kiv') {
+            if (body.productsSold && body.productsSold.length > 0) {
+              updateData.productsSold = body.productsSold;
+              updateData.totalACE = calculateTotalACE(body.productsSold);
+            }
           }
 
           // Only set salesCompletedAt if not already set (preserve original completion time)
@@ -414,6 +414,18 @@ export async function updateProspect(
         updateData.appointmentDate = Timestamp.fromDate(
           new Date(body.appointmentDate),
         );
+      }
+
+      if (body.appointmentStartTime !== undefined) {
+        updateData.appointmentStartTime = body.appointmentStartTime;
+      }
+
+      if (body.appointmentEndTime !== undefined) {
+        updateData.appointmentEndTime = body.appointmentEndTime;
+      }
+
+      if (body.appointmentLocation !== undefined) {
+        updateData.appointmentLocation = body.appointmentLocation;
       }
 
       if (body.appointmentStatus !== undefined) {
@@ -432,7 +444,6 @@ export async function updateProspect(
           return;
         }
         updateData.appointmentStatus = body.appointmentStatus;
-        updateData.location = body.location || null;
 
         // Only set appointmentCompletedAt if not already set (preserve original completion time)
         if (
