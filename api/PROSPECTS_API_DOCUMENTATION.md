@@ -72,8 +72,8 @@ Authorization: Bearer <firebase_id_token>
 
 **Validation:**
 - `prospectName`: Required, minimum 2 characters
-- `prospectEmail`: Required, valid email format
-- `prospectPhone`: Required
+- `prospectEmail`: Optional; validated for format if provided
+- `prospectPhone`: Optional
 
 **Response (201 Created):**
 ```json
@@ -180,7 +180,9 @@ Authorization: Bearer <firebase_id_token>
   "currentStage": "appointment",
   "appointmentDate": "2025-02-10T10:00:00Z",
   "appointmentStatus": "completed",
-  "location": "KL Sentral",
+  "appointmentStartTime": "10:00 AM",
+  "appointmentEndTime": "11:00 AM",
+  "appointmentLocation": "KL Sentral",
   "salesPartsCompleted": {
     "social": true,
     "factFinding": false,
@@ -195,7 +197,9 @@ Authorization: Bearer <firebase_id_token>
 - Valid `appointmentStatus` values: `"not_done"`, `"scheduled"`, `"rescheduled"`, `"completed"`, `"declined"`, `"kiv"`
 
 **Optional fields:**
-- `location`: Meeting location (string)
+- `appointmentStartTime`: Appointment start time (string)
+- `appointmentEndTime`: Appointment end time (string)
+- `appointmentLocation`: Meeting location (string)
 - `salesPartsCompleted`: Track which parts have been done
 
 **Auto-Generated:**
@@ -227,7 +231,8 @@ Authorization: Bearer <firebase_id_token>
 
 **Validation:**
 - If `salesOutcome` = "successful": Require `productsSold` (at least one product)
-- Valid `salesOutcome` values: `"successful"`, `"unsuccessful"`
+- If `salesOutcome` = "kiv": `productsSold` is optional
+- Valid `salesOutcome` values: `"successful"`, `"unsuccessful"`, `"kiv"`
 
 **Auto-Calculated:**
 - `totalACE`: Sum of all `aceAmount` values in `productsSold`
@@ -248,12 +253,23 @@ Authorization: Bearer <firebase_id_token>
 **Validation:**
 - If `salesOutcome` = "unsuccessful": Require `unsuccessfulReason`
 
+#### Update to Sales Outcome Stage (KIV):
+```json
+{
+  "currentStage": "sales_outcome",
+  "salesOutcome": "kiv"
+}
+```
+
+**Validation:**
+- If `salesOutcome` = "kiv": No additional fields required; `productsSold` may optionally be included
+
 #### Update Individual Fields (Without Stage Change):
 ```json
 {
   "appointmentStatus": "rescheduled",
   "appointmentDate": "2025-03-01T14:00:00Z",
-  "location": "Petaling Jaya"
+  "appointmentLocation": "Petaling Jaya"
 }
 ```
 
@@ -291,7 +307,7 @@ Valid `salesOutcome` values for field-only updates: `"successful"`, `"unsuccessf
   "prospects": [
     {
       "id": "prospect_123",
-      "currentStage": "sales",
+      "currentStage": "sales_outcome",
       "groupId": "group456",
       "groupName": "Team Alpha",
       "agentCode": "A001",
@@ -327,7 +343,7 @@ Valid `salesOutcome` values for field-only updates: `"successful"`, `"unsuccessf
   "prospects": [
     {
       "id": "prospect_123",
-      "currentStage": "sales",
+      "currentStage": "sales_outcome",
       "agentCode": "AGT47291",
       "agentName": "Agent Smith",
       "groupName": "Team Alpha",
@@ -404,14 +420,15 @@ interface ProspectRecord {
 
   // Prospect stage
   prospectName: string;
-  prospectEmail: string;
-  prospectPhone: string;
+  prospectEmail?: string;
+  prospectPhone?: string;
   prospectEnteredAt?: Timestamp;
 
   // Appointment stage
   appointmentDate?: Timestamp;
-  appointmentTime?: string;
-  location?: string;
+  appointmentStartTime?: string;
+  appointmentEndTime?: string;
+  appointmentLocation?: string;
   appointmentStatus?: 'not_done' | 'scheduled' | 'rescheduled' | 'completed' | 'declined' | 'kiv';
   appointmentCompletedAt?: Timestamp;
 
@@ -471,7 +488,7 @@ curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
     "currentStage": "appointment",
     "appointmentDate": "2025-02-10T10:00:00Z",
     "appointmentStatus": "completed",
-    "location": "KL Sentral"
+    "appointmentLocation": "KL Sentral"
   }'
 ```
 
@@ -534,10 +551,10 @@ curl -X PUT http://localhost:3000/api/prospects/prospect_abc123 \
 }
 ```
 
-#### Invalid Email
+#### Invalid Email (when prospectEmail is provided but malformed)
 ```json
 {
-  "error": "Valid prospectEmail is required"
+  "error": "Invalid prospectEmail format"
 }
 ```
 
@@ -640,8 +657,9 @@ service cloud.firestore {
 
 ## Testing Checklist
 
-- [ ] Create prospect with all required fields
-- [ ] Validate email format enforcement
+- [ ] Create prospect with name only (email and phone omitted)
+- [ ] Create prospect with all fields (name, email, phone)
+- [ ] Validate email format enforcement when email is provided
 - [ ] Move prospect to appointment stage
 - [ ] Mark appointment as completed/declined/kiv
 - [ ] Complete successful sale with products
@@ -658,6 +676,13 @@ service cloud.firestore {
 ---
 
 ## Changelog
+
+### Version 1.4.0 (2026-02-12)
+- `POST /prospects`: `prospectEmail` and `prospectPhone` are now optional. Only `prospectName` is required. Email is validated for format only if provided; error message is `"Invalid prospectEmail format"`.
+- `PUT /prospects/:id` (appointment stage): replaced `location` field with `appointmentStartTime`, `appointmentEndTime`, and `appointmentLocation` (all optional strings).
+- `PUT /prospects/:id` (sales_outcome stage): `"kiv"` is now a valid `salesOutcome` in the stage-transition path (when `currentStage: "sales_outcome"` is set). `productsSold` is optional for `kiv`.
+- Updated `ProspectRecord` interface: `prospectEmail` and `prospectPhone` are optional; `location` replaced by `appointmentStartTime`, `appointmentEndTime`, `appointmentLocation`.
+- Fixed response examples in `GET /prospects/group/:groupId` and `GET /admin/all-prospects` to use `"sales_outcome"` instead of `"sales"`.
 
 ### Version 1.3.0 (2026-02-12)
 - Updated `DELETE /prospects/:id`: endpoint moved from `/admin/prospects/:id` to `/prospects/:id`. Admin can delete any prospect; Agent and Group Leader can delete their own prospects only (ownership checked via `prospect.uid === req.user.uid`). Added 403 response for non-owners attempting to delete another user's prospect.

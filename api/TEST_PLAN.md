@@ -732,7 +732,21 @@ Expected: `404 Not Found`
 
 ### 4.1 `POST /prospects`
 
-**TC-P01 — Agent creates a prospect**
+**TC-P01 — Agent creates a prospect (name only)**
+```
+POST /prospects
+Authorization: Bearer <AGENT_TOKEN>
+Body:
+{
+  "prospectName": "John Doe"
+}
+```
+Expected: `201 Created`
+```json
+{ "success": true, "prospectId": "<id>", "message": "Prospect created successfully" }
+```
+
+**TC-P02 — Agent creates a prospect (all optional fields included)**
 ```
 POST /prospects
 Authorization: Bearer <AGENT_TOKEN>
@@ -744,40 +758,32 @@ Body:
 }
 ```
 Expected: `201 Created`
-```json
-{ "success": true, "prospectId": "<id>", "message": "Prospect created successfully" }
-```
 
-**TC-P02 — Group leader creates a prospect**
+**TC-P03 — Group leader creates a prospect**
 ```
 Authorization: Bearer <LEADER_TOKEN>
-Body: { "prospectName": "Jane Doe", "prospectEmail": "jane@example.com", "prospectPhone": "0987654321" }
+Body: { "prospectName": "Jane Doe" }
 ```
 Expected: `201 Created`
 
-**TC-P03 — Trainer attempts to create a prospect**
+**TC-P04 — Trainer attempts to create a prospect**
 ```
 Authorization: Bearer <TRAINER_TOKEN>
+Body: { "prospectName": "Test Prospect" }
 ```
 Expected: `403 Forbidden` `{ "error": "Only agents and group leaders can create prospects" }`
 
-**TC-P04 — Missing prospectName**
+**TC-P05 — Missing prospectName**
 ```json
 Body: { "prospectEmail": "a@b.com", "prospectPhone": "0123456789" }
 ```
-Expected: `400 Bad Request`
+Expected: `400 Bad Request` `{ "error": "prospectName is required and must be at least 2 characters" }`
 
-**TC-P05 — Invalid email format**
+**TC-P06 — Invalid email format (when email is provided)**
 ```json
-Body: { "prospectName": "John", "prospectEmail": "not-an-email", "prospectPhone": "0123456789" }
+Body: { "prospectName": "John", "prospectEmail": "not-an-email" }
 ```
-Expected: `400 Bad Request` `{ "error": "Valid prospectEmail is required" }`
-
-**TC-P06 — Missing phone**
-```json
-Body: { "prospectName": "John", "prospectEmail": "john@example.com" }
-```
-Expected: `400 Bad Request`
+Expected: `400 Bad Request` `{ "error": "Invalid prospectEmail format" }`
 
 ---
 
@@ -850,7 +856,9 @@ Body:
   "currentStage": "appointment",
   "appointmentDate": "2026-03-15T10:00:00.000Z",
   "appointmentStatus": "scheduled",
-  "location": "Starbucks KLCC"
+  "appointmentStartTime": "10:00 AM",
+  "appointmentEndTime": "11:00 AM",
+  "appointmentLocation": "Starbucks KLCC"
 }
 ```
 Expected: `200 OK` `{ "success": true }`
@@ -895,7 +903,26 @@ Body: {
 ```
 Expected: `200 OK`
 
-**TC-P20 — Agent records successful sale without productsSold**
+**TC-P20 — Agent records KIV outcome (no products)**
+```json
+Body: {
+  "currentStage": "sales_outcome",
+  "salesOutcome": "kiv"
+}
+```
+Expected: `200 OK`
+
+**TC-P20b — Agent records KIV outcome (with optional products)**
+```json
+Body: {
+  "currentStage": "sales_outcome",
+  "salesOutcome": "kiv",
+  "productsSold": [{ "productName": "Medical Card", "aceAmount": 1000 }]
+}
+```
+Expected: `200 OK`
+
+**TC-P21 — Agent records successful sale without productsSold**
 ```json
 Body: {
   "currentStage": "sales_outcome",
@@ -905,78 +932,78 @@ Body: {
 ```
 Expected: `400 Bad Request` `{ "error": "productsSold is required when salesOutcome is \"successful\"" }`
 
-**TC-P21 — Agent updates another agent's prospect**
+**TC-P22 — Agent updates another agent's prospect**
 ```
 PUT /prospects/<AGENT_B_PROSPECT_ID>
 Authorization: Bearer <AGENT_TOKEN>
 ```
 Expected: `403 Forbidden`
 
-**TC-P22 — Admin updates any prospect**
+**TC-P23 — Admin updates any prospect**
 ```
 Authorization: Bearer <ADMIN_TOKEN>
 Body: { "currentStage": "appointment", "appointmentDate": "2026-03-20T09:00:00.000Z" }
 ```
 Expected: `200 OK`
 
-**TC-P23 — Invalid stage value**
+**TC-P24 — Invalid stage value**
 ```json
 Body: { "currentStage": "closed" }
 ```
 Expected: `400 Bad Request` `{ "error": "Invalid stage value" }`
 
-**TC-P24 — Invalid appointmentStatus (no stage change)**
+**TC-P25 — Invalid appointmentStatus (no stage change)**
 ```json
 Body: { "appointmentStatus": "pending" }
 ```
 Expected: `400 Bad Request` `{ "error": "Invalid appointmentStatus value" }`
 
-**TC-P25 — Non-existent prospect**
+**TC-P26 — Non-existent prospect**
 Expected: `404 Not Found`
 
 ---
 
 ### 4.5 `GET /prospects/group/:groupId`
 
-**TC-P26 — Admin**
+**TC-P27 — Admin**
 ```
 GET /prospects/group/<GROUP_A_ID>
 Authorization: Bearer <ADMIN_TOKEN>
 ```
 Expected: `200 OK` `{ "prospects": [...] }`
 
-**TC-P27 — Master trainer**
+**TC-P28 — Master trainer**
 ```
 Authorization: Bearer <MASTER_TOKEN>
 ```
 Expected: `200 OK`
 
-**TC-P28 — Trainer for managed group**
+**TC-P29 — Trainer for managed group**
 ```
 Authorization: Bearer <TRAINER_TOKEN>
 ```
 Expected: `200 OK`
 
-**TC-P29 — Trainer for unmanaged group**
+**TC-P30 — Trainer for unmanaged group**
 ```
 GET /prospects/group/<GROUP_B_ID>
 Authorization: Bearer <TRAINER_TOKEN>
 ```
 Expected: `403 Forbidden`
 
-**TC-P30 — Agent (no permission)**
+**TC-P31 — Agent (no permission)**
 ```
 Authorization: Bearer <AGENT_TOKEN>
 ```
 Expected: `403 Forbidden`
 
-**TC-P31 — Group leader (no permission)**
+**TC-P32 — Group leader (no permission)**
 ```
 Authorization: Bearer <LEADER_TOKEN>
 ```
 Expected: `403 Forbidden`
 
-**TC-P32 — With limit**
+**TC-P33 — With limit**
 ```
 GET /prospects/group/<GROUP_A_ID>?limit=10
 Authorization: Bearer <ADMIN_TOKEN>
@@ -987,27 +1014,27 @@ Expected: `200 OK` — at most 10 records
 
 ### 4.6 `DELETE /prospects/:id`
 
-**TC-P33 — Agent deletes own prospect**
+**TC-P34 — Agent deletes own prospect**
 ```
 DELETE /prospects/<PROSPECT_ID>
 Authorization: Bearer <AGENT_TOKEN>
 ```
 Expected: `200 OK` `{ "success": true, "message": "Prospect deleted successfully" }`
 
-**TC-P34 — Agent deletes another agent's prospect**
+**TC-P35 — Agent deletes another agent's prospect**
 ```
 DELETE /prospects/<AGENT_B_PROSPECT_ID>
 Authorization: Bearer <AGENT_TOKEN>
 ```
 Expected: `403 Forbidden`
 
-**TC-P35 — Admin deletes any prospect**
+**TC-P36 — Admin deletes any prospect**
 ```
 Authorization: Bearer <ADMIN_TOKEN>
 ```
 Expected: `200 OK`
 
-**TC-P36 — Non-existent prospect**
+**TC-P37 — Non-existent prospect**
 ```
 DELETE /prospects/doesnotexist
 Authorization: Bearer <ADMIN_TOKEN>
@@ -1018,21 +1045,21 @@ Expected: `404 Not Found`
 
 ### 4.7 `GET /admin/all-prospects`
 
-**TC-P37 — Admin**
+**TC-P38 — Admin**
 ```
 GET /admin/all-prospects
 Authorization: Bearer <ADMIN_TOKEN>
 ```
 Expected: `200 OK` `{ "prospects": [...] }`
 
-**TC-P38 — Admin with limit**
+**TC-P39 — Admin with limit**
 ```
 GET /admin/all-prospects?limit=20
 Authorization: Bearer <ADMIN_TOKEN>
 ```
 Expected: `200 OK` — at most 20 records
 
-**TC-P39 — Non-admin**
+**TC-P40 — Non-admin**
 ```
 Authorization: Bearer <AGENT_TOKEN>
 ```
@@ -1410,5 +1437,5 @@ Expected: `404 Not Found`
 | N2 | Trainer >10 managed groups | `GET /events/my-events` and `GET /users` both slice `managedGroupIds` to 10. Test with exactly 11 managed groups to confirm the warning is logged and results are partial but not an error. |
 | N3 | Status transitions | No server-side guard prevents `completed → upcoming`. Decide whether to add validation; currently any status → any status is accepted on update. |
 | N4 | `updateUserStatus` vs `updateUser` | Both endpoints can change `status`, but `updateUserStatus` only accepts `active`/`inactive`, while `updateUser` also accepts `suspended`. Ensure these are not contradictory in practice. |
-| N5 | Group leader `GET /prospects/group/:groupId` | The controller blocks `group_leader` from this endpoint despite a route comment suggesting otherwise. Confirm TC-P31 is intentional. |
+| N5 | Group leader `GET /prospects/group/:groupId` | The controller blocks `group_leader` from this endpoint despite a route comment suggesting otherwise. Confirm TC-P32 is intentional. |
 | N6 | Concurrent group creation | If two admins create groups simultaneously with the same `leaderId`, the agent could be promoted twice. Consider whether idempotency is needed. |
