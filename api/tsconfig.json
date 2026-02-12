@@ -11,7 +11,8 @@
     "paths": {
       "@src/*": ["src/*"]
     },
-    "useUnknownInCatchVariables": false
+    "useUnknownInCatchVariables": false,
+    "isolatedModules": true
   },
   "ts-node": {
     "swc": true,
