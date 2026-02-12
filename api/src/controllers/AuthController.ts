@@ -92,6 +92,7 @@ async function login(req: Request, res: Response): Promise<void> {
       switch (error.code) {
         case 'auth/wrong-password':
         case 'auth/user-not-found':
+        case 'auth/invalid-credential':
           res.status(HttpStatusCodes.UNAUTHORIZED).json({
             error: 'Invalid email or password',
           });
