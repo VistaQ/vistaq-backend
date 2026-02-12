@@ -15,7 +15,7 @@ import { UserRole } from '@src/types/auth.types';
  *
  * @example
  * router.post('/admin-only', requireRole(['admin']), adminController.doSomething);
- * router.get('/staff-only', requireRole(['admin', 'manager']), staffController.doSomething);
+ * router.get('/trainer-only', requireRole(['admin', 'trainer']), trainerController.doSomething);
  */
 export function requireRole(allowedRoles: UserRole[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -53,16 +53,6 @@ export function requireRole(allowedRoles: UserRole[]) {
  * Middleware to require admin role
  */
 export const requireAdmin = requireRole(['admin']);
-
-/**
- * Middleware to require admin or manager role
- */
-export const requireAdminOrManager = requireRole(['admin', 'manager']);
-
-/**
- * Middleware to require any staff role (admin, manager, or agent)
- */
-export const requireStaff = requireRole(['admin', 'manager', 'agent']);
 
 /**
  * Middleware to require trainer or master_trainer role
