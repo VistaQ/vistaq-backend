@@ -22,9 +22,9 @@ jobs:
         working-directory: api
         run: npm ci
 
-      - name: Build TypeScript
+      - name: Build
         working-directory: api
-        run: npx tsc --project tsconfig.prod.json
+        run: npm run build:vercel
 
       - name: Pull Vercel project config
         working-directory: api

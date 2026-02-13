@@ -1,4 +1,3 @@
-import 'module-alias/register';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
