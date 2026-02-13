@@ -21,7 +21,7 @@
     "node": ">=16.0.0"
   },
   "_moduleAliases": {
-    "@src": "src"
+    "@src": "dist"
   },
   "dependencies": {
     "dotenv": "^17.2.4",
