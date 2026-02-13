@@ -473,7 +473,7 @@ export async function updateGroup(req: Request, res: Response): Promise<void> {
       }
 
       // Ensure current/new leader is in the new memberIds
-      if (!memberIds.includes(newLeaderId)) {
+      if (newLeaderId && !memberIds.includes(newLeaderId)) {
         res.status(HttpStatusCodes.BAD_REQUEST).json({
           error: 'Leader must be included in memberIds array',
         });
