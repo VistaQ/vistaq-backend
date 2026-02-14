@@ -848,14 +848,13 @@ export async function getPublicGroups(
     const snapshot = await db
       .collection(GROUPS_COLLECTION)
       .where('status', '==', 'active')
+      .orderBy('name')
       .get();
 
-    const groups = snapshot.docs
-      .map((doc) => ({
-        id: doc.id,
-        name: doc.data().name as string,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const groups = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      name: doc.data().name as string,
+    }));
 
     res.status(HttpStatusCodes.OK).json({ groups });
   } catch (error) {
