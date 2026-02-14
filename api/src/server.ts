@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'path';
 
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import { RouteError } from '@src/common/utils/route-errors';
@@ -49,6 +50,12 @@ app.use('/api', router);
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
   res.status(HttpStatusCodes.OK).json({ status: 'ok' });
+});
+
+// OpenAPI spec
+app.get('/openapi.yaml', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/yaml; charset=utf-8');
+  res.sendFile(path.join(__dirname, 'openapi.yaml'));
 });
 
 /******************************************************************************

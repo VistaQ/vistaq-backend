@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "build": "npm run lint && tsc --project tsconfig.prod.json",
-    "build:vercel": "esbuild src/server.ts --bundle --platform=node --target=node20 --outfile=api/index.js --packages=external --tsconfig=tsconfig.prod.json",
+    "build:vercel": "esbuild src/server.ts --bundle --platform=node --target=node20 --outfile=api/index.js --packages=external --tsconfig=tsconfig.prod.json && cp openapi.yaml api/openapi.yaml",
     "clean-install": "rm -rf ./node_modules && rm -r package-lock.json && npm i",
     "dev": "node -r dotenv/config ./node_modules/.bin/ts-node ./src/main dotenv_config_path=./config/.env.development",
     "dev:watch": "nodemon --exec \"npm run dev\" --watch ./src --ext .ts",
