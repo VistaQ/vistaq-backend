@@ -834,10 +834,42 @@ export async function getAllGroups(req: Request, res: Response): Promise<void> {
                             Export
 ******************************************************************************/
 
+/**
+ * Get all active groups — public, no auth required
+ * GET /groups/public
+ *
+ * Returns only id + name, used by the self-signup flow to populate the group picker.
+ */
+export async function getPublicGroups(
+  _req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const snapshot = await db
+      .collection(GROUPS_COLLECTION)
+      .where('status', '==', 'active')
+      .orderBy('name')
+      .get();
+
+    const groups = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      name: doc.data().name as string,
+    }));
+
+    res.status(HttpStatusCodes.OK).json({ groups });
+  } catch (error) {
+    console.error('Error fetching public groups:', error);
+    res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Failed to fetch groups',
+    });
+  }
+}
+
 export default {
   createGroup,
   updateGroup,
   deleteGroup,
   getGroup,
   getAllGroups,
+  getPublicGroups,
 };

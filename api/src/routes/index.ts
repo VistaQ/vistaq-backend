@@ -25,6 +25,9 @@ const router = express.Router();
 router.post('/auth/login', authController.login);
 router.post('/auth/register', authController.register);
 
+// Public group listing — used by the self-signup flow to populate the group picker
+router.get('/groups/public', groupController.getPublicGroups);
+
 /******************************************************************************
                     PROTECTED ROUTES (Authentication required)
 ******************************************************************************/
