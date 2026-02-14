@@ -623,6 +623,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Send a password reset email
+      description: "Triggers a Firebase password reset email. Always returns success to prevent email enumeration."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: agent@example.com
+      responses:
+        '200':
+          description: Reset email sent (or silently skipped if account not found)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "If an account with that email exists, a password reset link has been sent."
+        '400':
+          description: Email is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   ##############################################################################
   # USERS
   ##############################################################################
