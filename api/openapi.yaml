@@ -16,7 +16,7 @@ info:
     `admin` > `master_trainer` > `trainer` > `group_leader` > `agent`
 
 servers:
-  - url: https://stg-api.vistaq.co
+  - url: https://stg-api.vistaq.co/api
     description: Staging
 
 tags:
