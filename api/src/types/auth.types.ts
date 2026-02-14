@@ -23,6 +23,8 @@ export interface User {
   currentBadgeColor?: string;
   status: UserStatus;
   managedGroupIds?: string[]; // For trainers - array of group IDs they manage
+  passwordResetToken?: string;
+  passwordResetExpires?: FirebaseFirestore.Timestamp;
   createdAt: Date;
   updatedAt: Date;
 }
