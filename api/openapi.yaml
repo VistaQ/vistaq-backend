@@ -650,6 +650,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /users/me/password:
+    patch:
+      tags: [Users]
+      summary: Change own password
+      description: Change the currently authenticated user's own password.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 6
+                  example: newpassword123
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Password must be at least 6 characters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /users/{userId}:
     get:
       tags: [Users]
