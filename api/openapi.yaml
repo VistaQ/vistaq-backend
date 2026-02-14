@@ -1209,6 +1209,39 @@ paths:
   # GROUPS
   ##############################################################################
 
+  /groups/public:
+    get:
+      tags: [Groups]
+      summary: List all active groups (public)
+      description: |
+        Returns `id` and `name` for every active group. No authentication required.
+        Used by the agent self-signup flow to populate the group picker before the user has an account.
+      responses:
+        '200':
+          description: List of active groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: grp_xyz
+                        name:
+                          type: string
+                          example: Sales Power
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /groups/{groupId}:
     get:
       tags: [Groups]
