@@ -1059,6 +1059,67 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
   }
 }
 
+/**
+ * Reset a user's password (admin only)
+ * PATCH /admin/users/:userId/password
+ */
+export async function resetUserPassword(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      res.status(HttpStatusCodes.FORBIDDEN).json({
+        error: 'Only administrators can reset user passwords',
+      });
+      return;
+    }
+
+    const userId = Array.isArray(req.params.userId)
+      ? req.params.userId[0]
+      : req.params.userId;
+
+    if (!userId) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'User ID is required',
+      });
+      return;
+    }
+
+    const { password } = req.body as { password: string };
+
+    if (!password || password.length < 6) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Password must be at least 6 characters',
+      });
+      return;
+    }
+
+    const targetUser = await getUserDocument(userId);
+
+    if (!targetUser) {
+      res.status(HttpStatusCodes.NOT_FOUND).json({
+        error: 'User not found',
+      });
+      return;
+    }
+
+    await adminAuth.updateUser(userId, { password });
+
+    console.log(`[AUDIT] Admin ${req.user.uid} reset password for user ${userId}`);
+
+    res.status(HttpStatusCodes.OK).json({
+      success: true,
+      message: 'Password reset successfully',
+    });
+  } catch (error) {
+    console.error('Error in resetUserPassword:', error);
+    res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Failed to reset password',
+    });
+  }
+}
+
 /******************************************************************************
                             Export
 ******************************************************************************/
@@ -1071,4 +1132,5 @@ export default {
   updateUser,
   updateUserStatus,
   deleteUser,
+  resetUserPassword,
 };

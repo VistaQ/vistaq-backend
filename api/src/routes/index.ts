@@ -198,6 +198,17 @@ router.patch(
 );
 
 /**
+ * PATCH /admin/users/:userId/password
+ * Reset a user's password
+ * Accessible by: Admin only
+ */
+router.patch(
+  '/admin/users/:userId/password',
+  requireRole(['admin']),
+  userController.resetUserPassword,
+);
+
+/**
  * DELETE /admin/users/:userId
  * Delete a user (permanent deletion)
  * Accessible by: Admin only
