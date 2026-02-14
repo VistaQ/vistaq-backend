@@ -1775,6 +1775,57 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /admin/users/{userId}/password:
+    patch:
+      tags: [Admin – Users]
+      summary: Reset a user's password (admin only)
+      description: Resets any user's password. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 6
+                  example: newpassword123
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Password must be at least 6 characters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Only administrators can reset user passwords
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /admin/users/{userId}:
     delete:
       tags: [Admin – Users]
