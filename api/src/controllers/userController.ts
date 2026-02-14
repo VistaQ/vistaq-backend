@@ -1060,6 +1060,47 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * Change own password
+ * PATCH /users/me/password
+ */
+export async function changeMyPassword(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(HttpStatusCodes.UNAUTHORIZED).json({
+        error: 'Not authenticated',
+      });
+      return;
+    }
+
+    const { password } = req.body as { password: string };
+
+    if (!password || password.length < 6) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Password must be at least 6 characters',
+      });
+      return;
+    }
+
+    await adminAuth.updateUser(req.user.uid, { password });
+
+    console.log(`[ChangePassword] User ${req.user.uid} changed their password`);
+
+    res.status(HttpStatusCodes.OK).json({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    console.error('Error in changeMyPassword:', error);
+    res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Failed to change password',
+    });
+  }
+}
+
+/**
  * Reset a user's password (admin only)
  * PATCH /admin/users/:userId/password
  */
@@ -1133,4 +1174,5 @@ export default {
   updateUserStatus,
   deleteUser,
   resetUserPassword,
+  changeMyPassword,
 };

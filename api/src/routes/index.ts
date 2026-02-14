@@ -45,6 +45,13 @@ router.use(authenticate);
 router.get('/users/me', userController.getMe);
 
 /**
+ * PATCH /users/me/password
+ * Change current user's own password
+ * Accessible by: All authenticated users
+ */
+router.patch('/users/me/password', userController.changeMyPassword);
+
+/**
  * GET /users/:userId
  * Get a specific user by ID
  * Accessible by: Admin (any user), Trainers (users in managed groups), Group Leaders (users in same group), User (self)
