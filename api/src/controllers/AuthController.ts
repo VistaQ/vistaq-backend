@@ -560,6 +560,59 @@ async function register(req: Request, res: Response): Promise<void> {
   }
 }
 
+/**
+ * Trigger a Firebase password reset email
+ * POST /api/auth/forgot-password
+ */
+async function forgotPassword(req: Request, res: Response): Promise<void> {
+  // Always return the same response to prevent email enumeration
+  const genericSuccess = {
+    success: true,
+    message:
+      'If an account with that email exists, a password reset link has been sent.',
+  };
+
+  try {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      res
+        .status(HttpStatusCodes.BAD_REQUEST)
+        .json({ error: 'Email is required' });
+      return;
+    }
+
+    const apiKey = process.env.FIREBASE_API_KEY;
+
+    if (!apiKey) {
+      console.error('[ForgotPassword] FIREBASE_API_KEY is not set');
+      res.status(HttpStatusCodes.OK).json(genericSuccess);
+      return;
+    }
+
+    // Delegate to Firebase — it handles token generation, expiry, and email delivery
+    const firebaseRes = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }),
+      },
+    );
+
+    if (!firebaseRes.ok) {
+      const err = (await firebaseRes.json()) as { error?: { message?: string } };
+      console.error('[ForgotPassword] Firebase error:', err?.error?.message);
+    }
+
+    // Always return generic success regardless of outcome
+    res.status(HttpStatusCodes.OK).json(genericSuccess);
+  } catch (error) {
+    console.error('[ForgotPassword] Error:', error);
+    res.status(HttpStatusCodes.OK).json(genericSuccess);
+  }
+}
+
 /******************************************************************************
                                 Export
 ******************************************************************************/
@@ -569,4 +622,5 @@ export default {
   createUser,
   getCurrentUser,
   register,
+  forgotPassword,
 } as const;
