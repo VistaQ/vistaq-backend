@@ -1,3 +1,4 @@
+import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -17,6 +18,9 @@ const app = express();
 /******************************************************************************
                                 Middleware
 ******************************************************************************/
+
+// CORS — allow all origins (tighten before production go-live)
+app.use(cors());
 
 // Parse JSON bodies
 app.use(express.json());
