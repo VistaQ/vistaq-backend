@@ -16,7 +16,7 @@ export interface UpdateUserRequest {
   agency?: string;
   role?: UserRole;
   status?: UserStatus;
-
+  password?: string;
 }
 
 export interface UpdateUserStatusRequest {

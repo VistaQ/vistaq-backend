@@ -769,6 +769,17 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
         );
       }
 
+      if (updateData.password !== undefined) {
+        if (updateData.password.length < 6) {
+          res.status(HttpStatusCodes.BAD_REQUEST).json({
+            error: 'Password must be at least 6 characters',
+          });
+          return;
+        }
+        await adminAuth.updateUser(userId, { password: updateData.password });
+        console.log(`[AUDIT] Admin ${req.user.uid} reset password for ${userId}`);
+      }
+
       if (updateData.status !== undefined) {
         if (
           updateData.status !== 'active' &&
@@ -789,7 +800,8 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
         updateData.email !== undefined ||
         updateData.agency !== undefined ||
         updateData.role !== undefined ||
-        updateData.status !== undefined
+        updateData.status !== undefined ||
+        updateData.password !== undefined
       ) {
         res.status(HttpStatusCodes.FORBIDDEN).json({
           error:
