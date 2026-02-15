@@ -136,9 +136,18 @@ function generatePermissions(role: string): string[] {
       return ['*'];
     case 'master_trainer':
     case 'trainer':
-      return ['view_managed_groups', 'view_managed_sales', 'view_managed_users'];
+      return [
+        'view_managed_groups',
+        'view_managed_sales',
+        'view_managed_users',
+      ];
     case 'group_leader':
-      return ['view_own_group', 'view_team_sales', 'create_sales', 'view_own_sales'];
+      return [
+        'view_own_group',
+        'view_team_sales',
+        'create_sales',
+        'view_own_sales',
+      ];
     case 'agent':
       return ['create_sales', 'view_own_sales'];
     default:
@@ -165,16 +174,8 @@ async function createUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const {
-      email,
-      password,
-      name,
-      role,
-      agentCode,
-      agency,
-      location,
-      phone,
-    } = req.body as CreateUserRequest;
+    const { email, password, name, role, agentCode, agency, location, phone } =
+      req.body as CreateUserRequest;
 
     // -------------------------------------------------------------------------
     // Step 2 — Validate base fields
@@ -194,10 +195,17 @@ async function createUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const validRoles = ['admin', 'master_trainer', 'trainer', 'group_leader', 'agent'];
+    const validRoles = [
+      'admin',
+      'master_trainer',
+      'trainer',
+      'group_leader',
+      'agent',
+    ];
     if (!validRoles.includes(role)) {
       res.status(HttpStatusCodes.BAD_REQUEST).json({
-        error: 'Invalid role. Must be one of: admin, master_trainer, trainer, group_leader, agent',
+        error:
+          'Invalid role. Must be one of: admin, master_trainer, trainer, group_leader, agent',
       });
       return;
     }
@@ -238,20 +246,28 @@ async function createUser(req: Request, res: Response): Promise<void> {
           : (authError as { code?: string }).code;
 
       if (code === 'auth/email-already-exists') {
-        res.status(HttpStatusCodes.CONFLICT).json({ error: 'Email already exists' });
+        res
+          .status(HttpStatusCodes.CONFLICT)
+          .json({ error: 'Email already exists' });
         return;
       }
       if (code === 'auth/invalid-email') {
-        res.status(HttpStatusCodes.BAD_REQUEST).json({ error: 'Invalid email format' });
+        res
+          .status(HttpStatusCodes.BAD_REQUEST)
+          .json({ error: 'Invalid email format' });
         return;
       }
       if (code === 'auth/weak-password') {
-        res.status(HttpStatusCodes.BAD_REQUEST).json({ error: 'Password is too weak' });
+        res
+          .status(HttpStatusCodes.BAD_REQUEST)
+          .json({ error: 'Password is too weak' });
         return;
       }
 
       console.error('[createUser] Firebase Auth error:', authError);
-      res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Failed to create user' });
+      res
+        .status(HttpStatusCodes.INTERNAL_SERVER_ERROR)
+        .json({ error: 'Failed to create user' });
       return;
     }
 
@@ -601,7 +617,9 @@ async function forgotPassword(req: Request, res: Response): Promise<void> {
     );
 
     if (!firebaseRes.ok) {
-      const err = (await firebaseRes.json()) as { error?: { message?: string } };
+      const err = (await firebaseRes.json()) as {
+        error?: { message?: string };
+      };
       console.error('[ForgotPassword] Firebase error:', err?.error?.message);
     }
 

@@ -141,7 +141,9 @@ export async function createProspect(
 
       // Prospect data
       prospectName: body.prospectName.trim(),
-      ...(body.prospectEmail && { prospectEmail: body.prospectEmail.trim().toLowerCase() }),
+      ...(body.prospectEmail && {
+        prospectEmail: body.prospectEmail.trim().toLowerCase(),
+      }),
       ...(body.prospectPhone && { prospectPhone: body.prospectPhone.trim() }),
       prospectEnteredAt: now,
 
@@ -238,7 +240,13 @@ export async function getProspect(req: Request, res: Response): Promise<void> {
 
     // Check permissions
     if (
-      !canViewProspect(prospect, req.user.uid, req.user.role, req.user.groupId, req.user.managedGroupIds)
+      !canViewProspect(
+        prospect,
+        req.user.uid,
+        req.user.role,
+        req.user.groupId,
+        req.user.managedGroupIds,
+      )
     ) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'You do not have permission to view this prospect',
@@ -366,9 +374,12 @@ export async function updateProspect(
       // Handle sales stage
       if (body.currentStage === 'sales_outcome') {
         if (body.salesOutcome) {
-          if (!['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)) {
+          if (
+            !['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)
+          ) {
             res.status(HttpStatusCodes.BAD_REQUEST).json({
-              error: 'salesOutcome must be "successful", "unsuccessful", or "kiv"',
+              error:
+                'salesOutcome must be "successful", "unsuccessful", or "kiv"',
             });
             return;
           }
@@ -579,10 +590,7 @@ export async function getGroupProspects(
     }
 
     // Trainer can only view their managed groups
-    if (
-      role === 'trainer' &&
-      !req.user.managedGroupIds?.includes(groupId)
-    ) {
+    if (role === 'trainer' && !req.user.managedGroupIds?.includes(groupId)) {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: "You do not have permission to view this group's prospects",
       });
@@ -659,7 +667,9 @@ export async function deleteProspect(
 
     await deleteProspectRecord(prospectId);
 
-    console.log(`[AUDIT] User ${req.user.uid} (${req.user.role}) deleted prospect ${prospectId}`);
+    console.log(
+      `[AUDIT] User ${req.user.uid} (${req.user.role}) deleted prospect ${prospectId}`,
+    );
 
     res.status(HttpStatusCodes.OK).json({
       success: true,
