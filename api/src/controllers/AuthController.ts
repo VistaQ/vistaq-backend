@@ -236,7 +236,7 @@ async function createUser(req: Request, res: Response): Promise<void> {
       userRecord = await adminAuth.createUser({
         email,
         password,
-        emailVerified: true,
+        emailVerified: false, // User will verify via password reset email
         disabled: false,
       });
     } catch (authError) {
@@ -304,7 +304,48 @@ async function createUser(req: Request, res: Response): Promise<void> {
     await db.collection('users').doc(uid).set(userData);
 
     // -------------------------------------------------------------------------
-    // Step 6 — Return success
+    // Step 6 — Send password reset email
+    // -------------------------------------------------------------------------
+
+    const apiKey = process.env.FIREBASE_API_KEY;
+
+    if (apiKey) {
+      try {
+        const firebaseRes = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }),
+          },
+        );
+
+        if (!firebaseRes.ok) {
+          const err = (await firebaseRes.json()) as {
+            error?: { message?: string };
+          };
+          console.error(
+            '[createUser] Failed to send password reset email:',
+            err?.error?.message,
+          );
+        } else {
+          console.log(`[createUser] Password reset email sent to ${email}`);
+        }
+      } catch (emailError) {
+        console.error(
+          '[createUser] Error sending password reset email:',
+          emailError,
+        );
+        // Don't fail the user creation if email fails
+      }
+    } else {
+      console.warn(
+        '[createUser] FIREBASE_API_KEY not set, skipping password reset email',
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 7 — Return success
     // -------------------------------------------------------------------------
 
     console.log(`[createUser] Created ${role} ${uid} (${email})`);
@@ -313,7 +354,8 @@ async function createUser(req: Request, res: Response): Promise<void> {
       success: true,
       userId: uid,
       agentCode: isMemberRole ? agentCode!.trim() : undefined,
-      message: 'User created successfully',
+      message:
+        'User created successfully. A password reset email has been sent to set up their account.',
     };
 
     res.status(HttpStatusCodes.CREATED).json(response);
