@@ -58,7 +58,7 @@ export interface LoginResponse {
 
 export interface CreateUserRequest {
   email: string;
-  password: string;
+  password: string; // Temporary password set by admin
   name: string;
   role: UserRole;
   // Required for agents and group leaders
