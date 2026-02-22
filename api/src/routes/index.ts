@@ -99,6 +99,17 @@ router.post('/prospects', prospectsController.createProspect);
 router.get('/prospects/my-prospects', prospectsController.getMyProspects);
 
 /**
+ * GET /prospects/managed-groups
+ * Get all prospects across all of the trainer's managed groups
+ * Query params: limit (optional, applied per group)
+ * Accessible by: Trainer
+ */
+router.get(
+  '/prospects/managed-groups',
+  prospectsController.getManagedGroupsProspects,
+);
+
+/**
  * GET /prospects/:id
  * Get a specific prospect by ID
  * Accessible by: Admin (any prospect), Manager (group's prospects), Agent (own prospects)
@@ -233,11 +244,11 @@ router.delete(
  * GET /admin/all-prospects
  * Get all prospects in the system
  * Query params: limit (optional)
- * Accessible by: Admin only
+ * Accessible by: Admin, Master Trainer
  */
 router.get(
   '/admin/all-prospects',
-  requireRole(['admin']),
+  requireRole(['admin', 'master_trainer']),
   prospectsController.getAdminAllProspects,
 );
 

@@ -53,11 +53,13 @@ function canViewProspect(
     return true;
   }
 
-  // Group leader and agent can only view their own prospects
-  if (
-    (userRole === 'group_leader' || userRole === 'agent') &&
-    prospect.uid === userId
-  ) {
+  // Group leader can view all prospects in their own group
+  if (userRole === 'group_leader' && prospect.groupId === userGroupId) {
+    return true;
+  }
+
+  // Agent can only view their own prospects
+  if (userRole === 'agent' && prospect.uid === userId) {
     return true;
   }
 
@@ -524,8 +526,8 @@ export async function getAdminAllProspects(
       return;
     }
 
-    // Only admins can access this
-    if (req.user.role !== 'admin') {
+    // Only admins and master trainers can access this
+    if (req.user.role !== 'admin' && req.user.role !== 'master_trainer') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'Admin access required',
       });
@@ -582,9 +584,17 @@ export async function getGroupProspects(
     // Check permissions
     const role = req.user.role;
 
-    if (role === 'agent' || role === 'group_leader') {
+    if (role === 'agent') {
       res.status(HttpStatusCodes.FORBIDDEN).json({
         error: 'You do not have permission to view group prospects',
+      });
+      return;
+    }
+
+    // Group leader can only view their own group
+    if (role === 'group_leader' && req.user.groupId !== groupId) {
+      res.status(HttpStatusCodes.FORBIDDEN).json({
+        error: "You do not have permission to view this group's prospects",
       });
       return;
     }
@@ -599,7 +609,6 @@ export async function getGroupProspects(
 
     // admin and master_trainer can view any group
 
-    // Admin can view any group
     const limitParam = req.query.limit;
     const limit =
       limitParam && typeof limitParam === 'string'
@@ -608,8 +617,14 @@ export async function getGroupProspects(
 
     const prospects = await getProspectsByGroup(groupId, limit);
 
+    // Group leaders cannot see personal contact details of prospects
+    const responseProspects =
+      role === 'group_leader'
+        ? prospects.map(({ prospectName, prospectEmail, prospectPhone, ...rest }) => rest)
+        : prospects;
+
     res.status(HttpStatusCodes.OK).json({
-      prospects,
+      prospects: responseProspects,
     });
   } catch (error) {
     console.error('Error fetching group prospects:', error);
@@ -683,6 +698,57 @@ export async function deleteProspect(
   }
 }
 
+/**
+ * Get all prospects across all of the trainer's managed groups
+ * GET /prospects/managed-groups
+ */
+export async function getManagedGroupsProspects(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(HttpStatusCodes.UNAUTHORIZED).json({
+        error: 'Authentication required',
+      });
+      return;
+    }
+
+    if (req.user.role !== 'trainer') {
+      res.status(HttpStatusCodes.FORBIDDEN).json({
+        error: 'Trainer access required',
+      });
+      return;
+    }
+
+    const managedGroupIds = req.user.managedGroupIds ?? [];
+
+    if (managedGroupIds.length === 0) {
+      res.status(HttpStatusCodes.OK).json({ prospects: [] });
+      return;
+    }
+
+    const limitParam = req.query.limit;
+    const limit =
+      limitParam && typeof limitParam === 'string'
+        ? parseInt(limitParam, 10)
+        : undefined;
+
+    const results = await Promise.all(
+      managedGroupIds.map((groupId) => getProspectsByGroup(groupId, limit)),
+    );
+
+    const prospects = results.flat();
+
+    res.status(HttpStatusCodes.OK).json({ prospects });
+  } catch (error) {
+    console.error('Error fetching managed groups prospects:', error);
+    res.status(HttpStatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: 'Failed to fetch prospects for managed groups',
+    });
+  }
+}
+
 /******************************************************************************
                             Export
 ******************************************************************************/
@@ -691,6 +757,7 @@ export default {
   createProspect,
   getMyProspects,
   getProspect,
+  getManagedGroupsProspects,
   updateProspect,
   deleteProspect,
   getAdminAllProspects,
