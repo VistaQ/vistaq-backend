@@ -62,6 +62,11 @@ export interface CreateProspectRequest {
 }
 
 export interface UpdateProspectRequest {
+  // Prospect fields
+  prospectName?: string;
+  prospectEmail?: string;
+  prospectPhone?: string;
+
   // Appointment fields
   appointmentDate?: string;
   appointmentStartTime?: string;

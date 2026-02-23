@@ -320,7 +320,7 @@ export async function updateProspect(
       updatedAt: Timestamp.now(),
     };
 
-    // Handle stage transitions
+    // Handle stage transition
     if (body.currentStage) {
       const validStages = ['prospect', 'appointment', 'sales_outcome'];
       if (!validStages.includes(body.currentStage)) {
@@ -332,166 +332,139 @@ export async function updateProspect(
 
       updateData.currentStage = body.currentStage;
 
-      // Add to stage history if transitioning to a new stage
       if (body.currentStage !== existingProspect.currentStage) {
         updateData.stageHistory = [
           ...existingProspect.stageHistory,
-          {
-            stage: body.currentStage,
-            enteredAt: Timestamp.now(),
-          },
+          { stage: body.currentStage, enteredAt: Timestamp.now() },
         ];
       }
 
-      // Handle appointment stage
-      if (body.currentStage === 'appointment') {
-        if (!body.appointmentDate) {
-          res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error: 'appointmentDate is required for appointment stage',
-          });
-          return;
-        }
+      if (body.currentStage === 'appointment' && !body.appointmentDate) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'appointmentDate is required for appointment stage',
+        });
+        return;
+      }
+    }
 
-        updateData.appointmentDate = Timestamp.fromDate(
-          new Date(body.appointmentDate),
-        );
-        updateData.appointmentStartTime = body.appointmentStartTime || null;
-        updateData.appointmentEndTime = body.appointmentEndTime || null;
-        updateData.appointmentLocation = body.appointmentLocation || null;
-        updateData.appointmentStatus = body.appointmentStatus || 'not_done';
+    // Prospect contact fields
+    if (body.prospectName !== undefined) {
+      if (body.prospectName.trim().length < 2) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'prospectName must be at least 2 characters',
+        });
+        return;
+      }
+      updateData.prospectName = body.prospectName.trim();
+    }
 
-        // Set appointmentCompletedAt if status is completed and not already set
-        if (
-          body.appointmentStatus === 'completed' &&
-          !existingProspect.appointmentCompletedAt
-        ) {
-          updateData.appointmentCompletedAt = Timestamp.now();
-        }
+    if (body.prospectEmail !== undefined) {
+      if (body.prospectEmail && !isValidEmail(body.prospectEmail)) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'Invalid prospectEmail format',
+        });
+        return;
+      }
+      updateData.prospectEmail = body.prospectEmail
+        ? body.prospectEmail.trim().toLowerCase()
+        : null;
+    }
 
-        if (body.salesPartsCompleted) {
-          updateData.salesPartsCompleted = body.salesPartsCompleted;
-        }
+    if (body.prospectPhone !== undefined) {
+      updateData.prospectPhone = body.prospectPhone
+        ? body.prospectPhone.trim()
+        : null;
+    }
+
+    // Appointment fields
+    if (body.appointmentDate !== undefined) {
+      updateData.appointmentDate = Timestamp.fromDate(
+        new Date(body.appointmentDate),
+      );
+    }
+
+    if (body.appointmentStartTime !== undefined) {
+      updateData.appointmentStartTime = body.appointmentStartTime;
+    }
+
+    if (body.appointmentEndTime !== undefined) {
+      updateData.appointmentEndTime = body.appointmentEndTime;
+    }
+
+    if (body.appointmentLocation !== undefined) {
+      updateData.appointmentLocation = body.appointmentLocation;
+    }
+
+    if (body.appointmentStatus !== undefined) {
+      const validStatuses = [
+        'not_done',
+        'scheduled',
+        'rescheduled',
+        'completed',
+        'declined',
+        'kiv',
+      ];
+      if (!validStatuses.includes(body.appointmentStatus)) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'Invalid appointmentStatus value',
+        });
+        return;
+      }
+      updateData.appointmentStatus = body.appointmentStatus;
+
+      if (
+        body.appointmentStatus === 'completed' &&
+        !existingProspect.appointmentCompletedAt
+      ) {
+        updateData.appointmentCompletedAt = Timestamp.now();
+      }
+    }
+
+    if (body.salesPartsCompleted !== undefined) {
+      updateData.salesPartsCompleted = body.salesPartsCompleted;
+    }
+
+    // Sales fields
+    if (body.salesOutcome !== undefined) {
+      if (!['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'salesOutcome must be "successful", "unsuccessful", or "kiv"',
+        });
+        return;
       }
 
-      // Handle sales stage
-      if (body.currentStage === 'sales_outcome') {
-        if (body.salesOutcome) {
-          if (
-            !['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)
-          ) {
-            res.status(HttpStatusCodes.BAD_REQUEST).json({
-              error:
-                'salesOutcome must be "successful", "unsuccessful", or "kiv"',
-            });
-            return;
-          }
-
-          updateData.salesOutcome = body.salesOutcome;
-
-          // Validate based on outcome
-          if (body.salesOutcome === 'unsuccessful') {
-            if (!body.unsuccessfulReason) {
-              res.status(HttpStatusCodes.BAD_REQUEST).json({
-                error:
-                  'unsuccessfulReason is required when salesOutcome is "unsuccessful"',
-              });
-              return;
-            }
-            updateData.unsuccessfulReason = body.unsuccessfulReason;
-          } else if (body.salesOutcome === 'successful') {
-            if (!body.productsSold || body.productsSold.length === 0) {
-              res.status(HttpStatusCodes.BAD_REQUEST).json({
-                error:
-                  'productsSold is required when salesOutcome is "successful"',
-              });
-              return;
-            }
-            updateData.productsSold = body.productsSold;
-            updateData.totalACE = calculateTotalACE(body.productsSold);
-          } else if (body.salesOutcome === 'kiv') {
-            if (body.productsSold && body.productsSold.length > 0) {
-              updateData.productsSold = body.productsSold;
-              updateData.totalACE = calculateTotalACE(body.productsSold);
-            }
-          }
-
-          // Only set salesCompletedAt if not already set (preserve original completion time)
-          if (!existingProspect.salesCompletedAt) {
-            updateData.salesCompletedAt = Timestamp.now();
-          }
-        }
-      }
-    } else {
-      // Update individual fields without changing stage
-      if (body.appointmentDate !== undefined) {
-        updateData.appointmentDate = Timestamp.fromDate(
-          new Date(body.appointmentDate),
-        );
+      if (body.salesOutcome === 'unsuccessful' && !body.unsuccessfulReason) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error:
+            'unsuccessfulReason is required when salesOutcome is "unsuccessful"',
+        });
+        return;
       }
 
-      if (body.appointmentStartTime !== undefined) {
-        updateData.appointmentStartTime = body.appointmentStartTime;
+      if (
+        body.salesOutcome === 'successful' &&
+        (!body.productsSold || body.productsSold.length === 0)
+      ) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          error: 'productsSold is required when salesOutcome is "successful"',
+        });
+        return;
       }
 
-      if (body.appointmentEndTime !== undefined) {
-        updateData.appointmentEndTime = body.appointmentEndTime;
-      }
+      updateData.salesOutcome = body.salesOutcome;
 
-      if (body.appointmentLocation !== undefined) {
-        updateData.appointmentLocation = body.appointmentLocation;
+      if (!existingProspect.salesCompletedAt) {
+        updateData.salesCompletedAt = Timestamp.now();
       }
+    }
 
-      if (body.appointmentStatus !== undefined) {
-        const validStatuses = [
-          'not_done',
-          'scheduled',
-          'rescheduled',
-          'completed',
-          'declined',
-          'kiv',
-        ];
-        if (!validStatuses.includes(body.appointmentStatus)) {
-          res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error: 'Invalid appointmentStatus value',
-          });
-          return;
-        }
-        updateData.appointmentStatus = body.appointmentStatus;
+    if (body.unsuccessfulReason !== undefined) {
+      updateData.unsuccessfulReason = body.unsuccessfulReason;
+    }
 
-        // Only set appointmentCompletedAt if not already set (preserve original completion time)
-        if (
-          body.appointmentStatus === 'completed' &&
-          !existingProspect.appointmentCompletedAt
-        ) {
-          updateData.appointmentCompletedAt = Timestamp.now();
-        }
-      }
-
-      if (body.salesPartsCompleted !== undefined) {
-        updateData.salesPartsCompleted = body.salesPartsCompleted;
-      }
-
-      if (body.productsSold !== undefined) {
-        updateData.productsSold = body.productsSold;
-        updateData.totalACE = calculateTotalACE(body.productsSold);
-      }
-
-      if (body.salesOutcome !== undefined) {
-        if (
-          !['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)
-        ) {
-          res.status(HttpStatusCodes.BAD_REQUEST).json({
-            error:
-              'salesOutcome must be "successful", "unsuccessful", or "kiv"',
-          });
-          return;
-        }
-        updateData.salesOutcome = body.salesOutcome;
-      }
-
-      if (body.unsuccessfulReason !== undefined) {
-        updateData.unsuccessfulReason = body.unsuccessfulReason;
-      }
+    if (body.productsSold !== undefined) {
+      updateData.productsSold = body.productsSold;
+      updateData.totalACE = calculateTotalACE(body.productsSold);
     }
 
     // Update the prospect record
