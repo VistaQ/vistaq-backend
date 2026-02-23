@@ -458,7 +458,23 @@ async function register(req: Request, res: Response): Promise<void> {
     }
 
     // -------------------------------------------------------------------------
-    // Step 2 — Ensure agentCode is unique
+    // Step 2 — Verify agentCode exists in the approved list
+    // -------------------------------------------------------------------------
+
+    const agentCodeDoc = await db
+      .collection('agentCodes')
+      .doc(agentCode.trim())
+      .get();
+
+    if (!agentCodeDoc.exists) {
+      res.status(HttpStatusCodes.BAD_REQUEST).json({
+        error: 'Invalid agent code',
+      });
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 3 — Ensure agentCode is unique
     // -------------------------------------------------------------------------
 
     const agentCodeSnapshot = await db
@@ -475,7 +491,7 @@ async function register(req: Request, res: Response): Promise<void> {
     }
 
     // -------------------------------------------------------------------------
-    // Step 3 — Verify the target group exists
+    // Step 4 — Verify the target group exists
     // -------------------------------------------------------------------------
 
     const groupDoc = await db.collection('groups').doc(groupId).get();
@@ -491,7 +507,7 @@ async function register(req: Request, res: Response): Promise<void> {
     const groupName = groupData.name as string;
 
     // -------------------------------------------------------------------------
-    // Step 4 — Create Firebase Auth account (Admin SDK)
+    // Step 5 — Create Firebase Auth account (Admin SDK)
     // -------------------------------------------------------------------------
 
     let userRecord: admin.auth.UserRecord;
@@ -527,7 +543,7 @@ async function register(req: Request, res: Response): Promise<void> {
     const uid = userRecord.uid;
 
     // -------------------------------------------------------------------------
-    // Step 5 — Create Firestore user document
+    // Step 6 — Create Firestore user document
     // -------------------------------------------------------------------------
 
     const newUser = {
@@ -563,7 +579,7 @@ async function register(req: Request, res: Response): Promise<void> {
     await db.collection('users').doc(uid).set(newUser);
 
     // -------------------------------------------------------------------------
-    // Step 6 — Add user to the group's member list
+    // Step 7 — Add user to the group's member list
     // -------------------------------------------------------------------------
 
     await db
@@ -576,7 +592,7 @@ async function register(req: Request, res: Response): Promise<void> {
       });
 
     // -------------------------------------------------------------------------
-    // Step 7 — Auto-login via Client SDK to get a usable ID token
+    // Step 8 — Auto-login via Client SDK to get a usable ID token
     // -------------------------------------------------------------------------
 
     const userCredential = await signInWithEmailAndPassword(

@@ -9,6 +9,7 @@ import { authenticate } from 'middleware/auth';
 import { requireRole } from 'middleware/roleCheck';
 
 // Import all controllers
+import agentCodeController from '@src/controllers/agentCodeController';
 import authController from '@src/controllers/AuthController';
 import eventController from '@src/controllers/eventController';
 import groupController from '@src/controllers/groupController';
@@ -28,6 +29,9 @@ router.post('/auth/forgot-password', authController.forgotPassword);
 
 // Public group listing — used by the self-signup flow to populate the group picker
 router.get('/groups/public', groupController.getPublicGroups);
+
+// Public agent code listing — used by the self-signup flow to validate agent codes
+router.get('/agent-codes', agentCodeController.getAgentCodes);
 
 /******************************************************************************
                     PROTECTED ROUTES (Authentication required)
@@ -258,6 +262,19 @@ router.get(
  * Accessible by: Admin (any prospect), Agent/Group Leader (own prospects only)
  */
 router.delete('/prospects/:id', prospectsController.deleteProspect);
+
+// ===== ADMIN - AGENT CODE MANAGEMENT =====
+
+/**
+ * POST /admin/agent-codes
+ * Upsert a list of agent codes
+ * Accessible by: Admin only
+ */
+router.post(
+  '/admin/agent-codes',
+  requireRole(['admin']),
+  agentCodeController.upsertAgentCodes,
+);
 
 // ===== ADMIN - GROUP MANAGEMENT =====
 
