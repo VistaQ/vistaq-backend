@@ -425,7 +425,7 @@ export async function updateProspect(
     }
 
     // Sales fields
-    if (body.salesOutcome !== undefined) {
+    if (body.salesOutcome !== undefined && body.salesOutcome !== null) {
       if (!['successful', 'unsuccessful', 'kiv'].includes(body.salesOutcome)) {
         res.status(HttpStatusCodes.BAD_REQUEST).json({
           error: 'salesOutcome must be "successful", "unsuccessful", or "kiv"',
