@@ -1,0 +1,192 @@
+{
+  "password": "TestPass123!",
+  "users": {
+    "admin": {
+      "uid": "eTpIuwxSc3c7JGsXHT4f8do5vru1",
+      "email": "test.admin@vistaq.test",
+      "role": "admin",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "master_trainer": {
+      "uid": "SgLj7FtzIHORYmdsOdv6MqqplzL2",
+      "email": "test.master@vistaq.test",
+      "role": "master_trainer",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "trainer_star": {
+      "uid": "zsRBXweqXwSMijpWZgNVXddYebJ3",
+      "email": "test.trainer.star@vistaq.test",
+      "role": "trainer",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "leader_star": {
+      "uid": "LP0KiY1XS5Nt3ACLWLS81uDyyli1",
+      "email": "test.leader.star@vistaq.test",
+      "role": "group_leader",
+      "agentCode": "LS001",
+      "groupKey": "mdrt_star"
+    },
+    "agent_star_1": {
+      "uid": "N7FyC9K4NrciWKV7g6Q8DP32R482",
+      "email": "test.agent.star1@vistaq.test",
+      "role": "agent",
+      "agentCode": "AS001",
+      "groupKey": "mdrt_star"
+    },
+    "agent_star_2": {
+      "uid": "dG8UeP8uM1dvSRxBF4Mido0DdpE2",
+      "email": "test.agent.star2@vistaq.test",
+      "role": "agent",
+      "agentCode": "AS002",
+      "groupKey": "mdrt_star"
+    },
+    "trainer_power": {
+      "uid": "L5BXKPeB13UI16RX9AffGqyd6Aq1",
+      "email": "test.trainer.power@vistaq.test",
+      "role": "trainer",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "leader_power": {
+      "uid": "Pl8YPgW3IaRHi51hGlApjLiUi1z1",
+      "email": "test.leader.power@vistaq.test",
+      "role": "group_leader",
+      "agentCode": "LP001",
+      "groupKey": "sales_power"
+    },
+    "agent_power_1": {
+      "uid": "W6y4cdaU6ub3blNDzOsNCgxWnnq1",
+      "email": "test.agent.power1@vistaq.test",
+      "role": "agent",
+      "agentCode": "AP001",
+      "groupKey": "sales_power"
+    },
+    "agent_power_2": {
+      "uid": "NDNUHgGxLTUhsRF1rECUz84A3ZA2",
+      "email": "test.agent.power2@vistaq.test",
+      "role": "agent",
+      "agentCode": "AP002",
+      "groupKey": "sales_power"
+    },
+    "trainer_legend": {
+      "uid": "CjajZkkEWFX81MYGN67oOU159Yk1",
+      "email": "test.trainer.legend@vistaq.test",
+      "role": "trainer",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "leader_legend": {
+      "uid": "B2KU0drcAcV7UrtADj2mFHvQ3W43",
+      "email": "test.leader.legend@vistaq.test",
+      "role": "group_leader",
+      "agentCode": "LL001",
+      "groupKey": "mdrt_legend"
+    },
+    "agent_legend": {
+      "uid": "wG3a129UlmeKVWxe452iJB7U1C63",
+      "email": "test.agent.legend@vistaq.test",
+      "role": "agent",
+      "agentCode": "AL001",
+      "groupKey": "mdrt_legend"
+    },
+    "trainer_avengers": {
+      "uid": "SztftyaO7ZMmexJj0rxsVnQjP213",
+      "email": "test.trainer.avengers@vistaq.test",
+      "role": "trainer",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "leader_avengers": {
+      "uid": "DCvHNA1LM6duDjjsvaNTcLk3RD72",
+      "email": "test.leader.avengers@vistaq.test",
+      "role": "group_leader",
+      "agentCode": "LA001",
+      "groupKey": "agent_avengers"
+    },
+    "agent_avengers": {
+      "uid": "3cMeaY9kpyWlllTENvKjJZ70Mfn1",
+      "email": "test.agent.avengers@vistaq.test",
+      "role": "agent",
+      "agentCode": "AA001",
+      "groupKey": "agent_avengers"
+    },
+    "trainer_busters": {
+      "uid": "qjy9cjFysEUvHOihOrd3joU3dZn2",
+      "email": "test.trainer.busters@vistaq.test",
+      "role": "trainer",
+      "agentCode": null,
+      "groupKey": null
+    },
+    "leader_busters": {
+      "uid": "KePaMngzHFUSykZ8q4pbzqLorG83",
+      "email": "test.leader.busters@vistaq.test",
+      "role": "group_leader",
+      "agentCode": "LB001",
+      "groupKey": "kpi_busters"
+    },
+    "agent_busters": {
+      "uid": "M3RjcssZhOTraoFDcACKT8dkg6A3",
+      "email": "test.agent.busters@vistaq.test",
+      "role": "agent",
+      "agentCode": "KB001",
+      "groupKey": "kpi_busters"
+    }
+  },
+  "groups": {
+    "mdrt_star": {
+      "id": "1DbapPP2VzA1BD7D72Ei",
+      "name": "MDRT Star",
+      "trainerKey": "trainer_star",
+      "leaderKey": "leader_star",
+      "memberKeys": [
+        "leader_star",
+        "agent_star_1",
+        "agent_star_2"
+      ]
+    },
+    "sales_power": {
+      "id": "X4BAswYpPNDHomQeV8WS",
+      "name": "Sales Power",
+      "trainerKey": "trainer_power",
+      "leaderKey": "leader_power",
+      "memberKeys": [
+        "leader_power",
+        "agent_power_1",
+        "agent_power_2"
+      ]
+    },
+    "mdrt_legend": {
+      "id": "EkP9AczFVOLgg46Lnu2U",
+      "name": "MDRT Legend",
+      "trainerKey": "trainer_legend",
+      "leaderKey": "leader_legend",
+      "memberKeys": [
+        "leader_legend",
+        "agent_legend"
+      ]
+    },
+    "agent_avengers": {
+      "id": "yc1Y5OqDhlYWpLZlBVzy",
+      "name": "Agent Avengers",
+      "trainerKey": "trainer_avengers",
+      "leaderKey": "leader_avengers",
+      "memberKeys": [
+        "leader_avengers",
+        "agent_avengers"
+      ]
+    },
+    "kpi_busters": {
+      "id": "GwqpMHsBMXEwbbiF1Rnc",
+      "name": "KPI Busters",
+      "trainerKey": "trainer_busters",
+      "leaderKey": "leader_busters",
+      "memberKeys": [
+        "leader_busters",
+        "agent_busters"
+      ]
+    }
+  }
+}

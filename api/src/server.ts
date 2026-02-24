@@ -1,10 +1,12 @@
+import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'path';
 
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import { RouteError } from '@src/common/utils/route-errors';
-import router from '@src/routes/router';
+import router from '@src/routes';
 
 import EnvVars, { NodeEnvs } from './common/constants/env';
 
@@ -17,6 +19,9 @@ const app = express();
 /******************************************************************************
                                 Middleware
 ******************************************************************************/
+
+// CORS — allow all origins (tighten before production go-live)
+app.use(cors());
 
 // Parse JSON bodies
 app.use(express.json());
@@ -45,6 +50,12 @@ app.use('/api', router);
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
   res.status(HttpStatusCodes.OK).json({ status: 'ok' });
+});
+
+// OpenAPI spec
+app.get('/openapi.yaml', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/yaml; charset=utf-8');
+  res.sendFile(path.join(__dirname, 'openapi.yaml'));
 });
 
 /******************************************************************************

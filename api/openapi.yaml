@@ -1,0 +1,2187 @@
+openapi: 3.0.3
+info:
+  title: vistaq API
+  version: 1.0.0
+  description: |
+    Backend API for the vistaq insurance agent management platform.
+
+    ## Authentication
+    All protected routes require a Firebase ID token passed as a Bearer token:
+    ```
+    Authorization: Bearer <idToken>
+    ```
+    Obtain the token from `POST /auth/login` or `POST /auth/register`.
+
+    ## Role Hierarchy
+    `admin` > `master_trainer` > `trainer` > `group_leader` > `agent`
+
+servers:
+  - url: https://stg-api.vistaq.co/api
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Public authentication endpoints
+  - name: Users
+    description: User profile management
+  - name: Prospects
+    description: Prospect / sales pipeline tracking
+  - name: Groups
+    description: Group read endpoints
+  - name: Events
+    description: Training events and meetups
+  - name: Admin – Users
+    description: Admin-only user management
+  - name: Admin – Groups
+    description: Admin-only group management
+  - name: Admin – Prospects
+    description: Admin-only prospect access
+
+################################################################################
+# Reusable components
+################################################################################
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID Token
+
+  schemas:
+
+    # --------------------------------------------------------------------------
+    # Error
+    # --------------------------------------------------------------------------
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Something went wrong
+      required: [error]
+
+    # --------------------------------------------------------------------------
+    # Shared success wrapper
+    # --------------------------------------------------------------------------
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully
+      required: [success, message]
+
+    # --------------------------------------------------------------------------
+    # Roles / enums
+    # --------------------------------------------------------------------------
+    UserRole:
+      type: string
+      enum: [admin, master_trainer, trainer, group_leader, agent]
+
+    UserStatus:
+      type: string
+      enum: [active, inactive, suspended]
+
+    ProspectStage:
+      type: string
+      enum: [prospect, appointment, sales_outcome]
+
+    AppointmentStatus:
+      type: string
+      enum: [not_done, scheduled, rescheduled, completed, declined, kiv]
+
+    SalesOutcome:
+      type: string
+      enum: [successful, unsuccessful, kiv]
+
+    EventStatus:
+      type: string
+      enum: [upcoming, completed, cancelled]
+
+    # --------------------------------------------------------------------------
+    # User
+    # --------------------------------------------------------------------------
+    UserSummary:
+      description: Minimal user object returned from login / register
+      type: object
+      properties:
+        uid:
+          type: string
+          example: abc123uid
+        email:
+          type: string
+          format: email
+          example: agent@example.com
+        name:
+          type: string
+          example: Jane Smith
+        role:
+          $ref: '#/components/schemas/UserRole'
+        groupId:
+          type: string
+          nullable: true
+          example: grp_xyz
+        groupName:
+          type: string
+          nullable: true
+          example: Sales Power
+        agentCode:
+          type: string
+          nullable: true
+          example: A001
+        agency:
+          type: string
+          nullable: true
+          example: Great Eastern
+        location:
+          type: string
+          nullable: true
+          example: Kuala Lumpur
+
+    UserData:
+      description: Full user document returned from profile endpoints
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          properties:
+            phone:
+              type: string
+              example: '+60123456789'
+            permissions:
+              type: array
+              items:
+                type: string
+              example: [create_sales, view_own_sales]
+            managedGroupIds:
+              type: array
+              nullable: true
+              items:
+                type: string
+              example: [grp_abc, grp_def]
+            totalProspects:
+              type: integer
+              example: 12
+            totalAppointments:
+              type: integer
+              example: 8
+            totalSales:
+              type: integer
+              example: 5
+            totalACE:
+              type: number
+              example: 24500.00
+            totalPoints:
+              type: integer
+              example: 320
+            currentBadge:
+              type: string
+              nullable: true
+              example: Bronze
+            currentBadgeColor:
+              type: string
+              nullable: true
+              example: '#CD7F32'
+            status:
+              $ref: '#/components/schemas/UserStatus'
+            createdAt:
+              type: string
+              format: date-time
+              example: '2025-01-15T08:00:00Z'
+            updatedAt:
+              type: string
+              format: date-time
+              example: '2025-06-01T12:00:00Z'
+
+    # --------------------------------------------------------------------------
+    # Group
+    # --------------------------------------------------------------------------
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          example: grp_xyz
+        name:
+          type: string
+          example: Sales Power
+        leaderId:
+          type: string
+          nullable: true
+          example: uid_leader
+        leaderName:
+          type: string
+          nullable: true
+          example: John Leader
+        leaderEmail:
+          type: string
+          nullable: true
+          example: john@example.com
+        trainerIds:
+          type: array
+          items:
+            type: string
+          example: [uid_trainer1]
+        trainerNames:
+          type: array
+          items:
+            type: string
+          example: [Trainer Alice]
+        memberIds:
+          type: array
+          items:
+            type: string
+          example: [uid_a, uid_b]
+        memberCount:
+          type: integer
+          example: 2
+        totalProspects:
+          type: integer
+          example: 40
+        totalAppointments:
+          type: integer
+          example: 28
+        totalSales:
+          type: integer
+          example: 15
+        totalACE:
+          type: number
+          example: 75000.00
+        totalPoints:
+          type: integer
+          example: 900
+        status:
+          type: string
+          enum: [active, inactive]
+          example: active
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GroupMember:
+      type: object
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        agentCode:
+          type: string
+        totalPoints:
+          type: integer
+        totalProspects:
+          type: integer
+        totalAppointments:
+          type: integer
+        totalSales:
+          type: integer
+        totalACE:
+          type: number
+        currentBadge:
+          type: string
+        status:
+          type: string
+
+    # --------------------------------------------------------------------------
+    # Prospect
+    # --------------------------------------------------------------------------
+    ProductSold:
+      type: object
+      required: [productName, aceAmount]
+      properties:
+        productName:
+          type: string
+          example: Life Insurance Plan A
+        aceAmount:
+          type: number
+          example: 5000.00
+
+    StageHistoryEntry:
+      type: object
+      properties:
+        stage:
+          $ref: '#/components/schemas/ProspectStage'
+        enteredAt:
+          type: string
+          format: date-time
+
+    Prospect:
+      type: object
+      properties:
+        id:
+          type: string
+          example: prospect_abc123
+        currentStage:
+          $ref: '#/components/schemas/ProspectStage'
+        stageHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/StageHistoryEntry'
+        uid:
+          type: string
+          description: Firebase UID of the creating agent
+        agentCode:
+          type: string
+        agentName:
+          type: string
+        agentEmail:
+          type: string
+        groupId:
+          type: string
+        groupName:
+          type: string
+        prospectName:
+          type: string
+        prospectEmail:
+          type: string
+          nullable: true
+        prospectPhone:
+          type: string
+          nullable: true
+        prospectEnteredAt:
+          type: string
+          format: date-time
+        # Appointment fields (present once in appointment stage)
+        appointmentDate:
+          type: string
+          format: date-time
+          nullable: true
+        appointmentStartTime:
+          type: string
+          nullable: true
+          example: '10:00'
+        appointmentEndTime:
+          type: string
+          nullable: true
+          example: '11:00'
+        appointmentLocation:
+          type: string
+          nullable: true
+        appointmentStatus:
+          $ref: '#/components/schemas/AppointmentStatus'
+        appointmentCompletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        salesPartsCompleted:
+          type: array
+          nullable: true
+          items:
+            type: string
+        # Sales outcome fields
+        salesOutcome:
+          $ref: '#/components/schemas/SalesOutcome'
+        unsuccessfulReason:
+          type: string
+          nullable: true
+        productsSold:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ProductSold'
+        totalACE:
+          type: number
+          nullable: true
+        salesCompletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # --------------------------------------------------------------------------
+    # Event
+    # --------------------------------------------------------------------------
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          example: event_abc123
+        eventTitle:
+          type: string
+          example: Monthly Coffee Hangout
+        date:
+          type: string
+          format: date-time
+          example: '2025-07-15T09:00:00Z'
+        venue:
+          type: string
+          example: KL Sentral, Level 3
+        meetingLink:
+          type: string
+          nullable: true
+          example: 'https://meet.google.com/abc-defg-hij'
+        description:
+          type: string
+          example: Monthly group meetup to discuss targets and share tips.
+        groupIds:
+          type: array
+          items:
+            type: string
+          example: [grp_xyz, grp_abc]
+        groupNames:
+          type: array
+          items:
+            type: string
+          example: [Sales Power, Agent Avengers]
+        createdBy:
+          type: string
+          example: uid_trainer1
+        createdByName:
+          type: string
+          example: Trainer Alice
+        createdByRole:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/EventStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+################################################################################
+# Paths
+################################################################################
+
+paths:
+
+  ##############################################################################
+  # AUTH
+  ##############################################################################
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: agent@example.com
+                password:
+                  type: string
+                  format: password
+                  example: secret123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Firebase ID token — use as Bearer token for all protected routes
+                  user:
+                    $ref: '#/components/schemas/UserSummary'
+        '400':
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Account inactive or disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User data not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many failed login attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Agent self-registration
+      description: |
+        Public endpoint. Creates a Firebase Auth account and Firestore user
+        document for a new agent, adds them to an existing group, and returns
+        a ready-to-use ID token.
+
+        `agentCode` must be unique and is always supplied by the client.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, agentCode, email, password, groupId, acknowledged]
+              properties:
+                fullName:
+                  type: string
+                  minLength: 2
+                  example: Jane Smith
+                agentCode:
+                  type: string
+                  example: A001
+                  description: Must be unique across the system
+                email:
+                  type: string
+                  format: email
+                  example: jane@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  example: secret123
+                groupId:
+                  type: string
+                  example: grp_xyz
+                  description: Firestore ID of the group to join
+                acknowledged:
+                  type: boolean
+                  example: true
+                  description: Must be true — user has acknowledged the privacy policy
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                    description: Firebase ID token ready to use immediately
+                  user:
+                    type: object
+                    properties:
+                      uid:
+                        type: string
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      role:
+                        type: string
+                        example: agent
+                      groupId:
+                        type: string
+                      groupName:
+                        type: string
+                      agentCode:
+                        type: string
+        '400':
+          description: Validation error (missing fields, duplicate agentCode, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Send a password reset email
+      description: "Triggers a Firebase password reset email. Always returns success to prevent email enumeration."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: agent@example.com
+      responses:
+        '200':
+          description: Reset email sent (or silently skipped if account not found)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "If an account with that email exists, a password reset link has been sent."
+        '400':
+          description: Email is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # USERS
+  ##############################################################################
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get current user's full profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Full user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserData'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users/me/password:
+    patch:
+      tags: [Users]
+      summary: Change own password
+      description: Change the currently authenticated user's own password.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 6
+                  example: newpassword123
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Password must be at least 6 characters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get a specific user by ID
+      description: |
+        Access rules:
+        - `admin` — any user
+        - `master_trainer` — any agent or group_leader
+        - `trainer` — users in managed groups
+        - `group_leader` — users in same group
+        - `agent` — self only
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: uid_abc123
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserData'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Users]
+      summary: Update a user
+      description: |
+        **Self (any authenticated user):** can update `name`, `phone`, `location` only.
+
+        **Admin:** can additionally update `email`, `agency`, `role`, `status`.
+
+        Role change rules:
+        - Promoting to `group_leader` requires the user to already be in a group.
+        - Demoting from `group_leader` to `agent` clears the group's leadership fields.
+        - Promoting to `trainer`/`master_trainer` requires the user to have no `groupId`.
+        - Demoting from trainer requires no managed groups.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  example: Jane Smith
+                phone:
+                  type: string
+                  example: '+60123456789'
+                location:
+                  type: string
+                  example: Kuala Lumpur
+                email:
+                  type: string
+                  format: email
+                  description: Admin only
+                agency:
+                  type: string
+                  description: Admin only
+                role:
+                  $ref: '#/components/schemas/UserRole'
+                  description: Admin only
+                status:
+                  $ref: '#/components/schemas/UserStatus'
+                  description: Admin only
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users:
+    get:
+      tags: [Users]
+      summary: Get all users (with optional filters)
+      description: Accessible by admin, master_trainer, trainer only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: groupId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserStatus'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            example: 50
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserData'
+                  count:
+                    type: integer
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users/group/{groupId}:
+    get:
+      tags: [Users]
+      summary: Get all users in a specific group
+      description: Accessible by admin, master_trainer, trainer (managed groups), group_leader (own group).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Users in the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserData'
+                  groupName:
+                    type: string
+                    example: Sales Power
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # PROSPECTS
+  ##############################################################################
+
+  /prospects:
+    post:
+      tags: [Prospects]
+      summary: Create a new prospect
+      description: Accessible by agent and group_leader only.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prospectName]
+              properties:
+                prospectName:
+                  type: string
+                  minLength: 2
+                  example: Ahmad bin Ali
+                prospectEmail:
+                  type: string
+                  format: email
+                  example: ahmad@example.com
+                prospectPhone:
+                  type: string
+                  example: '+60112345678'
+      responses:
+        '201':
+          description: Prospect created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  prospectId:
+                    type: string
+                    example: prospect_abc123
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Only agents and group leaders can create prospects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /prospects/my-prospects:
+    get:
+      tags: [Prospects]
+      summary: Get current user's prospects
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            example: 50
+      responses:
+        '200':
+          description: List of prospects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prospects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Prospect'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /prospects/{id}:
+    get:
+      tags: [Prospects]
+      summary: Get a specific prospect by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prospect found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prospect:
+                    $ref: '#/components/schemas/Prospect'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Prospect not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Prospects]
+      summary: Update a prospect / advance pipeline stage
+      description: |
+        The owner agent (or admin) can update the prospect.
+
+        ### Stage transitions
+        Set `currentStage` to advance the pipeline:
+        - `prospect` → `appointment`: requires `appointmentDate`
+        - `appointment` → `sales_outcome`: requires `salesOutcome`
+          - `"successful"`: requires `productsSold` array
+          - `"unsuccessful"`: requires `unsuccessfulReason`
+          - `"kiv"`: `productsSold` optional
+
+        You can also update individual fields without changing stage by omitting `currentStage`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentStage:
+                  $ref: '#/components/schemas/ProspectStage'
+                appointmentDate:
+                  type: string
+                  format: date-time
+                  description: Required when transitioning to appointment stage
+                  example: '2025-07-20T10:00:00Z'
+                appointmentStartTime:
+                  type: string
+                  example: '10:00'
+                appointmentEndTime:
+                  type: string
+                  example: '11:00'
+                appointmentLocation:
+                  type: string
+                  example: Starbucks KL Sentral
+                appointmentStatus:
+                  $ref: '#/components/schemas/AppointmentStatus'
+                salesPartsCompleted:
+                  type: array
+                  items:
+                    type: string
+                  example: [fact_find, needs_analysis]
+                salesOutcome:
+                  $ref: '#/components/schemas/SalesOutcome'
+                  description: Required when in sales_outcome stage
+                unsuccessfulReason:
+                  type: string
+                  description: Required when salesOutcome is "unsuccessful"
+                  example: Not interested at this time
+                productsSold:
+                  type: array
+                  description: Required when salesOutcome is "successful"
+                  items:
+                    $ref: '#/components/schemas/ProductSold'
+      responses:
+        '200':
+          description: Prospect updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Prospect not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Prospects]
+      summary: Delete a prospect
+      description: Admin can delete any prospect. Agents/group leaders can only delete their own.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prospect deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Prospect not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /prospects/group/{groupId}:
+    get:
+      tags: [Prospects]
+      summary: Get prospects for a specific group
+      description: |
+        Accessible by: admin, master_trainer, trainer (managed groups only).
+        Agents and group_leaders are blocked.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            example: 100
+      responses:
+        '200':
+          description: List of prospects for the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prospects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Prospect'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # GROUPS
+  ##############################################################################
+
+  /groups/public:
+    get:
+      tags: [Groups]
+      summary: List all active groups (public)
+      description: |
+        Returns `id` and `name` for every active group. No authentication required.
+        Used by the agent self-signup flow to populate the group picker before the user has an account.
+      responses:
+        '200':
+          description: List of active groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: grp_xyz
+                        name:
+                          type: string
+                          example: Sales Power
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /groups/{groupId}:
+    get:
+      tags: [Groups]
+      summary: Get a specific group (with member details)
+      description: Accessible by admin, master_trainer, trainer (managed groups), group_leader (own group).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Group with member list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group:
+                    $ref: '#/components/schemas/Group'
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupMember'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /groups:
+    get:
+      tags: [Groups]
+      summary: Get all groups (role-filtered)
+      description: |
+        - `admin` / `master_trainer` — all groups
+        - `trainer` — managed groups only
+        - `group_leader` — own group only
+        - `agent` — 403
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Group'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # EVENTS
+  ##############################################################################
+
+  /events:
+    post:
+      tags: [Events]
+      summary: Create a new event
+      description: |
+        Accessible by: admin, master_trainer, trainer, group_leader.
+
+        - Trainers can only assign events to their managed groups.
+        - Group leaders can only assign events to their own group.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventTitle, date, venue, description, groupIds]
+              properties:
+                eventTitle:
+                  type: string
+                  minLength: 3
+                  example: Monthly Coffee Hangout
+                date:
+                  type: string
+                  format: date-time
+                  example: '2025-07-15T09:00:00Z'
+                venue:
+                  type: string
+                  minLength: 3
+                  example: KL Sentral, Level 3
+                meetingLink:
+                  type: string
+                  format: uri
+                  nullable: true
+                  example: 'https://meet.google.com/abc-defg-hij'
+                description:
+                  type: string
+                  minLength: 10
+                  example: Monthly group meetup to discuss targets and share tips.
+                groupIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                  example: [grp_xyz]
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  eventId:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: One or more groups not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Events]
+      summary: Get all events (admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/EventStatus'
+        - name: groupId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of events (most recent first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /events/my-events:
+    get:
+      tags: [Events]
+      summary: Get upcoming events for the current user's groups
+      description: Returns upcoming events filtered by the user's group membership or managed groups. Results are ordered by date ascending.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of upcoming events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /events/{eventId}:
+    get:
+      tags: [Events]
+      summary: Get a specific event by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event:
+                    $ref: '#/components/schemas/Event'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Events]
+      summary: Update an event
+      description: Admin can update any event. The creator can update their own event.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: At least one field must be provided
+              properties:
+                eventTitle:
+                  type: string
+                  minLength: 3
+                date:
+                  type: string
+                  format: date-time
+                venue:
+                  type: string
+                  minLength: 3
+                meetingLink:
+                  type: string
+                  format: uri
+                  nullable: true
+                description:
+                  type: string
+                  minLength: 10
+                groupIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                status:
+                  $ref: '#/components/schemas/EventStatus'
+      responses:
+        '200':
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Events]
+      summary: Delete an event
+      description: Admin can delete any event. The creator can delete their own event.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # ADMIN – USERS
+  ##############################################################################
+
+  /admin/users:
+    post:
+      tags: [Admin – Users]
+      summary: Create a new user (admin only)
+      description: |
+        Creates a Firebase Auth account and Firestore document.
+
+        Required fields by role:
+        - All roles: `email`, `password`, `name`, `role`
+        - `agent` / `group_leader`: additionally requires `agentCode`
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                name:
+                  type: string
+                role:
+                  $ref: '#/components/schemas/UserRole'
+                agentCode:
+                  type: string
+                  description: Required for agent and group_leader roles
+                agency:
+                  type: string
+                location:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  userId:
+                    type: string
+                  agentCode:
+                    type: string
+                    nullable: true
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/users/{userId}/status:
+    patch:
+      tags: [Admin – Users]
+      summary: Update user status (admin only)
+      description: Toggle a user between active and inactive. Also updates their Firebase Auth disabled flag.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, inactive]
+                  example: inactive
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid status value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/users/{userId}/password:
+    patch:
+      tags: [Admin – Users]
+      summary: Reset a user's password (admin only)
+      description: Resets any user's password. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 6
+                  example: newpassword123
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Password must be at least 6 characters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Only administrators can reset user passwords
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/users/{userId}:
+    delete:
+      tags: [Admin – Users]
+      summary: Permanently delete a user (admin only)
+      description: |
+        Deletes the Firestore document and Firebase Auth account.
+        If the user is in a group, they are removed from `memberIds`.
+
+        Trainers with assigned groups cannot be deleted — reassign groups first.
+
+        Consider using `PATCH /admin/users/:userId/status` with `inactive` for a soft delete.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Cannot delete self, or trainer has assigned groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # ADMIN – PROSPECTS
+  ##############################################################################
+
+  /admin/all-prospects:
+    get:
+      tags: [Admin – Prospects]
+      summary: Get all prospects system-wide (admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            example: 100
+      responses:
+        '200':
+          description: All prospects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prospects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Prospect'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  ##############################################################################
+  # ADMIN – GROUPS
+  ##############################################################################
+
+  /admin/groups:
+    post:
+      tags: [Admin – Groups]
+      summary: Create a new group (admin only)
+      description: |
+        `name` is the only required field. All other fields are optional.
+
+        If `leaderId` is provided it must appear in `memberIds`.
+        If the leader's current role is `agent`, they will be automatically promoted to `group_leader`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 3
+                  example: Sales Power
+                leaderId:
+                  type: string
+                  description: UID of the group leader (must be in memberIds)
+                  example: uid_leader
+                trainerIds:
+                  type: array
+                  items:
+                    type: string
+                  description: UIDs of trainers or master_trainers
+                  example: [uid_trainer1]
+                memberIds:
+                  type: array
+                  items:
+                    type: string
+                  description: UIDs of all group members (agents / group leaders)
+                  example: [uid_leader, uid_agent1, uid_agent2]
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  groupId:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only, or invalid trainer/leader role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: One or more specified users not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/groups/{groupId}:
+    put:
+      tags: [Admin – Groups]
+      summary: Update a group (admin only)
+      description: |
+        At least one of `name`, `trainerIds`, `leaderId`, or `memberIds` must be provided.
+
+        Changing `leaderId` automatically demotes the old leader to `agent` and promotes the new one.
+        The leader must always be present in `memberIds`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 3
+                leaderId:
+                  type: string
+                trainerIds:
+                  type: array
+                  items:
+                    type: string
+                memberIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Group updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Group or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Admin – Groups]
+      summary: Delete a group (admin only)
+      description: |
+        Permanently deletes the group document.
+        All members have their `groupId`/`groupName` cleared.
+        All trainers have this group removed from their `managedGroupIds`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Group deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

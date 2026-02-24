@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import { initializeApp } from 'firebase/app';
 import { getAuth as getClientAuth } from 'firebase/auth';
 
@@ -7,22 +8,22 @@ import { getAuth as getClientAuth } from 'firebase/auth';
 ******************************************************************************/
 
 // Initialize Firebase Admin SDK
-const serviceAccount = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-if (!serviceAccount) {
+if (!serviceAccountJson) {
   throw new Error(
-    'GOOGLE_APPLICATION_CREDENTIALS environment variable is not set',
+    'FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set',
   );
 }
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+  credential: admin.credential.cert(JSON.parse(serviceAccountJson)),
   projectId: process.env.FIREBASE_PROJECT_ID,
 });
 
 // Export Admin SDK instances
 export const adminAuth = admin.auth();
-export const db = admin.firestore();
+export const db = getFirestore(process.env.FIREBASE_DATABASE_ID ?? '(default)');
 
 /******************************************************************************
                             Firebase Client SDK Setup
