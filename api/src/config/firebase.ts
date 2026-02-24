@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import { initializeApp } from 'firebase/app';
 import { getAuth as getClientAuth } from 'firebase/auth';
 
@@ -22,7 +23,7 @@ admin.initializeApp({
 
 // Export Admin SDK instances
 export const adminAuth = admin.auth();
-export const db = admin.firestore();
+export const db = getFirestore(process.env.FIREBASE_DATABASE_ID ?? '(default)');
 
 /******************************************************************************
                             Firebase Client SDK Setup
