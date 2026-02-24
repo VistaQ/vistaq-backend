@@ -1,5 +1,4 @@
 {
   "regions": ["sin1"],
-  "outputDirectory": ".",
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }
