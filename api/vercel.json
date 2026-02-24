@@ -1,5 +1,6 @@
 {
   "regions": ["sin1"],
+  "buildCommand": "npm run build:vercel",
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
   "git": {
     "deploymentEnabled": false
