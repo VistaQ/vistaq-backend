@@ -9,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: staging
 
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +46,7 @@ jobs:
         working-directory: api
         run: |
           DEPLOYMENT_URL=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
-          npx vercel alias set "$DEPLOYMENT_URL" stg-api.vistaq.co --token=${{ secrets.VERCEL_TOKEN }}
+          npx vercel alias set "$DEPLOYMENT_URL" ${{ secrets.HOST_URL }} --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
