@@ -16,8 +16,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: api/package-lock.json
 
       - name: Install dependencies
@@ -45,8 +45,7 @@ jobs:
       - name: Deploy to Vercel
         working-directory: api
         run: |
-          DEPLOY_OUTPUT=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
-          DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)
+          DEPLOYMENT_URL=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | grep -oE 'https://[a-zA-Z0-9-]+\.vercel\.app' | tail -1)
           npx vercel alias set "$DEPLOYMENT_URL" ${{ vars.HOST_URL }} --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
