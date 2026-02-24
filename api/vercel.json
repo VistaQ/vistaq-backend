@@ -1,5 +1,5 @@
 {
   "regions": ["sin1"],
-  "buildCommand": "npm run build:vercel",
+  "outputDirectory": ".",
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }
