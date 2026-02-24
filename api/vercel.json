@@ -1,7 +1,4 @@
 {
   "regions": ["sin1"],
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
-  "git": {
-    "deploymentEnabled": false
-  }
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }
