@@ -45,8 +45,8 @@ jobs:
       - name: Deploy to Vercel
         working-directory: api
         run: |
-          DEPLOYMENT_URL=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
-          npx vercel alias set "$DEPLOYMENT_URL" ${{ secrets.HOST_URL }} --token=${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | grep -oE 'https://[a-zA-Z0-9-]+\.vercel\.app' | tail -1)
+          npx vercel alias set "$DEPLOYMENT_URL" ${{ vars.HOST_URL }} --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
