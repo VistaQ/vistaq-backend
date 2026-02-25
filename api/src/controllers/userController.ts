@@ -726,6 +726,10 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
         updates.agency = updateData.agency.trim();
       }
 
+      if (updateData.agentCode !== undefined) {
+        updates.agentCode = updateData.agentCode.trim();
+      }
+
       // Role change — validate first, then delegate consistency work to helper
       if (updateData.role !== undefined) {
         if (!isValidRole(updateData.role)) {
@@ -777,7 +781,9 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
           return;
         }
         await adminAuth.updateUser(userId, { password: updateData.password });
-        console.log(`[AUDIT] Admin ${req.user.uid} reset password for ${userId}`);
+        console.log(
+          `[AUDIT] Admin ${req.user.uid} reset password for ${userId}`,
+        );
       }
 
       if (updateData.status !== undefined) {
@@ -1159,7 +1165,9 @@ export async function resetUserPassword(
 
     await adminAuth.updateUser(userId, { password });
 
-    console.log(`[AUDIT] Admin ${req.user.uid} reset password for user ${userId}`);
+    console.log(
+      `[AUDIT] Admin ${req.user.uid} reset password for user ${userId}`,
+    );
 
     res.status(HttpStatusCodes.OK).json({
       success: true,
