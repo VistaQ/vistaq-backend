@@ -672,7 +672,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
     // Fields all authenticated users can update on their own profile
     // -------------------------------------------------------------------------
 
-    if (updateData.name !== undefined) {
+    if (updateData.name != null) {
       if (updateData.name.trim().length < 2) {
         res.status(HttpStatusCodes.BAD_REQUEST).json({
           error: 'Name must be at least 2 characters',
@@ -682,15 +682,15 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       updates.name = updateData.name.trim();
     }
 
-    if (updateData.phone !== undefined) {
+    if (updateData.phone != null) {
       updates.phone = updateData.phone.trim();
     }
 
-    if (updateData.location !== undefined) {
+    if (updateData.location != null) {
       updates.location = updateData.location.trim();
     }
 
-    if (updateData.email !== undefined) {
+    if (updateData.email != null) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(updateData.email)) {
         res.status(HttpStatusCodes.BAD_REQUEST).json({
@@ -722,11 +722,11 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
     // -------------------------------------------------------------------------
 
     if (adminUpdate) {
-      if (updateData.agency !== undefined) {
+      if (updateData.agency != null) {
         updates.agency = updateData.agency.trim();
       }
 
-      if (updateData.agentCode !== undefined) {
+      if (updateData.agentCode != null) {
         updates.agentCode = updateData.agentCode.trim();
       }
 
