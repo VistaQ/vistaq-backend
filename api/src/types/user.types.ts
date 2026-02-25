@@ -14,6 +14,7 @@ export interface UpdateUserRequest {
   // Admin only fields
   email?: string;
   agency?: string;
+  agentCode?: string;
   role?: UserRole;
   status?: UserStatus;
   password?: string;
