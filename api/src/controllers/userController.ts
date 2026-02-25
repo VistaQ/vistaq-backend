@@ -690,38 +690,38 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       updates.location = updateData.location.trim();
     }
 
-    if (updateData.email !== undefined) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(updateData.email)) {
-        res.status(HttpStatusCodes.BAD_REQUEST).json({
-          error: 'Invalid email format',
-        });
-        return;
-      }
-
-      // Update Firebase Auth first — will throw if email already exists
-      try {
-        await adminAuth.updateUser(userId, { email: updateData.email });
-      } catch (authError) {
-        const code = (authError as { code?: string }).code;
-        if (code === 'auth/email-already-exists') {
-          res.status(HttpStatusCodes.CONFLICT).json({
-            error: 'Email already in use',
-          });
-          return;
-        }
-        throw authError;
-      }
-
-      updates.email = updateData.email;
-      console.log(`[UpdateUser] Email updated for ${userId}`);
-    }
-
     // -------------------------------------------------------------------------
     // Admin-only fields
     // -------------------------------------------------------------------------
 
     if (adminUpdate) {
+      if (updateData.email !== undefined) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(updateData.email)) {
+          res.status(HttpStatusCodes.BAD_REQUEST).json({
+            error: 'Invalid email format',
+          });
+          return;
+        }
+
+        // Update Firebase Auth first — will throw if email already exists
+        try {
+          await adminAuth.updateUser(userId, { email: updateData.email });
+        } catch (authError) {
+          const code = (authError as { code?: string }).code;
+          if (code === 'auth/email-already-exists') {
+            res.status(HttpStatusCodes.CONFLICT).json({
+              error: 'Email already in use',
+            });
+            return;
+          }
+          throw authError;
+        }
+
+        updates.email = updateData.email;
+        console.log(`[UpdateUser] Email updated for ${userId}`);
+      }
+
       if (updateData.agency !== undefined) {
         updates.agency = updateData.agency.trim();
       }
@@ -803,6 +803,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
     } else {
       // Non-admin trying to update restricted fields
       if (
+        updateData.email !== undefined ||
         updateData.agency !== undefined ||
         updateData.role !== undefined ||
         updateData.status !== undefined ||
@@ -810,7 +811,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       ) {
         res.status(HttpStatusCodes.FORBIDDEN).json({
           error:
-            'You can only update your name, phone, location, and email. Other fields require admin privileges.',
+            'You can only update your name, phone, and location. Other fields require admin privileges.',
         });
         return;
       }
