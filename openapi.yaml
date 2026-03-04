@@ -20,6 +20,8 @@ servers:
     description: Staging
 
 tags:
+  - name: Health
+    description: API health check
   - name: Auth
     description: Public authentication endpoints
   - name: Users
@@ -460,6 +462,46 @@ components:
 ################################################################################
 
 paths:
+
+  ##############################################################################
+  # HEALTH
+  ##############################################################################
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: >
+        Returns the current operational status of the API. No authentication is
+        required. Intended for uptime monitoring and load-balancer probes.
+      security: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, timestamp]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: '2026-03-04T08:00:00.000Z'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    example: Server Error
 
   ##############################################################################
   # AUTH
