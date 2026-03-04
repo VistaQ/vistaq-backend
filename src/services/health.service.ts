@@ -1,0 +1,36 @@
+import { HealthServiceError } from '@src/models/errors/health.error';
+import { IHealthRes } from '@src/models/health/health.interface';
+import loggingService from '@src/services/logging.service';
+
+/******************************************************************************
+                            HealthService
+******************************************************************************/
+
+class HealthService {
+  /**
+   * Returns the current health status of the API.
+   * Maps to the IHealthRes interface before returning — never returns raw data.
+   */
+  check(): IHealthRes {
+    try {
+      loggingService.info('HealthService.check called');
+
+      const result: IHealthRes = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+      };
+
+      return result;
+    } catch (error) {
+      loggingService.error('HealthService.check failed', error);
+      throw new HealthServiceError('Health check failed in service layer', error);
+    }
+  }
+}
+
+/******************************************************************************
+                                Export
+******************************************************************************/
+
+export const healthService = new HealthService();
+export default healthService;
