@@ -4,11 +4,11 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
 
-import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
-import { RouteError } from '@src/common/utils/route-errors';
-import router from '@src/routes';
+import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import { RouteError } from '@src/models/errors/route.error';
+import router from '@src/routes/router';
 
-import EnvVars, { NodeEnvs } from './common/constants/env';
+import EnvVars, { NodeEnvs } from './utils/env';
 
 /******************************************************************************
                                 Setup

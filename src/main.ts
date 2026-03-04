@@ -1,5 +1,5 @@
-import EnvVars from './common/constants/env';
-import server from './server';
+import EnvVars from './utils/env';
+import server from './app';
 
 /******************************************************************************
                                 Constants
