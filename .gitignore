@@ -3,7 +3,5 @@ dist/
 api/index.js
 **/**/*.log
 tsconfig.tsbuildinfo
-.env.development
-.env.production
-.env.test
+.env
 serviceAccountKey.json
