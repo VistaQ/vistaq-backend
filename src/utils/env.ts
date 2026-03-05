@@ -17,7 +17,17 @@ const EnvVars = {
   NodeEnv: (process.env.NODE_ENV ||
     NodeEnvs.DEV) as (typeof NodeEnvs)[keyof typeof NodeEnvs],
   Port: Number(process.env.PORT || 3000),
+  SupabaseUrl: process.env.SUPABASE_URL || '',
+  SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
 };
+
+if (!EnvVars.SupabaseUrl.trim()) {
+  throw new Error('Missing required environment variable: SUPABASE_URL');
+}
+
+if (!EnvVars.SupabaseAnonKey.trim()) {
+  throw new Error('Missing required environment variable: SUPABASE_ANON_KEY');
+}
 
 /******************************************************************************
                            Export default
