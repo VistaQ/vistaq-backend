@@ -18,11 +18,18 @@ import loggingService from '@src/services/logging.service';
  */
 class SupabaseService {
   private readonly client: SupabaseClient<Database>;
+  private readonly adminClient: SupabaseClient<Database>;
 
   public constructor() {
     this.client = createClient<Database>(
       EnvVars.SupabaseUrl,
       EnvVars.SupabaseAnonKey,
+    );
+
+    this.adminClient = createClient<Database>(
+      EnvVars.SupabaseUrl,
+      EnvVars.SupabaseServiceRoleKey,
+      { auth: { autoRefreshToken: false, persistSession: false } },
     );
   }
 
@@ -184,6 +191,169 @@ class SupabaseService {
     } catch (error) {
       loggingService.error('SupabaseService.delete failed', error, { table });
       throw new SupabaseServiceError('Delete operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Select (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table using the service role client, bypassing RLS.
+   *
+   * @param table   - The table to query.
+   * @param columns - Comma-separated column list (defaults to '*').
+   * @param filters - Optional key/value pairs applied as `.eq()` filters.
+   */
+  async adminSelect<T extends keyof Database['public']['Tables']>(
+    table: T,
+    columns = '*',
+    filters?: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    try {
+      loggingService.info('SupabaseService.adminSelect called', { table, columns });
+
+      let query = this.adminClient.from(table).select(columns);
+
+      if (filters) {
+        for (const [column, value] of Object.entries(filters)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+          query = query.eq(column as any, value as any);
+        }
+      }
+
+      const response = await query;
+
+      if (response.error) {
+        loggingService.error('SupabaseService.adminSelect query error', response.error, { table });
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.adminSelect failed', error, { table });
+      throw new SupabaseServiceError('Admin select operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Insert (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Inserts one or more rows into the given table using the service role client, bypassing RLS.
+   *
+   * @param table  - The table to insert into.
+   * @param values - A single row object or an array of row objects to insert.
+   */
+  async adminInsert<T extends keyof Database['public']['Tables']>(
+    table: T,
+    values:
+      | Database['public']['Tables'][T]['Insert']
+      | Database['public']['Tables'][T]['Insert'][],
+  ) {
+    try {
+      loggingService.info('SupabaseService.adminInsert called', { table });
+
+      const response = await this.adminClient.from(table).insert(values as never).select();
+
+      if (response.error) {
+        loggingService.error('SupabaseService.adminInsert query error', response.error, { table });
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.adminInsert failed', error, { table });
+      throw new SupabaseServiceError('Admin insert operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Update (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Updates rows in the given table that match the provided filters using the service role
+   * client, bypassing RLS.
+   *
+   * @param table   - The table to update.
+   * @param values  - Column/value pairs to apply as the update.
+   * @param filters - Key/value pairs used to identify matching rows.
+   */
+  async adminUpdate<T extends keyof Database['public']['Tables']>(
+    table: T,
+    values: Database['public']['Tables'][T]['Update'],
+    filters: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    try {
+      loggingService.info('SupabaseService.adminUpdate called', { table });
+
+      if (Object.keys(filters).length === 0) {
+        throw new SupabaseServiceError(
+          'Admin update operation rejected: filters must not be empty. Refusing to update all rows.',
+        );
+      }
+
+      let query = this.adminClient.from(table).update(values as never).select();
+
+      for (const [column, value] of Object.entries(filters)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        query = query.eq(column as any, value as any);
+      }
+
+      const response = await query;
+
+      if (response.error) {
+        loggingService.error('SupabaseService.adminUpdate query error', response.error, { table });
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.adminUpdate failed', error, { table });
+      throw new SupabaseServiceError('Admin update operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Delete (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Deletes rows from the given table that match the provided filters using the service role
+   * client, bypassing RLS.
+   *
+   * @param table   - The table to delete from.
+   * @param filters - Key/value pairs used to identify rows to delete.
+   */
+  async adminDelete<T extends keyof Database['public']['Tables']>(
+    table: T,
+    filters: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    try {
+      loggingService.info('SupabaseService.adminDelete called', { table });
+
+      if (Object.keys(filters).length === 0) {
+        throw new SupabaseServiceError(
+          'Admin delete operation rejected: filters must not be empty. Refusing to delete all rows.',
+        );
+      }
+
+      let query = this.adminClient.from(table).delete().select();
+
+      for (const [column, value] of Object.entries(filters)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        query = query.eq(column as any, value as any);
+      }
+
+      const response = await query;
+
+      if (response.error) {
+        loggingService.error('SupabaseService.adminDelete query error', response.error, { table });
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.adminDelete failed', error, { table });
+      throw new SupabaseServiceError('Admin delete operation failed in SupabaseService', error);
     }
   }
 }

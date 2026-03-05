@@ -19,6 +19,7 @@ const EnvVars = {
   Port: Number(process.env.PORT || 3000),
   SupabaseUrl: process.env.SUPABASE_URL || '',
   SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+  SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {
@@ -27,6 +28,10 @@ if (!EnvVars.SupabaseUrl.trim()) {
 
 if (!EnvVars.SupabaseAnonKey.trim()) {
   throw new Error('Missing required environment variable: SUPABASE_ANON_KEY');
+}
+
+if (!EnvVars.SupabaseServiceRoleKey.trim()) {
+  throw new Error('Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY');
 }
 
 /******************************************************************************
