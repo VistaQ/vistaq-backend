@@ -17,6 +17,33 @@ To just this:
 app.use(helmet());
 ```
 
+## Getting Started
+
+### Environment Variables
+
+Create a `.env` file in the project root with the following required variables:
+
+```env
+NODE_ENV=development
+PORT=3000
+HOST=localhost
+DISABLE_HELMET=true
+
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+```
+
+### Database Type Generation
+
+After setting up your Supabase project, generate TypeScript types from your database schema:
+
+```bash
+supabase gen types typescript --project-id <your-project-id> > src/types/database.types.ts
+```
+
+Run this command whenever you make schema changes in Supabase to keep types in sync with the database.
+
 ## Available Scripts
 
 ### `npm run clean-install`
