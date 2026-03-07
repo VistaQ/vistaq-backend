@@ -1,3 +1,5 @@
+ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "groups_read" ON groups
 FOR SELECT USING (
   CASE (auth.jwt() ->> 'role')
