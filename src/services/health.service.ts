@@ -1,5 +1,5 @@
-import { HealthServiceError } from '@src/models/errors/health.error';
 import { IHealthRes } from '@src/models/health/health.interface';
+import { handleServiceError } from '@src/utils/errorHandlers';
 import loggingService from '@src/services/logging.service';
 
 /******************************************************************************
@@ -22,8 +22,7 @@ class HealthService {
 
       return result;
     } catch (error) {
-      loggingService.error('HealthService.check failed', error);
-      throw new HealthServiceError('Health check failed in service layer', error);
+      return handleServiceError('HealthService.check', error);
     }
   }
 }

@@ -1,12 +1,15 @@
 import express from 'express';
 
+import authRoutes from '@src/routes/auth.routes';
+
 const router = express.Router();
 
 /******************************************************************************
                         API ROUTES (/api/*)
 ******************************************************************************/
 
-// Routes will be registered here as features are implemented.
 // NOTE: GET /health is registered directly in app.ts at root level (not under /api).
+
+router.use('/auth', authRoutes);
 
 export default router;

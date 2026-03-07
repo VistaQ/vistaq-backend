@@ -1,10 +1,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 import { SupabaseServiceError } from '@src/models/errors/supabase.error';
+import loggingService from '@src/services/logging.service';
 import { Database } from '@src/types/database.types';
 import EnvVars from '@src/utils/env';
-
-import loggingService from '@src/services/logging.service';
 
 /******************************************************************************
                             SupabaseService
@@ -64,13 +63,20 @@ class SupabaseService {
       const response = await query;
 
       if (response.error) {
-        loggingService.error('SupabaseService.select query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.select query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
       loggingService.error('SupabaseService.select failed', error, { table });
-      throw new SupabaseServiceError('Select operation failed in SupabaseService', error);
+      throw new SupabaseServiceError(
+        'Select operation failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -93,16 +99,26 @@ class SupabaseService {
     try {
       loggingService.info('SupabaseService.insert called', { table });
 
-      const response = await this.client.from(table).insert(values as never).select();
+      const response = await this.client
+        .from(table)
+        .insert(values as never)
+        .select();
 
       if (response.error) {
-        loggingService.error('SupabaseService.insert query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.insert query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
       loggingService.error('SupabaseService.insert failed', error, { table });
-      throw new SupabaseServiceError('Insert operation failed in SupabaseService', error);
+      throw new SupabaseServiceError(
+        'Insert operation failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -131,7 +147,10 @@ class SupabaseService {
         );
       }
 
-      let query = this.client.from(table).update(values as never).select();
+      let query = this.client
+        .from(table)
+        .update(values as never)
+        .select();
 
       for (const [column, value] of Object.entries(filters)) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -141,13 +160,20 @@ class SupabaseService {
       const response = await query;
 
       if (response.error) {
-        loggingService.error('SupabaseService.update query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.update query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
       loggingService.error('SupabaseService.update failed', error, { table });
-      throw new SupabaseServiceError('Update operation failed in SupabaseService', error);
+      throw new SupabaseServiceError(
+        'Update operation failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -184,13 +210,20 @@ class SupabaseService {
       const response = await query;
 
       if (response.error) {
-        loggingService.error('SupabaseService.delete query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.delete query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
       loggingService.error('SupabaseService.delete failed', error, { table });
-      throw new SupabaseServiceError('Delete operation failed in SupabaseService', error);
+      throw new SupabaseServiceError(
+        'Delete operation failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -211,7 +244,10 @@ class SupabaseService {
     filters?: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
     try {
-      loggingService.info('SupabaseService.adminSelect called', { table, columns });
+      loggingService.info('SupabaseService.adminSelect called', {
+        table,
+        columns,
+      });
 
       let query = this.adminClient.from(table).select(columns);
 
@@ -225,13 +261,22 @@ class SupabaseService {
       const response = await query;
 
       if (response.error) {
-        loggingService.error('SupabaseService.adminSelect query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.adminSelect query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
-      loggingService.error('SupabaseService.adminSelect failed', error, { table });
-      throw new SupabaseServiceError('Admin select operation failed in SupabaseService', error);
+      loggingService.error('SupabaseService.adminSelect failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'Admin select operation failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -254,16 +299,28 @@ class SupabaseService {
     try {
       loggingService.info('SupabaseService.adminInsert called', { table });
 
-      const response = await this.adminClient.from(table).insert(values as never).select();
+      const response = await this.adminClient
+        .from(table)
+        .insert(values as never)
+        .select();
 
       if (response.error) {
-        loggingService.error('SupabaseService.adminInsert query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.adminInsert query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
-      loggingService.error('SupabaseService.adminInsert failed', error, { table });
-      throw new SupabaseServiceError('Admin insert operation failed in SupabaseService', error);
+      loggingService.error('SupabaseService.adminInsert failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'Admin insert operation failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -293,7 +350,10 @@ class SupabaseService {
         );
       }
 
-      let query = this.adminClient.from(table).update(values as never).select();
+      let query = this.adminClient
+        .from(table)
+        .update(values as never)
+        .select();
 
       for (const [column, value] of Object.entries(filters)) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
@@ -303,13 +363,119 @@ class SupabaseService {
       const response = await query;
 
       if (response.error) {
-        loggingService.error('SupabaseService.adminUpdate query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.adminUpdate query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
-      loggingService.error('SupabaseService.adminUpdate failed', error, { table });
-      throw new SupabaseServiceError('Admin update operation failed in SupabaseService', error);
+      loggingService.error('SupabaseService.adminUpdate failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'Admin update operation failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Admin Create Auth User
+  // ---------------------------------------------------------------------------
+
+  async adminCreateAuthUser(email: string, password: string) {
+    try {
+      loggingService.info('SupabaseService.adminCreateAuthUser called', { email });
+
+      const { data, error } = await this.adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+
+      if (error) {
+        loggingService.error('SupabaseService.adminCreateAuthUser error', error, { email });
+        throw new Error(error.message);
+      }
+
+      if (!data.user) {
+        throw new Error('No auth user returned after creation');
+      }
+
+      return data.user;
+    } catch (error) {
+      loggingService.error('SupabaseService.adminCreateAuthUser failed', error, { email });
+      throw new SupabaseServiceError(
+        'Admin create auth user failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Admin Delete Auth User (rollback)
+  // ---------------------------------------------------------------------------
+
+  async adminDeleteAuthUser(userId: string) {
+    try {
+      loggingService.info('SupabaseService.adminDeleteAuthUser called', { userId });
+
+      const { error } = await this.adminClient.auth.admin.deleteUser(userId);
+
+      if (error) {
+        loggingService.error('SupabaseService.adminDeleteAuthUser error', error, { userId });
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      loggingService.error('SupabaseService.adminDeleteAuthUser failed', error, { userId });
+      throw new SupabaseServiceError(
+        'Admin delete auth user failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Sign In With Password
+  // ---------------------------------------------------------------------------
+
+  async signInWithPassword(
+    email: string,
+    password: string,
+  ): Promise<ReturnType<typeof this.client.auth.signInWithPassword>> {
+    try {
+      loggingService.info('SupabaseService.signInWithPassword called', { email });
+
+      return await this.client.auth.signInWithPassword({ email, password });
+    } catch (error) {
+      loggingService.error('SupabaseService.signInWithPassword failed', error, { email });
+      throw new SupabaseServiceError(
+        'Sign in with password failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Sign Out
+  // ---------------------------------------------------------------------------
+
+  async signOut(token: string): Promise<void> {
+    try {
+      loggingService.info('SupabaseService.signOut called');
+
+      const { error } = await this.adminClient.auth.admin.signOut(token);
+
+      if (error) {
+        loggingService.error('SupabaseService.signOut error', error);
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      loggingService.error('SupabaseService.signOut failed', error);
+      throw new SupabaseServiceError('Sign out failed in SupabaseService', error);
     }
   }
 
@@ -347,13 +513,22 @@ class SupabaseService {
       const response = await query;
 
       if (response.error) {
-        loggingService.error('SupabaseService.adminDelete query error', response.error, { table });
+        loggingService.error(
+          'SupabaseService.adminDelete query error',
+          response.error,
+          { table },
+        );
       }
 
       return response;
     } catch (error) {
-      loggingService.error('SupabaseService.adminDelete failed', error, { table });
-      throw new SupabaseServiceError('Admin delete operation failed in SupabaseService', error);
+      loggingService.error('SupabaseService.adminDelete failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'Admin delete operation failed in SupabaseService',
+        error,
+      );
     }
   }
 }

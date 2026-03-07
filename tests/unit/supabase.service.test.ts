@@ -204,7 +204,7 @@ describe('SupabaseService.insert()', () => {
     const fakeResponse = { data: [{ id: '2', name: 'Bob' }], error: null };
     buildQueryChain(fakeResponse);
 
-    const values = { name: 'Bob' };
+    const values = { id: 'uuid-2', email: 'bob@example.com', name: 'Bob', role: 'agent' };
     const result = await supabaseService.insert('users', values);
 
     expect(mockFrom).toHaveBeenCalledWith('users');
@@ -218,7 +218,7 @@ describe('SupabaseService.insert()', () => {
     const fakeResponse = { data: null, error: supabaseError };
     buildQueryChain(fakeResponse);
 
-    await expect(supabaseService.insert('users', { name: 'Bob' })).resolves.toBe(fakeResponse);
+    await expect(supabaseService.insert('users', { id: 'uuid-2', email: 'bob@example.com', name: 'Bob', role: 'agent' })).resolves.toBe(fakeResponse);
 
     expect(mockLoggingError).toHaveBeenCalledWith(
       'SupabaseService.insert query error',
@@ -233,10 +233,11 @@ describe('SupabaseService.insert()', () => {
       throw unexpectedError;
     });
 
-    await expect(supabaseService.insert('users', {})).rejects.toBeInstanceOf(SupabaseServiceError);
+    const minimalInsert = { id: 'uuid-3', email: 'c@example.com', name: 'Carol', role: 'agent' };
+    await expect(supabaseService.insert('users', minimalInsert)).rejects.toBeInstanceOf(SupabaseServiceError);
 
     try {
-      await supabaseService.insert('users', {});
+      await supabaseService.insert('users', minimalInsert);
     } catch (err) {
       expect((err as SupabaseServiceError).cause).toBe(unexpectedError);
     }

@@ -3,7 +3,7 @@ import request from 'supertest';
 import app from '@src/app';
 import { healthService } from '@src/services/health.service';
 import { healthController } from '@src/controllers/health.controller';
-import { HealthControllerError } from '@src/models/errors/health.error';
+import { ControllerError } from '@src/models/errors/layer.errors';
 import type { IHealthRes } from '@src/models/health/health.interface';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -103,9 +103,9 @@ describe('HealthController.check() — error path', () => {
     // Assert: next was called exactly once
     expect(next).toHaveBeenCalledTimes(1);
 
-    // Assert: the argument passed to next is a HealthControllerError
+    // Assert: the argument passed to next is a ControllerError
     const passedError = (next as jest.Mock).mock.calls[0][0];
-    expect(passedError).toBeInstanceOf(HealthControllerError);
+    expect(passedError).toBeInstanceOf(ControllerError);
 
     // Assert: the controller error wraps the original service error as its cause
     expect(passedError.cause).toBe(serviceError);

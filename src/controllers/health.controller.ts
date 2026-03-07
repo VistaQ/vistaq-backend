@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from 'express';
 
-import { HealthControllerError } from '@src/models/errors/health.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
-import loggingService from '@src/services/logging.service';
+import { handleControllerError } from '@src/utils/errorHandlers';
 import healthService from '@src/services/health.service';
+import loggingService from '@src/services/logging.service';
 
 /******************************************************************************
                             HealthController
@@ -23,8 +23,7 @@ class HealthController {
 
       res.status(HttpStatusCodes.OK).json(result);
     } catch (error) {
-      loggingService.error('HealthController.check failed', error);
-      return next(new HealthControllerError('Health check failed in controller layer', error));
+      return handleControllerError('HealthController.check', error, next);
     }
   }
 }
