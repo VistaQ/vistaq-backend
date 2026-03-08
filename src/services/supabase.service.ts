@@ -33,6 +33,17 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // User Client Helper
+  // ---------------------------------------------------------------------------
+
+  private getUserClient(userToken: string): SupabaseClient<Database> {
+    return createClient<Database>(EnvVars.SupabaseUrl, EnvVars.SupabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${userToken}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Select
   // ---------------------------------------------------------------------------
 
@@ -541,6 +552,173 @@ class SupabaseService {
       loggingService.error('SupabaseService.verifyToken failed', error);
       throw new SupabaseServiceError(
         'Token verification failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Select (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table using a user-scoped client, enforcing RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to query.
+   * @param columns   - Comma-separated column list (defaults to '*').
+   * @param filters   - Optional key/value pairs applied as `.eq()` filters.
+   */
+  async userSelect<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    columns = '*',
+    filters?: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    try {
+      loggingService.info('SupabaseService.userSelect called', {
+        table,
+        columns,
+      });
+
+      const userClient = this.getUserClient(userToken);
+      let query = userClient.from(table).select(columns);
+
+      if (filters) {
+        for (const column of Object.keys(filters) as (string &
+          keyof typeof filters)[]) {
+          const value = filters[column];
+          if (value !== undefined) {
+            query = query.eq(column, value as never);
+          }
+        }
+      }
+
+      const response = await query;
+
+      if (response.error) {
+        loggingService.error(
+          'SupabaseService.userSelect query error',
+          response.error,
+          { table },
+        );
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userSelect failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'User select operation failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Insert (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Inserts one or more rows into the given table using a user-scoped client, enforcing RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to insert into.
+   * @param values    - A single row object or an array of row objects to insert.
+   */
+  async userInsert<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    values:
+      | Database['public']['Tables'][T]['Insert']
+      | Database['public']['Tables'][T]['Insert'][],
+  ) {
+    try {
+      loggingService.info('SupabaseService.userInsert called', { table });
+
+      const userClient = this.getUserClient(userToken);
+      const response = await userClient
+        .from(table)
+        .insert(values as never)
+        .select();
+
+      if (response.error) {
+        loggingService.error(
+          'SupabaseService.userInsert query error',
+          response.error,
+          { table },
+        );
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userInsert failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'User insert operation failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Update (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Updates rows in the given table that match the provided filters using a user-scoped
+   * client, enforcing RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to update.
+   * @param values    - Column/value pairs to apply as the update.
+   * @param filters   - Key/value pairs used to identify matching rows.
+   */
+  async userUpdate<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    values: Database['public']['Tables'][T]['Update'],
+    filters: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    try {
+      loggingService.info('SupabaseService.userUpdate called', { table });
+
+      if (Object.keys(filters).length === 0) {
+        throw new SupabaseServiceError(
+          'User update operation rejected: filters must not be empty. Refusing to update all rows.',
+        );
+      }
+
+      const userClient = this.getUserClient(userToken);
+      let query = userClient.from(table).update(values as never).select();
+
+      for (const column of Object.keys(filters) as (string &
+        keyof typeof filters)[]) {
+        const value = filters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
+      }
+
+      const response = await query;
+
+      if (response.error) {
+        loggingService.error(
+          'SupabaseService.userUpdate query error',
+          response.error,
+          { table },
+        );
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userUpdate failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'User update operation failed in SupabaseService',
         error,
       );
     }
