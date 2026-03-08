@@ -54,9 +54,12 @@ class SupabaseService {
       let query = this.client.from(table).select(columns);
 
       if (filters) {
-        for (const [column, value] of Object.entries(filters)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          query = query.eq(column as any, value as any);
+        for (const column of Object.keys(filters) as (string &
+          keyof typeof filters)[]) {
+          const value = filters[column];
+          if (value !== undefined) {
+            query = query.eq(column, value as never);
+          }
         }
       }
 
@@ -152,9 +155,12 @@ class SupabaseService {
         .update(values as never)
         .select();
 
-      for (const [column, value] of Object.entries(filters)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        query = query.eq(column as any, value as any);
+      for (const column of Object.keys(filters) as (string &
+        keyof typeof filters)[]) {
+        const value = filters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
       }
 
       const response = await query;
@@ -202,9 +208,12 @@ class SupabaseService {
 
       let query = this.client.from(table).delete().select();
 
-      for (const [column, value] of Object.entries(filters)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        query = query.eq(column as any, value as any);
+      for (const column of Object.keys(filters) as (string &
+        keyof typeof filters)[]) {
+        const value = filters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
       }
 
       const response = await query;
@@ -252,9 +261,12 @@ class SupabaseService {
       let query = this.adminClient.from(table).select(columns);
 
       if (filters) {
-        for (const [column, value] of Object.entries(filters)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-          query = query.eq(column as any, value as any);
+        for (const column of Object.keys(filters) as (string &
+          keyof typeof filters)[]) {
+          const value = filters[column];
+          if (value !== undefined) {
+            query = query.eq(column, value as never);
+          }
         }
       }
 
@@ -355,9 +367,12 @@ class SupabaseService {
         .update(values as never)
         .select();
 
-      for (const [column, value] of Object.entries(filters)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        query = query.eq(column as any, value as any);
+      for (const column of Object.keys(filters) as (string &
+        keyof typeof filters)[]) {
+        const value = filters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
       }
 
       const response = await query;
@@ -388,7 +403,9 @@ class SupabaseService {
 
   async adminCreateAuthUser(email: string, password: string) {
     try {
-      loggingService.info('SupabaseService.adminCreateAuthUser called', { email });
+      loggingService.info('SupabaseService.adminCreateAuthUser called', {
+        email,
+      });
 
       const { data, error } = await this.adminClient.auth.admin.createUser({
         email,
@@ -397,7 +414,11 @@ class SupabaseService {
       });
 
       if (error) {
-        loggingService.error('SupabaseService.adminCreateAuthUser error', error, { email });
+        loggingService.error(
+          'SupabaseService.adminCreateAuthUser error',
+          error,
+          { email },
+        );
         throw new Error(error.message);
       }
 
@@ -407,7 +428,11 @@ class SupabaseService {
 
       return data.user;
     } catch (error) {
-      loggingService.error('SupabaseService.adminCreateAuthUser failed', error, { email });
+      loggingService.error(
+        'SupabaseService.adminCreateAuthUser failed',
+        error,
+        { email },
+      );
       throw new SupabaseServiceError(
         'Admin create auth user failed in SupabaseService',
         error,
@@ -421,16 +446,26 @@ class SupabaseService {
 
   async adminDeleteAuthUser(userId: string) {
     try {
-      loggingService.info('SupabaseService.adminDeleteAuthUser called', { userId });
+      loggingService.info('SupabaseService.adminDeleteAuthUser called', {
+        userId,
+      });
 
       const { error } = await this.adminClient.auth.admin.deleteUser(userId);
 
       if (error) {
-        loggingService.error('SupabaseService.adminDeleteAuthUser error', error, { userId });
+        loggingService.error(
+          'SupabaseService.adminDeleteAuthUser error',
+          error,
+          { userId },
+        );
         throw new Error(error.message);
       }
     } catch (error) {
-      loggingService.error('SupabaseService.adminDeleteAuthUser failed', error, { userId });
+      loggingService.error(
+        'SupabaseService.adminDeleteAuthUser failed',
+        error,
+        { userId },
+      );
       throw new SupabaseServiceError(
         'Admin delete auth user failed in SupabaseService',
         error,
@@ -447,11 +482,15 @@ class SupabaseService {
     password: string,
   ): Promise<ReturnType<typeof this.client.auth.signInWithPassword>> {
     try {
-      loggingService.info('SupabaseService.signInWithPassword called', { email });
+      loggingService.info('SupabaseService.signInWithPassword called', {
+        email,
+      });
 
       return await this.client.auth.signInWithPassword({ email, password });
     } catch (error) {
-      loggingService.error('SupabaseService.signInWithPassword failed', error, { email });
+      loggingService.error('SupabaseService.signInWithPassword failed', error, {
+        email,
+      });
       throw new SupabaseServiceError(
         'Sign in with password failed in SupabaseService',
         error,
@@ -475,7 +514,35 @@ class SupabaseService {
       }
     } catch (error) {
       loggingService.error('SupabaseService.signOut failed', error);
-      throw new SupabaseServiceError('Sign out failed in SupabaseService', error);
+      throw new SupabaseServiceError(
+        'Sign out failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Verify Token
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Verifies a user JWT by passing it to Supabase's auth server.
+   * Supabase handles the algorithm (HS256/ES256) automatically.
+   * Returns the user if the token is valid, or an error if it is not.
+   *
+   * @param token - The raw JWT from the Authorization header.
+   */
+  async verifyToken(token: string) {
+    try {
+      loggingService.info('SupabaseService.verifyToken called');
+
+      return await this.adminClient.auth.getUser(token);
+    } catch (error) {
+      loggingService.error('SupabaseService.verifyToken failed', error);
+      throw new SupabaseServiceError(
+        'Token verification failed in SupabaseService',
+        error,
+      );
     }
   }
 
@@ -505,9 +572,12 @@ class SupabaseService {
 
       let query = this.adminClient.from(table).delete().select();
 
-      for (const [column, value] of Object.entries(filters)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        query = query.eq(column as any, value as any);
+      for (const column of Object.keys(filters) as (string &
+        keyof typeof filters)[]) {
+        const value = filters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
       }
 
       const response = await query;

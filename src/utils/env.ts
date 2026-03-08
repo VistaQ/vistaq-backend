@@ -31,7 +31,9 @@ if (!EnvVars.SupabaseAnonKey.trim()) {
 }
 
 if (!EnvVars.SupabaseServiceRoleKey.trim()) {
-  throw new Error('Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY');
+  throw new Error(
+    'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY',
+  );
 }
 
 /******************************************************************************
