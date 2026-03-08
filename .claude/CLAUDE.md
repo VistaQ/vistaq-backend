@@ -1,6 +1,3 @@
-Let's start with `CLAUDE.md`. Open it in your editor and paste in the content we drafted earlier. Here it is for reference:
-
-```markdown
 # Project Overview
 This repository serves as a backend API for a React/Vite frontend app. It interacts
 with Supabase to leverage the provisioned Postgres database, Authentication, and Edge Functions.
@@ -26,6 +23,3 @@ with Supabase to leverage the provisioned Postgres database, Authentication, and
    - Maximum 3 retries
 4. Once tests pass, automatically invoke **documenter**
 5. **commit-organiser** is ONLY invoked by the user. Never invoke automatically.
-```
-
-Once that's in, tell me and we'll move on to the rules files one by one.
