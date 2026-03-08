@@ -130,6 +130,17 @@ class AuthService {
     }
   }
 
+  async me(userId: string): Promise<IUser | null> {
+    try {
+      loggingService.info('AuthService.me called', { userId });
+
+      const user = await authRepository.findUserById(userId);
+      return user;
+    } catch (error) {
+      return handleServiceError('AuthService.me', error);
+    }
+  }
+
   async logout(token: string): Promise<void> {
     try {
       loggingService.info('AuthService.logout called');

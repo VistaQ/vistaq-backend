@@ -1,6 +1,10 @@
 import { NextFunction, Response } from 'express';
 
-import { AgentCodeInvalidError, InvalidCredentialsError, TenantNotFoundError } from '@src/models/errors/auth.errors';
+import {
+  AgentCodeInvalidError,
+  InvalidCredentialsError,
+  TenantNotFoundError,
+} from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import authService from '@src/services/auth.service';
@@ -49,26 +53,43 @@ export interface ILogoutRes extends IBaseRes {
   success: boolean;
 }
 
+export type IMeReq = IBaseReq;
+
+export interface IMeRes extends IBaseRes {
+  success: boolean;
+  data?: IUser;
+}
+
 /******************************************************************************
                             AuthController
 ******************************************************************************/
 
 class AuthController {
-  async register(req: IRegisterReq, res: Response, next: NextFunction): Promise<void> {
+  async register(
+    req: IRegisterReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       loggingService.info('AuthController.register called');
 
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
-        loggingService.error('AuthController.register — missing or invalid X-Tenant-Slug header');
+        loggingService.error(
+          'AuthController.register — missing or invalid X-Tenant-Slug header',
+        );
         next(
-          new RouteError(HttpStatusCodes.BAD_REQUEST, 'X-Tenant-Slug header is required'),
+          new RouteError(
+            HttpStatusCodes.BAD_REQUEST,
+            'X-Tenant-Slug header is required',
+          ),
         );
         return;
       }
 
-      const { fullName, agentCode, email, password, groupId, location } = req.body;
+      const { fullName, agentCode, email, password, groupId, location } =
+        req.body;
 
       const result = await authService.register({
         tenantSlug,
@@ -104,23 +125,41 @@ class AuthController {
     }
   }
 
-  async logout(req: ILogoutReq, res: Response, next: NextFunction): Promise<void> {
+  async logout(
+    req: ILogoutReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       loggingService.info('AuthController.logout called');
 
       const authHeader = req.headers['authorization'];
 
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        loggingService.error('AuthController.logout — missing or malformed Authorization header');
-        next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Authorization header is required'));
+        loggingService.error(
+          'AuthController.logout — missing or malformed Authorization header',
+        );
+        next(
+          new RouteError(
+            HttpStatusCodes.UNAUTHORIZED,
+            'Authorization header is required',
+          ),
+        );
         return;
       }
 
       const token = authHeader.slice(7);
 
       if (!token) {
-        loggingService.error('AuthController.logout — missing token in Authorization header');
-        next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Authorization token is required'));
+        loggingService.error(
+          'AuthController.logout — missing token in Authorization header',
+        );
+        next(
+          new RouteError(
+            HttpStatusCodes.UNAUTHORIZED,
+            'Authorization token is required',
+          ),
+        );
         return;
       }
 
@@ -134,16 +173,44 @@ class AuthController {
     }
   }
 
-  async login(req: ILoginReq, res: Response, next: NextFunction): Promise<void> {
+  async me(req: IMeReq, res: Response, next: NextFunction): Promise<void> {
+    try {
+      loggingService.info('AuthController.me called');
+
+      const userId: string = req.user!.id;
+      const user = await authService.me(userId);
+
+      if (!user) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'User not found'));
+        return;
+      }
+
+      const responseBody: IMeRes = { success: true, data: user };
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('AuthController.me', error, next);
+    }
+  }
+
+  async login(
+    req: ILoginReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       loggingService.info('AuthController.login called');
 
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
-        loggingService.error('AuthController.login — missing or invalid X-Tenant-Slug header');
+        loggingService.error(
+          'AuthController.login — missing or invalid X-Tenant-Slug header',
+        );
         next(
-          new RouteError(HttpStatusCodes.BAD_REQUEST, 'X-Tenant-Slug header is required'),
+          new RouteError(
+            HttpStatusCodes.BAD_REQUEST,
+            'X-Tenant-Slug header is required',
+          ),
         );
         return;
       }
@@ -172,7 +239,9 @@ class AuthController {
       }
 
       if (error instanceof InvalidCredentialsError) {
-        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'Invalid credentials'));
+        next(
+          new RouteError(HttpStatusCodes.BAD_REQUEST, 'Invalid credentials'),
+        );
         return;
       }
 
