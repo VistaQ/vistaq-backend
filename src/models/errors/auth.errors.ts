@@ -16,6 +16,13 @@ export class AgentCodeInvalidError extends Error {
   }
 }
 
+export class UserNotFoundError extends Error {
+  public constructor(message = 'User not found') {
+    super(message);
+    this.name = 'UserNotFoundError';
+  }
+}
+
 export class InvalidCredentialsError extends Error {
   public constructor(message = 'Invalid credentials') {
     super(message);

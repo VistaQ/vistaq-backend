@@ -452,6 +452,42 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // Auth — Admin Update Auth User Email
+  // ---------------------------------------------------------------------------
+
+  async adminUpdateAuthUserEmail(userId: string, email: string): Promise<void> {
+    try {
+      loggingService.info('SupabaseService.adminUpdateAuthUserEmail called', {
+        userId,
+      });
+
+      const { error } = await this.adminClient.auth.admin.updateUserById(
+        userId,
+        { email },
+      );
+
+      if (error) {
+        loggingService.error(
+          'SupabaseService.adminUpdateAuthUserEmail error',
+          error,
+          { userId },
+        );
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      loggingService.error(
+        'SupabaseService.adminUpdateAuthUserEmail failed',
+        error,
+        { userId },
+      );
+      throw new SupabaseServiceError(
+        'Admin update auth user email failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Auth — Admin Delete Auth User (rollback)
   // ---------------------------------------------------------------------------
 
