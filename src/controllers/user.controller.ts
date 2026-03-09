@@ -23,6 +23,11 @@ export interface ICreateUserReq extends IBaseReq {
   };
 }
 
+export interface IGetUsersRes extends IBaseRes {
+  success: boolean;
+  data: IUser[];
+}
+
 export interface ICreateUserRes extends IBaseRes {
   success: boolean;
   data: IUser;
@@ -33,6 +38,29 @@ export interface ICreateUserRes extends IBaseRes {
 ******************************************************************************/
 
 class UserController {
+  async getAll(
+    req: IBaseReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('UserController.getAll called');
+
+      const token = req.headers['authorization']!.slice(7);
+
+      const users = await userService.getUsers(token);
+
+      const responseBody: IGetUsersRes = {
+        success: true,
+        data: users,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('UserController.getAll', error, next);
+    }
+  }
+
   async create(
     req: ICreateUserReq,
     res: Response,

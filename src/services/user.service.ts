@@ -23,6 +23,18 @@ interface ICreateUserParams {
 ******************************************************************************/
 
 class UserService {
+  async getUsers(token: string): Promise<IUser[]> {
+    try {
+      loggingService.info('UserService.getUsers called');
+
+      const users = await userRepository.findAll(token);
+
+      return users;
+    } catch (error) {
+      return handleServiceError('UserService.getUsers', error);
+    }
+  }
+
   async createUser(params: ICreateUserParams): Promise<IUser> {
     try {
       loggingService.info('UserService.createUser called', {

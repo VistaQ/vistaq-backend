@@ -4,6 +4,7 @@ import { z } from 'zod';
 import userController, {
   ICreateUserReq,
 } from '@src/controllers/user.controller';
+import { IBaseReq } from '@src/models/interfaces/base.interface';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
 
@@ -37,6 +38,13 @@ export const createUserSchema = z
 ******************************************************************************/
 
 const router = express.Router();
+
+router.get(
+  '/',
+  authenticate,
+  (req, res, next) =>
+    userController.getAll(req as unknown as IBaseReq, res, next),
+);
 
 router.post(
   '/',
