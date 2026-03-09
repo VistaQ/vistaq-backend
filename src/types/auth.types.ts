@@ -22,6 +22,8 @@ export type IUser = Pick<
   | 'agent_code'
   | 'location'
   | 'group_id'
+  | 'phone'
+  | 'agency'
   | 'status'
   | 'created_at'
   | 'updated_at'
