@@ -53,10 +53,7 @@ class UserService {
     }
   }
 
-  async getUserById(
-    userId: string,
-    token: string,
-  ): Promise<IUser | null> {
+  async getUserById(userId: string, token: string): Promise<IUser | null> {
     try {
       loggingService.info('UserService.getUserById called', { userId });
 
@@ -115,10 +112,7 @@ class UserService {
             { userId: params.userId },
           );
           try {
-            await userRepository.updateAuthUserEmail(
-              params.userId,
-              oldEmail,
-            );
+            await userRepository.updateAuthUserEmail(params.userId, oldEmail);
           } catch (rollbackError) {
             loggingService.error(
               'UserService.updateUser — Auth email rollback failed',
