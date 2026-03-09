@@ -32,7 +32,7 @@ jest.mock('@src/services/logging.service', () => ({
 jest.mock('@src/services/user.service', () => ({
   __esModule: true,
   default: {
-    getUsers: jest.fn(),
+    getUserById: jest.fn(),
   },
 }));
 
@@ -51,7 +51,7 @@ jest.mock('@src/services/supabase.service', () => ({
 jest.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
   default: {
-    findAll: jest.fn(),
+    findById: jest.fn(),
   },
 }));
 
@@ -60,56 +60,41 @@ import userRepository from '@src/repositories/user.repository';
 import supabaseService from '@src/services/supabase.service';
 import userController from '@src/controllers/user.controller';
 import { ControllerError, RepositoryError, ServiceError } from '@src/models/errors/layer.errors';
+import { RouteError } from '@src/models/errors/route.error';
 import { IUser } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import { IGetUserByIdReq } from '@src/controllers/user.controller';
 
 /******************************************************************************
   Shared Fixtures
 ******************************************************************************/
 
-const mockUsers: IUser[] = [
-  {
-    id: 'user-001',
-    tenant_id: 'tenant-456',
-    email: 'alice@example.com',
-    name: 'Alice',
-    role: 'agent',
-    agent_code: 'AGT001',
-    location: 'KL',
-    group_id: 'group-001',
-    phone: null,
-    agency: null,
-    status: 'active',
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'user-002',
-    tenant_id: 'tenant-456',
-    email: 'bob@example.com',
-    name: 'Bob',
-    role: 'trainer',
-    agent_code: null,
-    location: null,
-    group_id: null,
-    phone: null,
-    agency: null,
-    status: 'active',
-    created_at: '2024-02-01T00:00:00Z',
-    updated_at: '2024-02-01T00:00:00Z',
-  },
-];
+const mockUser: IUser = {
+  id: 'user-001',
+  tenant_id: 'tenant-456',
+  email: 'alice@example.com',
+  name: 'Alice',
+  role: 'agent',
+  agent_code: 'AGT001',
+  location: 'KL',
+  group_id: 'group-001',
+  phone: null,
+  agency: null,
+  status: 'active',
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
 
 /******************************************************************************
   Helpers
 ******************************************************************************/
 
-function buildGetReq(): IBaseReq {
+function buildGetByIdReq(userId = 'user-001'): IGetUserByIdReq {
   return {
     user: { id: 'admin-001', tenant_id: 'tenant-456', role: 'admin' },
     headers: { authorization: 'Bearer mock-token-abc' },
-  } as unknown as IBaseReq;
+    params: { userId },
+  } as unknown as IGetUserByIdReq;
 }
 
 function buildRes(): Response {
@@ -124,40 +109,57 @@ function buildNext(): jest.Mock {
 }
 
 /******************************************************************************
-  UserController.getAll — uses mocked userService
+  UserController.getById — uses mocked userService
 ******************************************************************************/
 
-describe('UserController.getAll', () => {
+describe('UserController.getById', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('returns 200 with { success: true, data: IUser[] } on success', async () => {
-    (userService.getUsers as jest.Mock).mockResolvedValue(mockUsers);
+  it('returns 200 with { success: true, data: IUser } on success', async () => {
+    (userService.getUserById as jest.Mock).mockResolvedValue(mockUser);
 
-    const req = buildGetReq();
+    const req = buildGetByIdReq();
     const res = buildRes();
     const next = buildNext();
 
-    await userController.getAll(req, res, next);
+    await userController.getById(req, res, next);
 
-    expect(userService.getUsers).toHaveBeenCalledTimes(1);
-    expect(userService.getUsers).toHaveBeenCalledWith('mock-token-abc');
+    expect(userService.getUserById).toHaveBeenCalledTimes(1);
+    expect(userService.getUserById).toHaveBeenCalledWith('user-001', 'mock-token-abc');
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: mockUsers });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: mockUser });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls next with ControllerError when userService.getUsers throws', async () => {
-    (userService.getUsers as jest.Mock).mockRejectedValue(
-      new ServiceError('UserService.getUsers failed', new Error('DB error')),
-    );
+  it('calls next with RouteError(404) when userService.getUserById returns null', async () => {
+    (userService.getUserById as jest.Mock).mockResolvedValue(null);
 
-    const req = buildGetReq();
+    const req = buildGetByIdReq('nonexistent-id');
     const res = buildRes();
     const next = buildNext();
 
-    await userController.getAll(req, res, next);
+    await userController.getById(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const arg: unknown = next.mock.calls[0][0];
+    expect(arg).toBeInstanceOf(RouteError);
+    expect((arg as RouteError).status).toBe(HttpStatusCodes.NOT_FOUND);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next with ControllerError when userService.getUserById throws', async () => {
+    (userService.getUserById as jest.Mock).mockRejectedValue(
+      new ServiceError('UserService.getUserById failed', new Error('DB error')),
+    );
+
+    const req = buildGetByIdReq();
+    const res = buildRes();
+    const next = buildNext();
+
+    await userController.getById(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const arg: unknown = next.mock.calls[0][0];
@@ -168,10 +170,10 @@ describe('UserController.getAll', () => {
 });
 
 /******************************************************************************
-  UserService.getUsers — uses mocked userRepository directly
+  UserService.getUserById — uses mocked userRepository directly
 ******************************************************************************/
 
-describe('UserService.getUsers', () => {
+describe('UserService.getUserById', () => {
   const realUserServiceModule = jest.requireActual<typeof import('@src/services/user.service')>(
     '@src/services/user.service',
   );
@@ -181,32 +183,44 @@ describe('UserService.getUsers', () => {
     jest.clearAllMocks();
   });
 
-  it('returns IUser[] from repository', async () => {
-    (userRepository.findAll as jest.Mock).mockResolvedValue(mockUsers);
+  it('returns IUser when repository returns a user', async () => {
+    (userRepository.findById as jest.Mock).mockResolvedValue(mockUser);
 
-    const result = await realService.getUsers('mock-token-abc');
+    const result = await realService.getUserById('user-001', 'mock-token-abc');
 
-    expect(result).toEqual(mockUsers);
-    expect(userRepository.findAll).toHaveBeenCalledTimes(1);
-    expect(userRepository.findAll).toHaveBeenCalledWith('mock-token-abc');
+    expect(result).toEqual(mockUser);
+    expect(userRepository.findById).toHaveBeenCalledTimes(1);
+    expect(userRepository.findById).toHaveBeenCalledWith('user-001', 'mock-token-abc');
+  });
+
+  it('returns null when repository returns null', async () => {
+    (userRepository.findById as jest.Mock).mockResolvedValue(null);
+
+    const result = await realService.getUserById('nonexistent-id', 'mock-token-abc');
+
+    expect(result).toBeNull();
+    expect(userRepository.findById).toHaveBeenCalledTimes(1);
+    expect(userRepository.findById).toHaveBeenCalledWith('nonexistent-id', 'mock-token-abc');
   });
 
   it('throws ServiceError when repository throws', async () => {
-    (userRepository.findAll as jest.Mock).mockRejectedValue(
-      new RepositoryError('UserRepository.findAll failed', new Error('DB error')),
+    (userRepository.findById as jest.Mock).mockRejectedValue(
+      new RepositoryError('UserRepository.findById failed', new Error('DB error')),
     );
 
-    await expect(realService.getUsers('mock-token-abc')).rejects.toBeInstanceOf(ServiceError);
+    await expect(realService.getUserById('user-001', 'mock-token-abc')).rejects.toBeInstanceOf(
+      ServiceError,
+    );
 
-    expect(userRepository.findAll).toHaveBeenCalledTimes(1);
+    expect(userRepository.findById).toHaveBeenCalledTimes(1);
   });
 });
 
 /******************************************************************************
-  UserRepository.findAll — uses mocked supabaseService directly
+  UserRepository.findById — uses mocked supabaseService directly
 ******************************************************************************/
 
-describe('UserRepository.findAll', () => {
+describe('UserRepository.findById', () => {
   const realUserRepoModule = jest.requireActual<typeof import('@src/repositories/user.repository')>(
     '@src/repositories/user.repository',
   );
@@ -216,33 +230,34 @@ describe('UserRepository.findAll', () => {
     jest.clearAllMocks();
   });
 
-  it('returns mapped IUser[] on success', async () => {
-    const dbRows = mockUsers.map((u) => ({ ...u }));
+  it('returns mapped IUser when user found', async () => {
+    const dbRow = { ...mockUser };
     (supabaseService.userSelect as jest.Mock).mockResolvedValue({
-      data: dbRows,
+      data: [dbRow],
       error: null,
     });
 
-    const result = await realRepo.findAll('mock-token-abc');
+    const result = await realRepo.findById('user-001', 'mock-token-abc');
 
-    expect(result).toEqual(mockUsers);
+    expect(result).toEqual(mockUser);
     expect(supabaseService.userSelect).toHaveBeenCalledTimes(1);
     expect(supabaseService.userSelect).toHaveBeenCalledWith(
       'mock-token-abc',
       'users',
       '*',
+      { id: 'user-001' },
     );
   });
 
-  it('returns empty array when no users found', async () => {
+  it('returns null when no user found', async () => {
     (supabaseService.userSelect as jest.Mock).mockResolvedValue({
       data: [],
       error: null,
     });
 
-    const result = await realRepo.findAll('mock-token-abc');
+    const result = await realRepo.findById('nonexistent-id', 'mock-token-abc');
 
-    expect(result).toEqual([]);
+    expect(result).toBeNull();
     expect(supabaseService.userSelect).toHaveBeenCalledTimes(1);
   });
 
@@ -252,7 +267,9 @@ describe('UserRepository.findAll', () => {
       error: { message: 'RLS policy violation' },
     });
 
-    await expect(realRepo.findAll('mock-token-abc')).rejects.toBeInstanceOf(RepositoryError);
+    await expect(realRepo.findById('user-001', 'mock-token-abc')).rejects.toBeInstanceOf(
+      RepositoryError,
+    );
 
     expect(supabaseService.userSelect).toHaveBeenCalledTimes(1);
   });

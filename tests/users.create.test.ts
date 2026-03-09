@@ -72,6 +72,8 @@ const mockUser: IUser = {
   agent_code: 'AGT001',
   location: null,
   group_id: null,
+  phone: null,
+  agency: null,
   status: 'active',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
