@@ -119,6 +119,41 @@ class UserRepository {
     }
   }
 
+  async findAll(userToken: string): Promise<IUser[]> {
+    try {
+      loggingService.info('UserRepository.findAll called');
+
+      const response = await supabaseService.userSelect(
+        userToken,
+        'users',
+        '*',
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as UsersRow[];
+      const users: IUser[] = rows.map((row) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+
+      return users;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findAll', error);
+    }
+  }
+
   async deleteUser(userId: string): Promise<void> {
     try {
       loggingService.info('UserRepository.deleteUser called', { userId });
