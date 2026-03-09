@@ -16,6 +16,8 @@ tags:
     description: Authentication endpoints
   - name: Users
     description: User management endpoints
+  - name: Groups
+    description: Group management endpoints
 
 ################################################################################
 # Paths
@@ -764,6 +766,125 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # GROUPS
+  ##############################################################################
+
+  /groups:
+    post:
+      tags: [Groups]
+      summary: Create a new group (admin only)
+      description: >
+        Creates a new group within the authenticated admin's tenant.
+        The caller must supply a valid Bearer token belonging to a user with
+        the `admin` role. The optional `leader_id` must reference a user with
+        the `agent` role, and the optional `trainer_id` must reference a user
+        with the `trainer` role. Both referenced users must belong to the
+        caller's tenant.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  example: Alpha Team
+                leader_id:
+                  type: string
+                  format: uuid
+                  description: >
+                    UUID of the user to assign as group leader. Must be a user
+                    with the `agent` role and must belong to the caller's tenant.
+                  example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+                trainer_id:
+                  type: string
+                  format: uuid
+                  description: >
+                    UUID of the user to assign as group trainer. Must be a user
+                    with the `trainer` role and must belong to the caller's tenant.
+                  example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '201':
+          description: Group created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/GroupObject'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation or
+            a domain rule is violated (e.g. invalid role for leader or trainer,
+            or referenced user not found in the tenant).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: too_small
+                        minimum: 1
+                        type: string
+                        inclusive: true
+                        exact: false
+                        message: String must contain at least 1 character(s)
+                        path: [name]
+                invalidLeaderRole:
+                  summary: Leader does not have the agent role
+                  value:
+                    message: Leader must currently have the agent role
+                invalidTrainerRole:
+                  summary: Trainer does not have the trainer role
+                  value:
+                    message: Trainer must currently have the trainer role
+                userNotInTenant:
+                  summary: Referenced user not found in tenant
+                  value:
+                    message: User not found in tenant
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -834,6 +955,45 @@ components:
           type: string
           format: date-time
           example: '2026-03-07T08:00:00.000Z'
+
+    GroupObject:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - name
+        - status
+        - leader_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        tenant_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        name:
+          type: string
+          example: Alpha Team
+        status:
+          type: string
+          example: active
+        leader_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-10T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-10T08:00:00.000Z'
 
     ErrorResponse:
       type: object
