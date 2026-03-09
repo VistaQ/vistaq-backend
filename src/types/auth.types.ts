@@ -7,6 +7,8 @@ import { Database } from '@src/types/database.types';
 type UsersRow = Database['public']['Tables']['users']['Row'];
 type TenantsRow = Database['public']['Tables']['tenants']['Row'];
 type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
+type GroupsRow = Database['public']['Tables']['groups']['Row'];
+type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
 
 /******************************************************************************
                             Derived Domain Interfaces
@@ -35,3 +37,6 @@ export type IAgentCode = Pick<
   AgentCodesRow,
   'id' | 'tenant_id' | 'agent_code' | 'user_id' | 'is_used' | 'created_at' | 'updated_at'
 >;
+
+export type IGroup = Pick<GroupsRow, 'id' | 'tenant_id' | 'name' | 'status' | 'leader_id' | 'created_at' | 'updated_at'>;
+export type IGroupTrainer = Pick<GroupTrainersRow, 'group_id' | 'trainer_id' | 'created_at'>;
