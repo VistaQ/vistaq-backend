@@ -67,6 +67,16 @@ export interface ICreateUserRes extends IBaseRes {
   data: IUser;
 }
 
+export interface IDeleteUserReq extends IBaseReq {
+  params: {
+    userId: string;
+  };
+}
+
+export interface IDeleteUserRes extends IBaseRes {
+  success: boolean;
+}
+
 /******************************************************************************
                             UserController
 ******************************************************************************/
@@ -161,6 +171,34 @@ class UserController {
       }
 
       return handleControllerError('UserController.update', error, next);
+    }
+  }
+
+  async delete(
+    req: IDeleteUserReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('UserController.delete called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const { userId } = req.params;
+
+      await userService.deleteUser(userId, token);
+
+      const responseBody: IDeleteUserRes = {
+        success: true,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+
+      return handleControllerError('UserController.delete', error, next);
     }
   }
 

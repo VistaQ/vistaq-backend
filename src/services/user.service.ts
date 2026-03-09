@@ -146,6 +146,34 @@ class UserService {
     }
   }
 
+  async deleteUser(userId: string, token: string): Promise<void> {
+    try {
+      loggingService.info('UserService.deleteUser called', { userId });
+
+      const user = await userRepository.findById(userId, token);
+      if (!user) {
+        throw new UserNotFoundError();
+      }
+
+      await userRepository.deleteUser(userId);
+
+      try {
+        await userRepository.deleteAuthUser(userId);
+      } catch (authError) {
+        loggingService.error(
+          'UserService.deleteUser — Auth user deletion failed, DB row already removed',
+          authError,
+          { userId },
+        );
+      }
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('UserService.deleteUser', error);
+    }
+  }
+
   async createUser(params: ICreateUserParams): Promise<IUser> {
     try {
       loggingService.info('UserService.createUser called', {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import userController, {
   ICreateUserReq,
+  IDeleteUserReq,
   IGetUserByIdReq,
   IUpdateUserReq,
 } from '@src/controllers/user.controller';
@@ -84,6 +85,13 @@ router.post(
   validate(createUserSchema),
   (req, res, next) =>
     userController.create(req as unknown as ICreateUserReq, res, next),
+);
+
+router.delete(
+  '/:userId',
+  authenticate,
+  (req, res, next) =>
+    userController.delete(req as unknown as IDeleteUserReq, res, next),
 );
 
 export default router;
