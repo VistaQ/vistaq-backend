@@ -1,4 +1,7 @@
-import { AgentCodeInvalidError } from '@src/models/errors/auth.errors';
+import {
+  AgentCodeInvalidError,
+  UserNotFoundError,
+} from '@src/models/errors/auth.errors';
 import userRepository from '@src/repositories/user.repository';
 import loggingService from '@src/services/logging.service';
 import { IUser } from '@src/types/auth.types';
@@ -7,6 +10,21 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 /******************************************************************************
                             Interfaces
 ******************************************************************************/
+
+interface IUpdateUserParams {
+  userId: string;
+  callerRole: string;
+  token: string;
+  data: {
+    email?: string;
+    name?: string;
+    phone?: string;
+    agency?: string;
+    location?: string;
+    role?: string;
+    status?: string;
+  };
+}
 
 interface ICreateUserParams {
   email: string;
@@ -32,6 +50,99 @@ class UserService {
       return users;
     } catch (error) {
       return handleServiceError('UserService.getUsers', error);
+    }
+  }
+
+  async getUserById(
+    userId: string,
+    token: string,
+  ): Promise<IUser | null> {
+    try {
+      loggingService.info('UserService.getUserById called', { userId });
+
+      const user = await userRepository.findById(userId, token);
+
+      return user;
+    } catch (error) {
+      return handleServiceError('UserService.getUserById', error);
+    }
+  }
+
+  async updateUser(params: IUpdateUserParams): Promise<IUser> {
+    try {
+      loggingService.info('UserService.updateUser called', {
+        userId: params.userId,
+      });
+
+      // Strip admin-only fields for non-admin callers
+      const updateData = { ...params.data };
+      if (params.callerRole !== 'admin') {
+        delete updateData.role;
+        delete updateData.status;
+      }
+
+      // Fetch existing user
+      const existingUser = await userRepository.findById(
+        params.userId,
+        params.token,
+      );
+      if (!existingUser) {
+        throw new UserNotFoundError();
+      }
+
+      // Handle email update (two-phase: Auth first, then DB)
+      if (updateData.email && updateData.email !== existingUser.email) {
+        const oldEmail = existingUser.email;
+
+        // Phase 1 — Update Supabase Auth email
+        await userRepository.updateAuthUserEmail(
+          params.userId,
+          updateData.email,
+        );
+
+        // Phase 2 — Update users table (with rollback on failure)
+        try {
+          const updatedUser = await userRepository.updateUser(
+            params.userId,
+            updateData,
+            params.token,
+          );
+          return updatedUser;
+        } catch (dbError) {
+          loggingService.error(
+            'UserService.updateUser — DB update failed, rolling back Auth email',
+            dbError,
+            { userId: params.userId },
+          );
+          try {
+            await userRepository.updateAuthUserEmail(
+              params.userId,
+              oldEmail,
+            );
+          } catch (rollbackError) {
+            loggingService.error(
+              'UserService.updateUser — Auth email rollback failed',
+              rollbackError,
+              { userId: params.userId },
+            );
+          }
+          throw dbError;
+        }
+      }
+
+      // Non-email update
+      const updatedUser = await userRepository.updateUser(
+        params.userId,
+        updateData,
+        params.token,
+      );
+
+      return updatedUser;
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('UserService.updateUser', error);
     }
   }
 

@@ -1,6 +1,9 @@
 import { NextFunction, Response } from 'express';
 
-import { AgentCodeInvalidError } from '@src/models/errors/auth.errors';
+import {
+  AgentCodeInvalidError,
+  UserNotFoundError,
+} from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import loggingService from '@src/services/logging.service';
@@ -23,9 +26,40 @@ export interface ICreateUserReq extends IBaseReq {
   };
 }
 
+export interface IGetUserByIdReq extends IBaseReq {
+  params: {
+    userId: string;
+  };
+}
+
+export interface IGetUserByIdRes extends IBaseRes {
+  success: boolean;
+  data: IUser;
+}
+
 export interface IGetUsersRes extends IBaseRes {
   success: boolean;
   data: IUser[];
+}
+
+export interface IUpdateUserReq extends IBaseReq {
+  params: {
+    userId: string;
+  };
+  body: {
+    email?: string;
+    name?: string;
+    phone?: string;
+    agency?: string;
+    location?: string;
+    role?: string;
+    status?: string;
+  };
+}
+
+export interface IUpdateUserRes extends IBaseRes {
+  success: boolean;
+  data: IUser;
 }
 
 export interface ICreateUserRes extends IBaseRes {
@@ -38,6 +72,35 @@ export interface ICreateUserRes extends IBaseRes {
 ******************************************************************************/
 
 class UserController {
+  async getById(
+    req: IGetUserByIdReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('UserController.getById called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const { userId } = req.params;
+
+      const user = await userService.getUserById(userId, token);
+
+      if (user === null) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'User not found'));
+        return;
+      }
+
+      const responseBody: IGetUserByIdRes = {
+        success: true,
+        data: user,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('UserController.getById', error, next);
+    }
+  }
+
   async getAll(
     req: IBaseReq,
     res: Response,
@@ -58,6 +121,46 @@ class UserController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('UserController.getAll', error, next);
+    }
+  }
+
+  async update(
+    req: IUpdateUserReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('UserController.update called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const { userId } = req.params;
+
+      // Non-admin users can only update themselves
+      if (req.user!.role !== 'admin' && req.user!.id !== userId) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const user = await userService.updateUser({
+        userId,
+        callerRole: req.user!.role,
+        token,
+        data: req.body,
+      });
+
+      const responseBody: IUpdateUserRes = {
+        success: true,
+        data: user,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+
+      return handleControllerError('UserController.update', error, next);
     }
   }
 

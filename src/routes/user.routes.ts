@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 import userController, {
   ICreateUserReq,
+  IGetUserByIdReq,
+  IUpdateUserReq,
 } from '@src/controllers/user.controller';
 import { IBaseReq } from '@src/models/interfaces/base.interface';
 import { authenticate } from '@src/middleware/auth';
@@ -11,6 +13,21 @@ import { validate } from '@src/middleware/validate';
 /******************************************************************************
                             Zod Schema
 ******************************************************************************/
+
+export const updateUserSchema = z
+  .object({
+    email: z.string().email().optional(),
+    name: z.string().min(1).optional(),
+    phone: z.string().min(1).optional(),
+    agency: z.string().min(1).optional(),
+    location: z.string().min(1).optional(),
+    role: z.enum(['admin', 'master_trainer', 'trainer', 'agent']).optional(),
+    status: z.enum(['active', 'inactive']).optional(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
 
 export const createUserSchema = z
   .object({
@@ -44,6 +61,21 @@ router.get(
   authenticate,
   (req, res, next) =>
     userController.getAll(req as unknown as IBaseReq, res, next),
+);
+
+router.get(
+  '/:userId',
+  authenticate,
+  (req, res, next) =>
+    userController.getById(req as unknown as IGetUserByIdReq, res, next),
+);
+
+router.put(
+  '/:userId',
+  authenticate,
+  validate(updateUserSchema),
+  (req, res, next) =>
+    userController.update(req as unknown as IUpdateUserReq, res, next),
 );
 
 router.post(
