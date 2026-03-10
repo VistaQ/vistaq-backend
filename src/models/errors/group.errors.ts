@@ -22,3 +22,31 @@ export class UserNotInTenantError extends Error {
     this.name = 'UserNotInTenantError';
   }
 }
+
+export class GroupNotFoundError extends Error {
+  public constructor(message = 'Group not found') {
+    super(message);
+    this.name = 'GroupNotFoundError';
+  }
+}
+
+export class MissingMembersError extends Error {
+  public constructor(message = 'Missing members detected') {
+    super(message);
+    this.name = 'MissingMembersError';
+  }
+}
+
+export class InvalidLeaderError extends Error {
+  public constructor(message = 'leaderId must be an agent') {
+    super(message);
+    this.name = 'InvalidLeaderError';
+  }
+}
+
+export class InvalidTrainerError extends Error {
+  public constructor(message = 'trainerId must be a trainer') {
+    super(message);
+    this.name = 'InvalidTrainerError';
+  }
+}
