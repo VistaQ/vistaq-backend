@@ -761,6 +761,120 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // User Select In (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table where the specified column matches any value
+   * in the provided list, using a user-scoped client to enforce RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to query.
+   * @param columns   - Comma-separated column list (defaults to '*').
+   * @param column    - The column to filter on using `.in()`.
+   * @param values    - The list of values to match against.
+   */
+  async userSelectIn<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    columns = '*',
+    column: string & keyof Database['public']['Tables'][T]['Row'],
+    values: unknown[],
+  ) {
+    try {
+      loggingService.info('SupabaseService.userSelectIn called', {
+        table,
+        columns,
+        column,
+      });
+
+      const userClient = this.getUserClient(userToken);
+      const response = await userClient
+        .from(table)
+        .select(columns)
+        .in(column, values as never[]);
+
+      if (response.error) {
+        loggingService.error(
+          'SupabaseService.userSelectIn query error',
+          response.error,
+          { table },
+        );
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userSelectIn failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'User select in operation failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Update In (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Updates rows in the given table where the specified column matches any value
+   * in the provided list, using a user-scoped client to enforce RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to update.
+   * @param values    - Column/value pairs to apply as the update.
+   * @param column    - The column to filter on using `.in()`.
+   * @param ids       - The list of values to match against.
+   */
+  async userUpdateIn<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    values: Database['public']['Tables'][T]['Update'],
+    column: string & keyof Database['public']['Tables'][T]['Row'],
+    ids: unknown[],
+  ) {
+    try {
+      loggingService.info('SupabaseService.userUpdateIn called', {
+        table,
+        column,
+      });
+
+      if (ids.length === 0) {
+        throw new SupabaseServiceError(
+          'User update-in operation rejected: ids must not be empty. Refusing to update all rows.',
+        );
+      }
+
+      const userClient = this.getUserClient(userToken);
+      const response = await userClient
+        .from(table)
+        .update(values as never)
+        .in(column, ids as never[])
+        .select();
+
+      if (response.error) {
+        loggingService.error(
+          'SupabaseService.userUpdateIn query error',
+          response.error,
+          { table },
+        );
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userUpdateIn failed', error, {
+        table,
+      });
+      throw new SupabaseServiceError(
+        'User update in operation failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Delete (RLS-bypassing)
   // ---------------------------------------------------------------------------
 
