@@ -270,6 +270,77 @@ class UserRepository {
     }
   }
 
+  async findByIds(userIds: string[], userToken: string): Promise<IUser[]> {
+    try {
+      loggingService.info('UserRepository.findByIds called', {
+        count: userIds.length,
+      });
+
+      const response = await supabaseService.userSelectIn(
+        userToken,
+        'users',
+        '*',
+        'id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as UsersRow[];
+      const users: IUser[] = rows.map((row) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+
+      return users;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findByIds', error);
+    }
+  }
+
+  async updateGroupIdForUsers(
+    userIds: string[],
+    groupId: string,
+    userToken: string,
+  ): Promise<void> {
+    try {
+      loggingService.info('UserRepository.updateGroupIdForUsers called', {
+        count: userIds.length,
+        groupId,
+      });
+
+      const response = await supabaseService.userUpdateIn(
+        userToken,
+        'users',
+        { group_id: groupId },
+        'id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError(
+        'UserRepository.updateGroupIdForUsers',
+        error,
+      );
+    }
+  }
+
   async updateAuthUserEmail(userId: string, email: string): Promise<void> {
     try {
       loggingService.info('UserRepository.updateAuthUserEmail called', {

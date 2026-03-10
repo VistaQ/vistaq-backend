@@ -23,6 +23,7 @@ interface IUpdateUserParams {
     location?: string;
     role?: string;
     status?: string;
+    group_id?: string | null;
   };
 }
 
@@ -165,6 +166,24 @@ class UserService {
         throw error;
       }
       return handleServiceError('UserService.deleteUser', error);
+    }
+  }
+
+  async findUsersByIds(userIds: string[], token: string): Promise<IUser[]> {
+    try {
+      loggingService.info('UserService.findUsersByIds called', { count: userIds.length });
+      return await userRepository.findByIds(userIds, token);
+    } catch (error) {
+      return handleServiceError('UserService.findUsersByIds', error);
+    }
+  }
+
+  async updateUsersGroupId(userIds: string[], groupId: string, token: string): Promise<void> {
+    try {
+      loggingService.info('UserService.updateUsersGroupId called', { count: userIds.length, groupId });
+      await userRepository.updateGroupIdForUsers(userIds, groupId, token);
+    } catch (error) {
+      return handleServiceError('UserService.updateUsersGroupId', error);
     }
   }
 
