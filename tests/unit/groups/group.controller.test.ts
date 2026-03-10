@@ -47,15 +47,21 @@ jest.mock('@src/services/supabase.service', () => ({
 import type { Response, NextFunction } from 'express';
 
 import { groupController } from '@src/controllers/group.controller';
-import type { ICreateGroupReq } from '@src/controllers/group.controller';
+import type { ICreateGroupReq, IUpdateGroupReq } from '@src/controllers/group.controller';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 import { groupService } from '@src/services/group.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
 import {
+  GroupNotFoundError,
+  InvalidLeaderError,
   InvalidLeaderRoleError,
+  InvalidTrainerError,
   InvalidTrainerRoleError,
+  MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
+import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import type { IGroup } from '@src/types/auth.types';
 
 /******************************************************************************
@@ -81,6 +87,14 @@ const mockGroup: IGroup = {
   Helpers
 ******************************************************************************/
 
+function makeGetAllReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    user: { id: 'user-id', tenant_id: TENANT_ID, role: 'agent' },
+    ...overrides,
+  } as unknown as IBaseReq;
+}
+
 function makeReq(overrides: Partial<ICreateGroupReq> = {}): ICreateGroupReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -100,6 +114,66 @@ function makeRes(): Response {
 function makeNext(): jest.Mock {
   return jest.fn();
 }
+
+/******************************************************************************
+  Test suite — GroupController.getAll
+******************************************************************************/
+
+describe('GroupController.getAll', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 200 with IGroup[] on success', async () => {
+    const mockGroups: IGroup[] = [mockGroup];
+    jest.spyOn(groupService, 'getGroups').mockResolvedValue(mockGroups);
+
+    const req = makeGetAllReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.getAll(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: mockGroups,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with empty array when no groups exist', async () => {
+    jest.spyOn(groupService, 'getGroups').mockResolvedValue([]);
+
+    const req = makeGetAllReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.getAll(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: [],
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) for unexpected errors', async () => {
+    jest.spyOn(groupService, 'getGroups').mockRejectedValue(new Error('unexpected db failure'));
+
+    const req = makeGetAllReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.getAll(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
 
 /******************************************************************************
   Test suite — GroupController.create
@@ -223,6 +297,165 @@ describe('GroupController.create', () => {
     const next = makeNext();
 
     await groupController.create(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — GroupController.update
+******************************************************************************/
+
+function makeUpdateReq(overrides: Partial<IUpdateGroupReq> = {}): IUpdateGroupReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    params: { groupId: GROUP_ID },
+    body: { name: 'Updated Squad' },
+    user: { id: 'admin-user-id', tenant_id: TENANT_ID, role: 'admin' },
+    ...overrides,
+  } as unknown as IUpdateGroupReq;
+}
+
+describe('GroupController.update', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 403 when role is not admin', async () => {
+    const req = makeUpdateReq({ user: { id: 'agent-id', tenant_id: TENANT_ID, role: 'agent' } } as Partial<IUpdateGroupReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with updated group on success', async () => {
+    const updatedGroup: IGroup = { ...mockGroup, name: 'Updated Squad' };
+    jest.spyOn(groupService, 'updateGroup').mockResolvedValue(updatedGroup);
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: updatedGroup,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when service throws GroupNotFoundError', async () => {
+    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new GroupNotFoundError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when service throws UserNotFoundError', async () => {
+    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new UserNotFoundError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when service throws InvalidLeaderError', async () => {
+    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new InvalidLeaderError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(400);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when service throws InvalidTrainerError', async () => {
+    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new InvalidTrainerError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(400);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when service throws MissingMembersError', async () => {
+    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new MissingMembersError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(400);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls handleControllerError for unexpected errors', async () => {
+    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new Error('unexpected db failure'));
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await groupController.update(req, res, next as NextFunction);
 
     expect(next).toHaveBeenCalledTimes(1);
     const err = next.mock.calls[0][0];

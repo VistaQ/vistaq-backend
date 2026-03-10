@@ -34,6 +34,8 @@ jest.mock('@src/services/supabase.service', () => ({
     adminUpdate: jest.fn(),
     adminDelete: jest.fn(),
     userInsert: jest.fn(),
+    userSelect: jest.fn(),
+    userUpdate: jest.fn(),
   },
   supabaseService: {
     adminSelect: jest.fn(),
@@ -41,6 +43,8 @@ jest.mock('@src/services/supabase.service', () => ({
     adminUpdate: jest.fn(),
     adminDelete: jest.fn(),
     userInsert: jest.fn(),
+    userSelect: jest.fn(),
+    userUpdate: jest.fn(),
   },
 }));
 
@@ -155,6 +159,67 @@ describe('GroupRepository.insertGroup', () => {
 });
 
 /******************************************************************************
+  Test suite — GroupRepository.findAll
+******************************************************************************/
+
+describe('GroupRepository.findAll', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns a mapped IGroup[] on success', async () => {
+    const secondGroupRow = {
+      id: '22222222-3333-4444-5555-666666666666',
+      tenant_id: TENANT_ID,
+      name: 'Beta Squad',
+      status: 'active',
+      leader_id: null,
+      created_at: '2024-02-01T00:00:00.000Z',
+      updated_at: '2024-02-01T00:00:00.000Z',
+    };
+
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: [mockGroupRow, secondGroupRow],
+      error: null,
+    } as any);
+
+    const result = await groupRepository.findAll(USER_TOKEN);
+
+    expect(result).toEqual([
+      expectedGroup,
+      {
+        id: secondGroupRow.id,
+        tenant_id: secondGroupRow.tenant_id,
+        name: secondGroupRow.name,
+        status: secondGroupRow.status,
+        leader_id: secondGroupRow.leader_id,
+        created_at: secondGroupRow.created_at,
+        updated_at: secondGroupRow.updated_at,
+      },
+    ]);
+    expect(supabaseService.userSelect).toHaveBeenCalledWith(USER_TOKEN, 'groups', '*');
+  });
+
+  it('returns an empty array when no groups exist', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: [],
+      error: null,
+    } as any);
+
+    const result = await groupRepository.findAll(USER_TOKEN);
+
+    expect(result).toEqual([]);
+  });
+
+  it('throws RepositoryError when supabaseService.userSelect returns an error', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: null,
+      error: { message: 'select failed: permission denied' },
+    } as any);
+
+    await expect(groupRepository.findAll(USER_TOKEN)).rejects.toBeInstanceOf(RepositoryError);
+  });
+});
+
+/******************************************************************************
   Test suite — GroupRepository.insertGroupTrainer
 ******************************************************************************/
 
@@ -214,6 +279,101 @@ describe('GroupRepository.insertGroupTrainer', () => {
         { group_id: GROUP_ID, trainer_id: TRAINER_ID },
         USER_TOKEN,
       ),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
+});
+
+/******************************************************************************
+  Test suite — GroupRepository.findById
+******************************************************************************/
+
+describe('GroupRepository.findById', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns a mapped IGroup when row found', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: [mockGroupRow],
+      error: null,
+    } as any);
+
+    const result = await groupRepository.findById(GROUP_ID, USER_TOKEN);
+
+    expect(result).toEqual(expectedGroup);
+    expect(supabaseService.userSelect).toHaveBeenCalledWith(
+      USER_TOKEN,
+      'groups',
+      '*',
+      { id: GROUP_ID },
+    );
+  });
+
+  it('returns null when no data returned', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: [],
+      error: null,
+    } as any);
+
+    const result = await groupRepository.findById(GROUP_ID, USER_TOKEN);
+
+    expect(result).toBeNull();
+  });
+
+  it('throws RepositoryError when supabaseService.userSelect returns an error', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: null,
+      error: { message: 'select failed: permission denied' },
+    } as any);
+
+    await expect(
+      groupRepository.findById(GROUP_ID, USER_TOKEN),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
+});
+
+/******************************************************************************
+  Test suite — GroupRepository.updateGroup
+******************************************************************************/
+
+describe('GroupRepository.updateGroup', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns a mapped IGroup on success', async () => {
+    const updatedRow = { ...mockGroupRow, name: 'Updated Squad' };
+    const expectedUpdated: IGroup = { ...expectedGroup, name: 'Updated Squad' };
+
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: [updatedRow],
+      error: null,
+    } as any);
+
+    const result = await groupRepository.updateGroup(
+      GROUP_ID,
+      { name: 'Updated Squad' },
+      USER_TOKEN,
+    );
+
+    expect(result).toEqual(expectedUpdated);
+  });
+
+  it('throws RepositoryError when supabaseService.userUpdate returns an error', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: null,
+      error: { message: 'update failed: permission denied' },
+    } as any);
+
+    await expect(
+      groupRepository.updateGroup(GROUP_ID, { name: 'Updated Squad' }, USER_TOKEN),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
+
+  it('throws RepositoryError when no data returned after update', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: [],
+      error: null,
+    } as any);
+
+    await expect(
+      groupRepository.updateGroup(GROUP_ID, { name: 'Updated Squad' }, USER_TOKEN),
     ).rejects.toBeInstanceOf(RepositoryError);
   });
 });
