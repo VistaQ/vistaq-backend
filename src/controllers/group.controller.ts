@@ -1,10 +1,15 @@
 import { NextFunction, Response } from 'express';
 
 import {
+  GroupNotFoundError,
+  InvalidLeaderError,
   InvalidLeaderRoleError,
+  InvalidTrainerError,
   InvalidTrainerRoleError,
+  MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
+import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import loggingService from '@src/services/logging.service';
@@ -30,11 +35,50 @@ export interface ICreateGroupRes extends IBaseRes {
   data: IGroup;
 }
 
+export interface IGetGroupsRes extends IBaseRes {
+  success: boolean;
+  data: IGroup[];
+}
+
+export interface IUpdateGroupReq extends IBaseReq {
+  params: { groupId: string };
+  body: {
+    name?: string;
+    status?: string;
+    leader_id?: string;
+    trainer_id?: string;
+    member_ids?: string[];
+  };
+}
+
+export interface IUpdateGroupRes extends IBaseRes {
+  success: boolean;
+  data: IGroup;
+}
+
 /******************************************************************************
                             GroupController
 ******************************************************************************/
 
 class GroupController {
+  async getAll(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
+    try {
+      loggingService.info('GroupController.getAll called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const groups = await groupService.getGroups(token);
+
+      const responseBody: IGetGroupsRes = {
+        success: true,
+        data: groups,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('GroupController.getAll', error, next);
+    }
+  }
+
   async create(
     req: ICreateGroupReq,
     res: Response,
@@ -76,6 +120,56 @@ class GroupController {
       }
 
       return handleControllerError('GroupController.create', error, next);
+    }
+  }
+
+  async update(
+    req: IUpdateGroupReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('GroupController.update called');
+
+      if (req.user!.role !== 'admin') {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const { groupId } = req.params;
+
+      const group = await groupService.updateGroup({
+        groupId,
+        token,
+        data: req.body,
+      });
+
+      const responseBody: IUpdateGroupRes = {
+        success: true,
+        data: group,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (
+        error instanceof GroupNotFoundError ||
+        error instanceof UserNotFoundError
+      ) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+
+      if (
+        error instanceof InvalidLeaderError ||
+        error instanceof InvalidTrainerError ||
+        error instanceof MissingMembersError
+      ) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+
+      return handleControllerError('GroupController.update', error, next);
     }
   }
 }

@@ -1,13 +1,21 @@
+import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import {
+  GroupNotFoundError,
+  InvalidLeaderError,
   InvalidLeaderRoleError,
+  InvalidTrainerError,
   InvalidTrainerRoleError,
+  MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
 import groupRepository from '@src/repositories/group.repository';
 import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
 import { IGroup } from '@src/types/auth.types';
+import { Database } from '@src/types/database.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+
+type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
 
 /******************************************************************************
                             Interfaces
@@ -21,18 +29,44 @@ interface ICreateGroupParams {
   token: string;
 }
 
+interface IUpdateGroupParams {
+  groupId: string;
+  token: string;
+  data: {
+    name?: string;
+    status?: string;
+    leader_id?: string;
+    trainer_id?: string;
+    member_ids?: string[];
+  };
+}
+
 /******************************************************************************
                             GroupService
 ******************************************************************************/
 
 class GroupService {
+  async getGroups(token: string): Promise<IGroup[]> {
+    try {
+      loggingService.info('GroupService.getGroups called');
+      return await groupRepository.findAll(token);
+    } catch (error) {
+      return handleServiceError('GroupService.getGroups', error);
+    }
+  }
+
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
     try {
-      loggingService.info('GroupService.createGroup called', { name: params.name });
+      loggingService.info('GroupService.createGroup called', {
+        name: params.name,
+      });
 
       // Step 1 — Validate leader if provided
       if (params.leaderId) {
-        const leader = await userService.getUserById(params.leaderId, params.token);
+        const leader = await userService.getUserById(
+          params.leaderId,
+          params.token,
+        );
         if (!leader) {
           throw new UserNotInTenantError();
         }
@@ -43,7 +77,10 @@ class GroupService {
 
       // Step 2 — Validate trainer if provided
       if (params.trainerId) {
-        const trainer = await userService.getUserById(params.trainerId, params.token);
+        const trainer = await userService.getUserById(
+          params.trainerId,
+          params.token,
+        );
         if (!trainer) {
           throw new UserNotInTenantError();
         }
@@ -128,6 +165,108 @@ class GroupService {
         throw error;
       }
       return handleServiceError('GroupService.createGroup', error);
+    }
+  }
+
+  async updateGroup(params: IUpdateGroupParams): Promise<IGroup> {
+    try {
+      loggingService.info('GroupService.updateGroup called', {
+        groupId: params.groupId,
+      });
+
+      const { groupId, token, data } = params;
+
+      // Step 1 — Verify group exists
+      const existingGroup = await groupRepository.findById(groupId, token);
+      if (!existingGroup) {
+        throw new GroupNotFoundError();
+      }
+
+      // Step 2 — Leader logic
+      if (data.leader_id && data.leader_id !== existingGroup.leader_id) {
+        const leader = await userService.getUserById(data.leader_id, token);
+        if (!leader) {
+          throw new UserNotFoundError();
+        }
+        if (leader.role !== 'agent') {
+          throw new InvalidLeaderError();
+        }
+
+        // Demote old leader
+        if (existingGroup.leader_id) {
+          await userService.updateUser({
+            userId: existingGroup.leader_id,
+            callerRole: 'admin',
+            token,
+            data: { role: 'agent' },
+          });
+        }
+
+        // Promote new leader
+        await userService.updateUser({
+          userId: data.leader_id,
+          callerRole: 'admin',
+          token,
+          data: { role: 'group_leader' },
+        });
+      }
+
+      // Step 3 — Trainer logic
+      if (data.trainer_id) {
+        const trainer = await userService.getUserById(data.trainer_id, token);
+        if (!trainer) {
+          throw new UserNotFoundError();
+        }
+        if (trainer.role !== 'trainer') {
+          throw new InvalidTrainerError();
+        }
+        await groupRepository.insertGroupTrainer(
+          { group_id: groupId, trainer_id: data.trainer_id },
+          token,
+        );
+      }
+
+      // Step 4 — Members logic
+      if (data.member_ids) {
+        const foundMembers = await userService.findUsersByIds(
+          data.member_ids,
+          token,
+        );
+        if (foundMembers.length !== data.member_ids.length) {
+          throw new MissingMembersError();
+        }
+        await userService.updateUsersGroupId(data.member_ids, groupId, token);
+      }
+
+      // Step 5 — Build update payload and persist (skip if nothing to update in the row)
+      const updatePayload: GroupsUpdate = {};
+      if (data.name !== undefined) updatePayload.name = data.name;
+      if (data.status !== undefined) updatePayload.status = data.status;
+      if (data.leader_id !== undefined)
+        updatePayload.leader_id = data.leader_id;
+
+      if (Object.keys(updatePayload).length === 0) {
+        return existingGroup;
+      }
+
+      const updatedGroup = await groupRepository.updateGroup(
+        groupId,
+        updatePayload,
+        token,
+      );
+
+      return updatedGroup;
+    } catch (error) {
+      if (
+        error instanceof GroupNotFoundError ||
+        error instanceof UserNotFoundError ||
+        error instanceof InvalidLeaderError ||
+        error instanceof InvalidTrainerError ||
+        error instanceof MissingMembersError
+      ) {
+        throw error;
+      }
+      return handleServiceError('GroupService.updateGroup', error);
     }
   }
 }

@@ -7,6 +7,7 @@ import { handleRepositoryError } from '@src/utils/errorHandlers';
 type GroupsRow = Database['public']['Tables']['groups']['Row'];
 type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
 type GroupsInsert = Database['public']['Tables']['groups']['Insert'];
+type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
 type GroupTrainersInsert = Database['public']['Tables']['group_trainers']['Insert'];
 
 /******************************************************************************
@@ -42,6 +43,107 @@ class GroupRepository {
       return group;
     } catch (error) {
       return handleRepositoryError('GroupRepository.insertGroup', error);
+    }
+  }
+
+  async findAll(userToken: string): Promise<IGroup[]> {
+    try {
+      loggingService.info('GroupRepository.findAll called');
+
+      const response = await supabaseService.userSelect(userToken, 'groups', '*');
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = response.data as unknown as GroupsRow[];
+      return rows.map((row) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        name: row.name,
+        status: row.status,
+        leader_id: row.leader_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.findAll', error);
+    }
+  }
+
+  async findById(groupId: string, userToken: string): Promise<IGroup | null> {
+    try {
+      loggingService.info('GroupRepository.findById called', { groupId });
+
+      const response = await supabaseService.userSelect(
+        userToken,
+        'groups',
+        '*',
+        { id: groupId } as Partial<GroupsRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        return null;
+      }
+
+      const row = response.data[0] as unknown as GroupsRow;
+      const group: IGroup = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        name: row.name,
+        status: row.status,
+        leader_id: row.leader_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return group;
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.findById', error);
+    }
+  }
+
+  async updateGroup(
+    groupId: string,
+    data: GroupsUpdate,
+    userToken: string,
+  ): Promise<IGroup> {
+    try {
+      loggingService.info('GroupRepository.updateGroup called', { groupId });
+
+      const response = await supabaseService.userUpdate(
+        userToken,
+        'groups',
+        data,
+        { id: groupId } as Partial<GroupsRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error('No group returned after update');
+      }
+
+      const row = response.data[0] as unknown as GroupsRow;
+      const group: IGroup = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        name: row.name,
+        status: row.status,
+        leader_id: row.leader_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return group;
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.updateGroup', error);
     }
   }
 
