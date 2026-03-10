@@ -771,6 +771,49 @@ paths:
   ##############################################################################
 
   /groups:
+    get:
+      tags: [Groups]
+      summary: List all groups in the tenant
+      description: >
+        Returns all groups belonging to the authenticated user's tenant.
+        The caller must supply a valid Bearer token. Supabase RLS handles
+        tenant scoping automatically — any authenticated user can call this
+        endpoint and will receive only the groups visible to their tenant.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
     post:
       tags: [Groups]
       summary: Create a new group (admin only)
@@ -878,6 +921,163 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /groups/{groupId}:
+    put:
+      tags: [Groups]
+      summary: Update a group (admin only)
+      description: >
+        Updates the group identified by `groupId`. The caller must supply a valid
+        Bearer token belonging to a user with the `admin` role. All request body
+        fields are optional, but at least one must be provided. When `leader_id`
+        is supplied and differs from the current leader, the new leader is promoted
+        to `group_leader` and the previous leader is demoted back to `agent`. When
+        `trainer_id` is supplied, a new `group_trainers` record is inserted. When
+        `member_ids` is supplied, the `group_id` field on each referenced user is
+        set to this group. All referenced users must exist within the caller's tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: UUID of the group to update.
+          schema:
+            type: string
+            format: uuid
+            example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  example: Bravo Team
+                status:
+                  type: string
+                  enum: [active, inactive]
+                  example: active
+                leader_id:
+                  type: string
+                  format: uuid
+                  description: >
+                    UUID of the user to promote to group leader. Must be a user
+                    with the `agent` role. If the group already has a leader,
+                    that leader is demoted back to `agent`.
+                  example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+                trainer_id:
+                  type: string
+                  format: uuid
+                  description: >
+                    UUID of the user to add as a group trainer. Must be a user
+                    with the `trainer` role. Inserts a new `group_trainers` record.
+                  example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                member_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    Array of user UUIDs to assign to this group. Sets the
+                    `group_id` field on each referenced user. All provided IDs
+                    must exist within the caller's tenant.
+                  example:
+                    - a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+                    - b1ccde11-8d1c-5fa9-cc7e-7cc0ce491b22
+      responses:
+        '200':
+          description: Group updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/GroupObject'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation (e.g. no
+            fields provided or invalid values), or a domain rule is violated (e.g.
+            the new leader does not have the `agent` role, the trainer does not
+            have the `trainer` role, or one or more `member_ids` could not be found).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: custom
+                        message: At least one field must be provided
+                        path: []
+                invalidLeaderRole:
+                  summary: Proposed leader does not have the agent role
+                  value:
+                    message: Leader must currently have the agent role
+                invalidTrainerRole:
+                  summary: Proposed trainer does not have the trainer role
+                  value:
+                    message: Trainer must currently have the trainer role
+                missingMembers:
+                  summary: One or more member_ids could not be found
+                  value:
+                    message: One or more members could not be found
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no group exists for the given `groupId`, or
+            a referenced user (leader, trainer, or member) could not be found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                groupNotFound:
+                  summary: Group not found
+                  value:
+                    message: Group not found
+                userNotFound:
+                  summary: Referenced user not found
+                  value:
+                    message: User not found
         '500':
           description: Internal server error
           content:
