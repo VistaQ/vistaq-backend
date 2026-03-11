@@ -2,6 +2,7 @@ import express from 'express';
 
 import authRoutes from '@src/routes/auth.routes';
 import groupRoutes from '@src/routes/group.routes';
+import prospectRoutes from '@src/routes/prospect.routes';
 import userRoutes from '@src/routes/user.routes';
 
 const router = express.Router();
@@ -15,5 +16,6 @@ const router = express.Router();
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/groups', groupRoutes);
+router.use('/prospects', prospectRoutes);
 
 export default router;

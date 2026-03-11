@@ -9,6 +9,7 @@ type TenantsRow = Database['public']['Tables']['tenants']['Row'];
 type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
 type GroupsRow = Database['public']['Tables']['groups']['Row'];
 type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
+type ProspectsRow = Database['public']['Tables']['prospects']['Row'];
 
 /******************************************************************************
                             Derived Domain Interfaces
@@ -40,3 +41,18 @@ export type IAgentCode = Pick<
 
 export type IGroup = Pick<GroupsRow, 'id' | 'tenant_id' | 'name' | 'status' | 'leader_id' | 'created_at' | 'updated_at'>;
 export type IGroupTrainer = Pick<GroupTrainersRow, 'group_id' | 'trainer_id' | 'created_at'>;
+
+export type IProspect = Pick<
+  ProspectsRow,
+  | 'id'
+  | 'tenant_id'
+  | 'agent_id'
+  | 'group_id'
+  | 'prospect_name'
+  | 'prospect_email'
+  | 'prospect_phone'
+  | 'current_stage'
+  | 'prospect_entered_at'
+  | 'created_at'
+  | 'updated_at'
+>;

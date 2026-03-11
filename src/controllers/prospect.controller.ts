@@ -1,0 +1,76 @@
+import { NextFunction, Response } from 'express';
+
+import { RouteError } from '@src/models/errors/route.error';
+import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import loggingService from '@src/services/logging.service';
+import prospectService from '@src/services/prospect.service';
+import { IProspect } from '@src/types/auth.types';
+import { handleControllerError } from '@src/utils/errorHandlers';
+import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+
+/******************************************************************************
+                            Interfaces
+******************************************************************************/
+
+export interface ICreateProspectReq extends IBaseReq {
+  body: {
+    fullName: string;
+    phoneNum?: string;
+    email?: string;
+  };
+}
+
+export interface ICreateProspectRes extends IBaseRes {
+  success: boolean;
+  data: IProspect;
+}
+
+/******************************************************************************
+                            ProspectController
+******************************************************************************/
+
+class ProspectController {
+  async create(
+    req: ICreateProspectReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('ProspectController.create called');
+
+      if (!['agent', 'group_leader'].includes(req.user!.role)) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const { fullName, phoneNum, email } = req.body;
+
+      const prospect = await prospectService.createProspect({
+        prospectName: fullName,
+        prospectPhone: phoneNum,
+        prospectEmail: email,
+        agentId: req.user!.id,
+        tenantId: req.user!.tenant_id,
+        groupId: req.user!.group_id,
+        token,
+      });
+
+      const responseBody: ICreateProspectRes = {
+        success: true,
+        data: prospect,
+      };
+
+      res.status(HttpStatusCodes.CREATED).json(responseBody);
+    } catch (error) {
+      return handleControllerError('ProspectController.create', error, next);
+    }
+  }
+}
+
+/******************************************************************************
+                                Export
+******************************************************************************/
+
+export const prospectController = new ProspectController();
+export default prospectController;
