@@ -929,6 +929,64 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   /groups/{groupId}:
+    get:
+      tags: [Groups]
+      summary: Get a group by ID
+      description: >
+        Returns a single group identified by `groupId`. The caller must supply a
+        valid Bearer token. Supabase RLS handles tenant scoping automatically —
+        any authenticated user can call this endpoint and will only be able to
+        retrieve groups visible to their tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: UUID of the group to retrieve.
+          schema:
+            type: string
+            format: uuid
+            example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+      responses:
+        '200':
+          description: Group retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/GroupObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Not found. Returned when no group exists for the given `groupId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Group not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
     put:
       tags: [Groups]
       summary: Update a group (admin only)
