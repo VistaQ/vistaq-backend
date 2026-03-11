@@ -167,6 +167,37 @@ describe('GroupService.getGroups', () => {
 });
 
 /******************************************************************************
+  Test suite — GroupService.getGroupById
+******************************************************************************/
+
+describe('GroupService.getGroupById', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns the group from repository when found', async () => {
+    jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
+
+    const result = await groupService.getGroupById(GROUP_ID, USER_TOKEN);
+
+    expect(result).toEqual(mockGroup);
+    expect(groupRepository.findById).toHaveBeenCalledWith(GROUP_ID, USER_TOKEN);
+  });
+
+  it('returns null when repository returns null', async () => {
+    jest.spyOn(groupRepository, 'findById').mockResolvedValue(null);
+
+    const result = await groupService.getGroupById(GROUP_ID, USER_TOKEN);
+
+    expect(result).toBeNull();
+  });
+
+  it('throws ServiceError when repository throws', async () => {
+    jest.spyOn(groupRepository, 'findById').mockRejectedValue(new Error('db failure'));
+
+    await expect(groupService.getGroupById(GROUP_ID, USER_TOKEN)).rejects.toThrow(ServiceError);
+  });
+});
+
+/******************************************************************************
   Test suite — GroupService.createGroup
 ******************************************************************************/
 
