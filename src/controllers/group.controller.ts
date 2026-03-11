@@ -56,6 +56,15 @@ export interface IUpdateGroupRes extends IBaseRes {
   data: IGroup;
 }
 
+export interface IGetGroupByIdReq extends IBaseReq {
+  params: { groupId: string };
+}
+
+export interface IGetGroupByIdRes extends IBaseRes {
+  success: boolean;
+  data: IGroup;
+}
+
 /******************************************************************************
                             GroupController
 ******************************************************************************/
@@ -76,6 +85,35 @@ class GroupController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('GroupController.getAll', error, next);
+    }
+  }
+
+  async getById(
+    req: IGetGroupByIdReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('GroupController.getById called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const { groupId } = req.params;
+
+      const group = await groupService.getGroupById(groupId, token);
+
+      if (!group) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Group not found'));
+        return;
+      }
+
+      const responseBody: IGetGroupByIdRes = {
+        success: true,
+        data: group,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('GroupController.getById', error, next);
     }
   }
 

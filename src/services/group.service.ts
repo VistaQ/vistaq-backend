@@ -55,6 +55,15 @@ class GroupService {
     }
   }
 
+  async getGroupById(groupId: string, token: string): Promise<IGroup | null> {
+    try {
+      loggingService.info('GroupService.getGroupById called', { groupId });
+      return await groupRepository.findById(groupId, token);
+    } catch (error) {
+      return handleServiceError('GroupService.getGroupById', error);
+    }
+  }
+
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
     try {
       loggingService.info('GroupService.createGroup called', {

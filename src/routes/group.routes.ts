@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import groupController, {
   ICreateGroupReq,
+  IGetGroupByIdReq,
   IUpdateGroupReq,
 } from '@src/controllers/group.controller';
 import { IBaseReq } from '@src/models/interfaces/base.interface';
@@ -40,6 +41,13 @@ router.get(
   authenticate,
   (req, res, next) =>
     groupController.getAll(req as unknown as IBaseReq, res, next),
+);
+
+router.get(
+  '/:groupId',
+  authenticate,
+  (req, res, next) =>
+    groupController.getById(req as unknown as IGetGroupByIdReq, res, next),
 );
 
 router.post(
