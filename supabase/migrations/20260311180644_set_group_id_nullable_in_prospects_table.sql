@@ -1,0 +1,2 @@
+ALTER TABLE prospects
+ALTER COLUMN group_id SET NOT NULL;
