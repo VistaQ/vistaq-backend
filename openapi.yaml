@@ -18,6 +18,8 @@ tags:
     description: User management endpoints
   - name: Groups
     description: Group management endpoints
+  - name: Prospects
+    description: Prospect management endpoints
 
 ################################################################################
 # Paths
@@ -1143,6 +1145,107 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # PROSPECTS
+  ##############################################################################
+
+  /prospects:
+    post:
+      tags: [Prospects]
+      summary: Create a prospect
+      description: >
+        Creates a new prospect record scoped to the authenticated user's tenant.
+        The caller must supply a valid Bearer token belonging to a user with the
+        `agent` or `group_leader` role. The `agent_id`, `tenant_id`, and
+        `group_id` are extracted directly from the JWT claims — they are not
+        accepted in the request body. The `current_stage` is automatically set
+        to `prospect` on creation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fullName
+              additionalProperties: false
+              properties:
+                fullName:
+                  type: string
+                  minLength: 1
+                  description: Full name of the prospect.
+                  example: Alice Johnson
+                phoneNum:
+                  type: string
+                  description: Phone number of the prospect.
+                  example: '+6591234567'
+                email:
+                  type: string
+                  format: email
+                  description: Email address of the prospect.
+                  example: alice.johnson@example.com
+      responses:
+        '201':
+          description: Prospect created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ProspectObject'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation
+            (e.g. `fullName` is missing or empty, or `email` is not a valid
+            email address).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: string
+                    inclusive: true
+                    exact: false
+                    message: String must contain at least 1 character(s)
+                    path: [fullName]
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. Returned when the authenticated user does not have the
+            `agent` or `group_leader` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -1252,6 +1355,66 @@ components:
           type: string
           format: date-time
           example: '2026-03-10T08:00:00.000Z'
+
+    ProspectObject:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - agent_id
+        - group_id
+        - prospect_name
+        - prospect_email
+        - prospect_phone
+        - current_stage
+        - prospect_entered_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        tenant_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        agent_id:
+          type: string
+          format: uuid
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        prospect_name:
+          type: string
+          example: Alice Johnson
+        prospect_email:
+          type: string
+          format: email
+          nullable: true
+          example: alice.johnson@example.com
+        prospect_phone:
+          type: string
+          nullable: true
+          example: '+6591234567'
+        current_stage:
+          type: string
+          example: prospect
+        prospect_entered_at:
+          type: string
+          format: date-time
+          example: '2026-03-12T08:00:00.000Z'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-12T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-12T08:00:00.000Z'
 
     ErrorResponse:
       type: object
