@@ -47,6 +47,7 @@ export async function authenticate(
     const userId = decoded['user_id'];
     const tenantId = decoded['tenant_id'];
     const role = decoded['app_role']; // custom app role — not Supabase's built-in "authenticated"
+    const groupId = decoded['group_id'] ?? null;
 
     if (
       typeof userId !== 'string' ||
@@ -62,7 +63,15 @@ export async function authenticate(
       return;
     }
 
-    req.user = { id: userId, tenant_id: tenantId, role };
+    if (groupId !== null && typeof groupId !== 'string') {
+      loggingService.error('Token contains invalid group_id claim', undefined, {
+        groupId,
+      });
+      next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
+      return;
+    }
+
+    req.user = { id: userId, tenant_id: tenantId, role, group_id: groupId as string | null };
 
     next();
   } catch (error) {

@@ -4,6 +4,7 @@ declare namespace Express {
       id: string;
       tenant_id: string;
       role: string;
+      group_id: string | null;
     };
   }
 }
