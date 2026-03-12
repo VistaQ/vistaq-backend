@@ -3,13 +3,11 @@ import { z } from 'zod';
 
 import prospectController, {
   ICreateProspectReq,
+  IGetProspectByIdReq,
 } from '@src/controllers/prospect.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-
-/******************************************************************************
-                            Zod Schema
-******************************************************************************/
+import { IBaseReq } from '@src/models/interfaces/base.interface';
 
 export const createProspectSchema = z.object({
   fullName: z.string().min(1),
@@ -17,11 +15,21 @@ export const createProspectSchema = z.object({
   email: z.string().email().optional(),
 }).strict();
 
-/******************************************************************************
-                            Router
-******************************************************************************/
-
 const router = express.Router();
+
+router.get(
+  '/',
+  authenticate,
+  (req, res, next) =>
+    prospectController.getAll(req as unknown as IBaseReq, res, next),
+);
+
+router.get(
+  '/:prospectId',
+  authenticate,
+  (req, res, next) =>
+    prospectController.getById(req as unknown as IGetProspectByIdReq, res, next),
+);
 
 router.post(
   '/',

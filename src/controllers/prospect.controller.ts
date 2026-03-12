@@ -25,6 +25,20 @@ export interface ICreateProspectRes extends IBaseRes {
   data: IProspect;
 }
 
+export interface IGetProspectsRes extends IBaseRes {
+  success: boolean;
+  data: IProspect[];
+}
+
+export interface IGetProspectByIdReq extends IBaseReq {
+  params: { prospectId: string };
+}
+
+export interface IGetProspectByIdRes extends IBaseRes {
+  success: boolean;
+  data: IProspect;
+}
+
 /******************************************************************************
                             ProspectController
 ******************************************************************************/
@@ -64,6 +78,57 @@ class ProspectController {
       res.status(HttpStatusCodes.CREATED).json(responseBody);
     } catch (error) {
       return handleControllerError('ProspectController.create', error, next);
+    }
+  }
+
+  async getAll(
+    req: IBaseReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('ProspectController.getAll called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const prospects = await prospectService.getProspects(token);
+
+      const responseBody: IGetProspectsRes = {
+        success: true,
+        data: prospects,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('ProspectController.getAll', error, next);
+    }
+  }
+
+  async getById(
+    req: IGetProspectByIdReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('ProspectController.getById called');
+
+      const token = req.headers['authorization']!.slice(7);
+      const { prospectId } = req.params;
+
+      const prospect = await prospectService.getProspectById(prospectId, token);
+
+      if (!prospect) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Prospect not found'));
+        return;
+      }
+
+      const responseBody: IGetProspectByIdRes = {
+        success: true,
+        data: prospect,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('ProspectController.getById', error, next);
     }
   }
 }

@@ -1150,6 +1150,49 @@ paths:
   ##############################################################################
 
   /prospects:
+    get:
+      tags: [Prospects]
+      summary: List all prospects
+      description: >
+        Returns all prospects accessible to the authenticated user. The caller
+        must supply a valid Bearer token. Supabase RLS handles tenant and
+        agent scoping automatically — users will only receive prospects visible
+        to them.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Prospects retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProspectObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
     post:
       tags: [Prospects]
       summary: Create a prospect
@@ -1239,6 +1282,65 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /prospects/{prospectId}:
+    get:
+      tags: [Prospects]
+      summary: Get a prospect by ID
+      description: >
+        Returns a single prospect identified by `prospectId`. The caller must
+        supply a valid Bearer token. Supabase RLS handles tenant and agent
+        scoping automatically — users can only retrieve prospects visible to
+        them.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: prospectId
+          in: path
+          required: true
+          description: UUID of the prospect to retrieve.
+          schema:
+            type: string
+            format: uuid
+            example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      responses:
+        '200':
+          description: Prospect retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ProspectObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Not found. Returned when no prospect exists for the given `prospectId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Prospect not found
         '500':
           description: Internal server error
           content:

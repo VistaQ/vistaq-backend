@@ -46,6 +46,28 @@ class ProspectService {
       return handleServiceError('ProspectService.createProspect', error);
     }
   }
+
+  async getProspects(token: string): Promise<IProspect[]> {
+    try {
+      loggingService.info('ProspectService.getProspects called');
+
+      const prospects = await prospectRepository.findAll(token);
+      return prospects;
+    } catch (error) {
+      return handleServiceError('ProspectService.getProspects', error);
+    }
+  }
+
+  async getProspectById(prospectId: string, token: string): Promise<IProspect | null> {
+    try {
+      loggingService.info('ProspectService.getProspectById called', { prospectId });
+
+      const prospect = await prospectRepository.findById(prospectId, token);
+      return prospect;
+    } catch (error) {
+      return handleServiceError('ProspectService.getProspectById', error);
+    }
+  }
 }
 
 /******************************************************************************

@@ -47,11 +47,12 @@ jest.mock('@src/services/supabase.service', () => ({
 import type { Response, NextFunction } from 'express';
 
 import { prospectController } from '@src/controllers/prospect.controller';
-import type { ICreateProspectReq } from '@src/controllers/prospect.controller';
+import type { ICreateProspectReq, IGetProspectByIdReq } from '@src/controllers/prospect.controller';
 import { prospectService } from '@src/services/prospect.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
 import type { IProspect } from '@src/types/auth.types';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
   Fixtures
@@ -88,6 +89,23 @@ function makeReq(overrides: Partial<ICreateProspectReq> = {}): ICreateProspectRe
     user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
     ...overrides,
   } as unknown as ICreateProspectReq;
+}
+
+function makeBaseReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    ...overrides,
+  } as unknown as IBaseReq;
+}
+
+function makeGetByIdReq(overrides: Partial<IGetProspectByIdReq> = {}): IGetProspectByIdReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    params: { prospectId: PROSPECT_ID },
+    ...overrides,
+  } as unknown as IGetProspectByIdReq;
 }
 
 function makeRes(): Response {
@@ -224,5 +242,124 @@ describe('ProspectController.create', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(201);
+  });
+});
+
+/******************************************************************************
+  Test suite — ProspectController.getAll
+******************************************************************************/
+
+describe('ProspectController.getAll', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 200 with { success: true, data: prospects } when service returns a non-empty array', async () => {
+    jest.spyOn(prospectService, 'getProspects').mockResolvedValue([mockProspect]);
+
+    const req = makeBaseReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.getAll(req as unknown as IBaseReq, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: [mockProspect],
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with { success: true, data: [] } when service returns an empty array', async () => {
+    jest.spyOn(prospectService, 'getProspects').mockResolvedValue([]);
+
+    const req = makeBaseReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.getAll(req as unknown as IBaseReq, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: [],
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) when prospectService.getProspects throws', async () => {
+    jest.spyOn(prospectService, 'getProspects').mockRejectedValue(new Error('db failure'));
+
+    const req = makeBaseReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.getAll(req as unknown as IBaseReq, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — ProspectController.getById
+******************************************************************************/
+
+describe('ProspectController.getById', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 200 with { success: true, data: prospect } when service returns a prospect', async () => {
+    jest.spyOn(prospectService, 'getProspectById').mockResolvedValue(mockProspect);
+
+    const req = makeGetByIdReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.getById(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: mockProspect,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 404 when service returns null', async () => {
+    jest.spyOn(prospectService, 'getProspectById').mockResolvedValue(null);
+
+    const req = makeGetByIdReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.getById(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) when prospectService.getProspectById throws', async () => {
+    jest.spyOn(prospectService, 'getProspectById').mockRejectedValue(new Error('db failure'));
+
+    const req = makeGetByIdReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.getById(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

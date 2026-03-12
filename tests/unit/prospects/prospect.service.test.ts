@@ -152,3 +152,57 @@ describe('ProspectService.createProspect', () => {
     await expect(prospectService.createProspect(BASE_PARAMS)).rejects.toThrow(ServiceError);
   });
 });
+
+/******************************************************************************
+  Test suite — ProspectService.getProspects
+******************************************************************************/
+
+describe('ProspectService.getProspects', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns the array of IProspect returned by the repository', async () => {
+    jest.spyOn(prospectRepository, 'findAll').mockResolvedValue([mockProspect]);
+
+    const result = await prospectService.getProspects(USER_TOKEN);
+
+    expect(result).toEqual([mockProspect]);
+    expect(prospectRepository.findAll).toHaveBeenCalledWith(USER_TOKEN);
+  });
+
+  it('throws ServiceError when repository throws', async () => {
+    jest.spyOn(prospectRepository, 'findAll').mockRejectedValue(new Error('db failure'));
+
+    await expect(prospectService.getProspects(USER_TOKEN)).rejects.toThrow(ServiceError);
+  });
+});
+
+/******************************************************************************
+  Test suite — ProspectService.getProspectById
+******************************************************************************/
+
+describe('ProspectService.getProspectById', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns the IProspect returned by the repository', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(mockProspect);
+
+    const result = await prospectService.getProspectById(PROSPECT_ID, USER_TOKEN);
+
+    expect(result).toEqual(mockProspect);
+    expect(prospectRepository.findById).toHaveBeenCalledWith(PROSPECT_ID, USER_TOKEN);
+  });
+
+  it('returns null when the repository returns null', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(null);
+
+    const result = await prospectService.getProspectById(PROSPECT_ID, USER_TOKEN);
+
+    expect(result).toBeNull();
+  });
+
+  it('throws ServiceError when repository throws', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockRejectedValue(new Error('db failure'));
+
+    await expect(prospectService.getProspectById(PROSPECT_ID, USER_TOKEN)).rejects.toThrow(ServiceError);
+  });
+});
