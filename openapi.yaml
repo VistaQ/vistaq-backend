@@ -1347,6 +1347,165 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Prospects]
+      summary: Update a prospect
+      description: >
+        Updates the prospect identified by `prospectId`. The caller must supply
+        a valid Bearer token belonging to a user with the `agent` or
+        `group_leader` role. All request body fields are optional, but at least
+        one must be provided.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: prospectId
+          in: path
+          required: true
+          description: UUID of the prospect to update.
+          schema:
+            type: string
+            format: uuid
+            example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                currentStage:
+                  type: string
+                  enum: [prospect, appointment, sales]
+                  example: appointment
+                appointmentDate:
+                  type: string
+                  format: date
+                  description: Date of the appointment in YYYY-MM-DD format.
+                  example: '2026-04-01'
+                appointmentStartTime:
+                  type: string
+                  description: Start time of the appointment (e.g. "14:00").
+                  example: '14:00'
+                appointmentEndTime:
+                  type: string
+                  description: End time of the appointment (e.g. "15:00").
+                  example: '15:00'
+                appointmentLocation:
+                  type: string
+                  example: Raffles Place Office
+                appointmentStatus:
+                  type: string
+                  enum: [not_done, scheduled, rescheduled, kiv, done, declined]
+                  example: scheduled
+                salesMeetingStages:
+                  type: array
+                  items:
+                    type: string
+                    enum: [social, factFind, presentation]
+                  description: >
+                    Array of sales meeting stages completed during the sales
+                    meeting.
+                  example: [social, factFind]
+                products:
+                  type: array
+                  items:
+                    type: object
+                    required: [productName, amount]
+                    properties:
+                      productName:
+                        type: string
+                        example: Term Life Insurance
+                      amount:
+                        type: number
+                        example: 50000
+                  description: Array of products sold to the prospect.
+                salesOutcome:
+                  type: string
+                  enum: [kiv, successful, unsuccessful]
+                  example: successful
+                unsuccessfulReason:
+                  type: string
+                  description: >
+                    Required when `salesOutcome` is `unsuccessful`. Describes
+                    why the sale was not completed.
+                  example: Client budget constraints
+      responses:
+        '200':
+          description: Prospect updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ProspectObject'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation (e.g.
+            no fields provided, invalid enum value, or `unsuccessfulReason` is
+            missing when `salesOutcome` is `unsuccessful`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: custom
+                        message: At least one field must be provided
+                        path: []
+                missingUnsuccessfulReason:
+                  summary: unsuccessfulReason required when salesOutcome is unsuccessful
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: custom
+                        message: unsuccessfulReason is required when salesOutcome is unsuccessful
+                        path: [unsuccessfulReason]
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. Returned when the authenticated user does not have the
+            `agent` or `group_leader` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Not found. Returned when no prospect exists for the given `prospectId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Prospect not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 ################################################################################
 # Components
@@ -1504,11 +1663,84 @@ components:
           example: '+6591234567'
         current_stage:
           type: string
+          enum: [prospect, appointment, sales]
           example: prospect
+        stage_history:
+          type: array
+          items:
+            type: object
+          description: Ordered list of stage transition records for this prospect.
+          example: []
         prospect_entered_at:
           type: string
           format: date-time
           example: '2026-03-12T08:00:00.000Z'
+        appointment_date:
+          type: string
+          format: date
+          nullable: true
+          example: '2026-04-01'
+        appointment_start_time:
+          type: string
+          nullable: true
+          example: '14:00'
+        appointment_end_time:
+          type: string
+          nullable: true
+          example: '15:00'
+        appointment_location:
+          type: string
+          nullable: true
+          example: Raffles Place Office
+        appointment_status:
+          type: string
+          enum: [not_done, scheduled, rescheduled, kiv, done, declined]
+          nullable: true
+          example: scheduled
+        appointment_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-04-01T15:00:00.000Z'
+        sales_parts_completed:
+          type: array
+          items:
+            type: string
+            enum: [social, factFind, presentation]
+          nullable: true
+          description: Sales meeting stages completed during the sales meeting.
+          example: [social, factFind]
+        products_sold:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [productName, amount]
+            properties:
+              productName:
+                type: string
+                example: Term Life Insurance
+              amount:
+                type: number
+                example: 50000
+          description: Products sold to the prospect.
+          example:
+            - productName: Term Life Insurance
+              amount: 50000
+        sales_outcome:
+          type: string
+          enum: [kiv, successful, unsuccessful]
+          nullable: true
+          example: successful
+        unsuccessful_reason:
+          type: string
+          nullable: true
+          example: Client budget constraints
+        sales_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-04-10T10:00:00.000Z'
         created_at:
           type: string
           format: date-time

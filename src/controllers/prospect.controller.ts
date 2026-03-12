@@ -1,5 +1,6 @@
 import { NextFunction, Response } from 'express';
 
+import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import loggingService from '@src/services/logging.service';
@@ -39,6 +40,27 @@ export interface IGetProspectByIdRes extends IBaseRes {
   data: IProspect;
 }
 
+export interface IUpdateProspectReq extends IBaseReq {
+  params: { prospectId: string };
+  body: {
+    currentStage?: string;
+    appointmentDate?: string;
+    appointmentStartTime?: string;
+    appointmentEndTime?: string;
+    appointmentLocation?: string;
+    appointmentStatus?: string;
+    salesMeetingStages?: string[];
+    products?: { productName: string; amount: number }[];
+    salesOutcome?: string;
+    unsuccessfulReason?: string;
+  };
+}
+
+export interface IUpdateProspectRes extends IBaseRes {
+  success: boolean;
+  data: IProspect;
+}
+
 /******************************************************************************
                             ProspectController
 ******************************************************************************/
@@ -66,7 +88,6 @@ class ProspectController {
         prospectEmail: email,
         agentId: req.user!.id,
         tenantId: req.user!.tenant_id,
-        groupId: req.user!.group_id,
         token,
       });
 
@@ -129,6 +150,43 @@ class ProspectController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('ProspectController.getById', error, next);
+    }
+  }
+
+  async update(
+    req: IUpdateProspectReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('ProspectController.update called');
+
+      if (!['agent', 'group_leader'].includes(req.user!.role)) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const { prospectId } = req.params;
+
+      const updatedProspect = await prospectService.updateProspect({
+        prospectId,
+        token,
+        data: req.body,
+      });
+
+      const responseBody: IUpdateProspectRes = {
+        success: true,
+        data: updatedProspect,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof ProspectNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+      return handleControllerError('ProspectController.update', error, next);
     }
   }
 }

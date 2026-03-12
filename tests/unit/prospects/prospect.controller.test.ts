@@ -47,10 +47,11 @@ jest.mock('@src/services/supabase.service', () => ({
 import type { Response, NextFunction } from 'express';
 
 import { prospectController } from '@src/controllers/prospect.controller';
-import type { ICreateProspectReq, IGetProspectByIdReq } from '@src/controllers/prospect.controller';
+import type { ICreateProspectReq, IGetProspectByIdReq, IUpdateProspectReq } from '@src/controllers/prospect.controller';
 import { prospectService } from '@src/services/prospect.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
+import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import type { IProspect } from '@src/types/auth.types';
 import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
@@ -74,6 +75,18 @@ const mockProspect: IProspect = {
   prospect_phone: '+61400000000',
   current_stage: 'prospect',
   prospect_entered_at: '2024-01-01T00:00:00.000Z',
+  stage_history: [],
+  appointment_date: null,
+  appointment_start_time: null,
+  appointment_end_time: null,
+  appointment_location: null,
+  appointment_status: null,
+  appointment_completed_at: null,
+  sales_parts_completed: null,
+  products_sold: null,
+  sales_outcome: null,
+  unsuccessful_reason: null,
+  sales_completed_at: null,
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
 };
@@ -106,6 +119,16 @@ function makeGetByIdReq(overrides: Partial<IGetProspectByIdReq> = {}): IGetProsp
     params: { prospectId: PROSPECT_ID },
     ...overrides,
   } as unknown as IGetProspectByIdReq;
+}
+
+function makeUpdateReq(overrides: Partial<IUpdateProspectReq> = {}): IUpdateProspectReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    params: { prospectId: PROSPECT_ID },
+    body: { appointmentStatus: 'scheduled' },
+    ...overrides,
+  } as unknown as IUpdateProspectReq;
 }
 
 function makeRes(): Response {
@@ -197,22 +220,17 @@ describe('ProspectController.create', () => {
     expect(res.json).not.toHaveBeenCalled();
   });
 
-  it('passes group_id as null when req.user.group_id is null', async () => {
-    const prospectWithNullGroup: IProspect = { ...mockProspect, group_id: null };
-    const createProspectSpy = jest
-      .spyOn(prospectService, 'createProspect')
-      .mockResolvedValue(prospectWithNullGroup);
+  it('calls createProspect without groupId (column was dropped)', async () => {
+    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
-    const req = makeReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: null },
-    } as Partial<ICreateProspectReq>);
+    const req = makeReq({} as Partial<ICreateProspectReq>);
     const res = makeRes();
     const next = makeNext();
 
     await prospectController.create(req, res, next as NextFunction);
 
-    expect(createProspectSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ groupId: null }),
+    expect(prospectService.createProspect).toHaveBeenCalledWith(
+      expect.not.objectContaining({ groupId: expect.anything() }),
     );
     expect(res.status).toHaveBeenCalledWith(201);
   });
@@ -354,6 +372,103 @@ describe('ProspectController.getById', () => {
     const next = makeNext();
 
     await prospectController.getById(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — ProspectController.update
+******************************************************************************/
+
+describe('ProspectController.update', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 200 with { success: true, data: prospect } when role is agent', async () => {
+    jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.update(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: mockProspect,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with { success: true, data: prospect } when role is group_leader', async () => {
+    jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
+
+    const req = makeUpdateReq({
+      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+    } as Partial<IUpdateProspectReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.update(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: mockProspect,
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 403 when role is admin', async () => {
+    const req = makeUpdateReq({
+      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'admin', group_id: null },
+    } as Partial<IUpdateProspectReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 404 when service throws ProspectNotFoundError', async () => {
+    jest.spyOn(prospectService, 'updateProspect').mockRejectedValue(new ProspectNotFoundError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) when service throws a generic Error', async () => {
+    jest.spyOn(prospectService, 'updateProspect').mockRejectedValue(new Error('unexpected failure'));
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.update(req, res, next as NextFunction);
 
     expect(next).toHaveBeenCalledTimes(1);
     const err = next.mock.calls[0][0];

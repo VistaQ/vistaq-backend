@@ -47,6 +47,7 @@ jest.mock('@src/services/supabase.service', () => ({
 import { prospectService } from '@src/services/prospect.service';
 import { prospectRepository } from '@src/repositories/prospect.repository';
 import { ServiceError } from '@src/models/errors/layer.errors';
+import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import type { IProspect } from '@src/types/auth.types';
 
 /******************************************************************************
@@ -69,6 +70,18 @@ const mockProspect: IProspect = {
   prospect_phone: '+61400000000',
   current_stage: 'prospect',
   prospect_entered_at: '2024-01-01T00:00:00.000Z',
+  stage_history: [],
+  appointment_date: null,
+  appointment_start_time: null,
+  appointment_end_time: null,
+  appointment_location: null,
+  appointment_status: null,
+  appointment_completed_at: null,
+  sales_parts_completed: null,
+  products_sold: null,
+  sales_outcome: null,
+  unsuccessful_reason: null,
+  sales_completed_at: null,
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
 };
@@ -79,7 +92,6 @@ const BASE_PARAMS = {
   prospectEmail: 'john@example.com',
   agentId: AGENT_ID,
   tenantId: TENANT_ID,
-  groupId: GROUP_ID,
   token: USER_TOKEN,
 };
 
@@ -103,23 +115,21 @@ describe('ProspectService.createProspect', () => {
         prospect_email: 'john@example.com',
         agent_id: AGENT_ID,
         tenant_id: TENANT_ID,
-        group_id: GROUP_ID,
         current_stage: 'prospect',
       },
       USER_TOKEN,
     );
   });
 
-  it('passes group_id: null in payload when groupId param is null', async () => {
-    const prospectWithNullGroup: IProspect = { ...mockProspect, group_id: null };
+  it('calls insertProspect without group_id (column was dropped)', async () => {
     const insertProspectSpy = jest
       .spyOn(prospectRepository, 'insertProspect')
-      .mockResolvedValue(prospectWithNullGroup);
+      .mockResolvedValue(mockProspect);
 
-    await prospectService.createProspect({ ...BASE_PARAMS, groupId: null });
+    await prospectService.createProspect(BASE_PARAMS);
 
     expect(insertProspectSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ group_id: null }),
+      expect.not.objectContaining({ group_id: expect.anything() }),
       USER_TOKEN,
     );
   });
@@ -204,5 +214,95 @@ describe('ProspectService.getProspectById', () => {
     jest.spyOn(prospectRepository, 'findById').mockRejectedValue(new Error('db failure'));
 
     await expect(prospectService.getProspectById(PROSPECT_ID, USER_TOKEN)).rejects.toThrow(ServiceError);
+  });
+});
+
+/******************************************************************************
+  Test suite — ProspectService.updateProspect
+******************************************************************************/
+
+describe('ProspectService.updateProspect', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('calls updateProspect without stage_history when stage has not changed', async () => {
+    const existingProspect: IProspect = {
+      ...mockProspect,
+      current_stage: 'prospect',
+      stage_history: [],
+    };
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(existingProspect);
+    const updateSpy = jest
+      .spyOn(prospectRepository, 'updateProspect')
+      .mockResolvedValue({ ...existingProspect, appointment_status: 'scheduled' });
+
+    const result = await prospectService.updateProspect({
+      prospectId: PROSPECT_ID,
+      token: USER_TOKEN,
+      data: { currentStage: 'prospect', appointmentStatus: 'scheduled' },
+    });
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      PROSPECT_ID,
+      expect.not.objectContaining({ stage_history: expect.anything() }),
+      USER_TOKEN,
+    );
+    expect(result.appointment_status).toBe('scheduled');
+  });
+
+  it('calls updateProspect with appended stage_history entry when stage changes', async () => {
+    const existingProspect: IProspect = {
+      ...mockProspect,
+      current_stage: 'prospect',
+      stage_history: [],
+    };
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(existingProspect);
+    const updatedProspect: IProspect = {
+      ...existingProspect,
+      current_stage: 'appointment',
+      stage_history: [{ stage: 'appointment', enteredAt: '2024-06-01T00:00:00.000Z' }],
+    };
+    const updateSpy = jest
+      .spyOn(prospectRepository, 'updateProspect')
+      .mockResolvedValue(updatedProspect);
+
+    await prospectService.updateProspect({
+      prospectId: PROSPECT_ID,
+      token: USER_TOKEN,
+      data: { currentStage: 'appointment' },
+    });
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      PROSPECT_ID,
+      expect.objectContaining({
+        current_stage: 'appointment',
+        stage_history: [{ stage: 'appointment', enteredAt: expect.any(String) }],
+      }),
+      USER_TOKEN,
+    );
+  });
+
+  it('throws ProspectNotFoundError when findById returns null', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(null);
+
+    await expect(
+      prospectService.updateProspect({
+        prospectId: PROSPECT_ID,
+        token: USER_TOKEN,
+        data: { appointmentStatus: 'scheduled' },
+      }),
+    ).rejects.toThrow(ProspectNotFoundError);
+  });
+
+  it('throws ServiceError when repository updateProspect throws', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(mockProspect);
+    jest.spyOn(prospectRepository, 'updateProspect').mockRejectedValue(new Error('db failure'));
+
+    await expect(
+      prospectService.updateProspect({
+        prospectId: PROSPECT_ID,
+        token: USER_TOKEN,
+        data: { appointmentStatus: 'scheduled' },
+      }),
+    ).rejects.toThrow(ServiceError);
   });
 });
