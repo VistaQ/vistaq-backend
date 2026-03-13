@@ -875,6 +875,63 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // User Delete (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Deletes rows from the given table that match the provided filters using a user-scoped
+   * client, enforcing RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to delete from.
+   * @param filters   - Key/value pairs used to identify rows to delete.
+   */
+  async userDelete<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    filters: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    try {
+      loggingService.info('SupabaseService.userDelete called', { table });
+
+      if (Object.keys(filters).length === 0) {
+        throw new SupabaseServiceError(
+          'User delete operation rejected: filters must not be empty. Refusing to delete all rows.',
+        );
+      }
+
+      const userClient = this.getUserClient(userToken);
+      let query = userClient.from(table).delete().select();
+
+      for (const column of Object.keys(filters) as (string &
+        keyof typeof filters)[]) {
+        const value = filters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
+      }
+
+      const response = await query;
+
+      if (response.error) {
+        loggingService.error(
+          'SupabaseService.userDelete query error',
+          response.error,
+          { table },
+        );
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userDelete failed', error, { table });
+      throw new SupabaseServiceError(
+        'User delete operation failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Delete (RLS-bypassing)
   // ---------------------------------------------------------------------------
 

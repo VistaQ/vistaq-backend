@@ -20,6 +20,8 @@ tags:
     description: Group management endpoints
   - name: Prospects
     description: Prospect management endpoints
+  - name: Events
+    description: Event management endpoints
 
 ################################################################################
 # Paths
@@ -1507,6 +1509,397 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # EVENTS
+  ##############################################################################
+
+  /events:
+    post:
+      tags: [Events]
+      summary: Create an event
+      description: >
+        Creates a new event scoped to the authenticated user's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`,
+        `master_trainer`, `trainer`, or `group_leader` role — `agent` users will
+        receive a 403. For `trainer` users, all supplied `groupIds` must belong to
+        groups that the trainer manages via the `group_trainers` junction table;
+        any unmanaged group IDs result in a 400.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - date
+                - description
+                - groupIds
+              additionalProperties: false
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  description: Title of the event.
+                  example: Q2 Training Kickoff
+                date:
+                  type: string
+                  format: date
+                  description: >
+                    Date of the event in YYYY-MM-DD format. Cannot be a past
+                    date.
+                  example: '2026-04-15'
+                time:
+                  type: string
+                  description: Time of the event in HH:MM 24-hour format (optional).
+                  example: '09:00'
+                link:
+                  type: string
+                  format: uri
+                  description: Optional URL for the event (e.g. a video call link).
+                  example: 'https://meet.example.com/q2-kickoff'
+                venue:
+                  type: string
+                  description: Optional venue or location for the event.
+                  example: Raffles Place Conference Room
+                description:
+                  type: string
+                  minLength: 1
+                  description: Description or agenda for the event.
+                  example: Quarterly training kickoff covering Q2 targets and new product modules.
+                groupIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    Array of group UUIDs the event is associated with. At least
+                    one must be provided. For trainers, all IDs must be groups
+                    they manage.
+                  example:
+                    - 7c9e6679-7425-40de-944b-e07fc1f90ae7
+      responses:
+        '201':
+          description: Event created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/EventObject'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation (e.g.
+            `title` is missing, `date` is in the past, `groupIds` is empty, a
+            supplied group UUID does not exist, or a trainer supplies a group
+            they do not manage).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: custom
+                        message: Date cannot be in the past
+                        path: [date]
+                invalidGroupIds:
+                  summary: One or more group IDs do not exist
+                  value:
+                    message: One or more group IDs are invalid
+                trainerUnmanagedGroups:
+                  summary: Trainer supplied groups they do not manage
+                  value:
+                    message: Trainer does not manage one or more of the supplied groups
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. Returned when the authenticated user has the `agent`
+            role, which is not permitted to create events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Events]
+      summary: List all events
+      description: >
+        Returns all events accessible to the authenticated user. The caller must
+        supply a valid Bearer token. Supabase RLS handles tenant scoping
+        automatically — users will only receive events visible to them.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Events retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EventObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /events/{eventId}:
+    get:
+      tags: [Events]
+      summary: Get an event by ID
+      description: >
+        Returns a single event identified by `eventId`. The caller must supply a
+        valid Bearer token. Supabase RLS handles tenant scoping automatically —
+        users can only retrieve events visible to them.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: UUID of the event to retrieve.
+          schema:
+            type: string
+            format: uuid
+            example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+      responses:
+        '200':
+          description: Event retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/EventObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Not found. Returned when no event exists for the given `eventId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Event not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Events]
+      summary: Update an event
+      description: >
+        Updates the event identified by `eventId`. The caller must supply a valid
+        Bearer token belonging to a user with the `admin`, `master_trainer`,
+        `trainer`, or `group_leader` role — `agent` users will receive a 403.
+        All request body fields are optional, but at least one must be provided.
+        When `groupIds` is supplied, the existing `event_groups` entries for this
+        event are replaced entirely. For `trainer` users, all supplied `groupIds`
+        must belong to groups they manage; any unmanaged group IDs result in a 400.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: UUID of the event to update.
+          schema:
+            type: string
+            format: uuid
+            example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  description: Updated title of the event.
+                  example: Q2 Training Kickoff (Revised)
+                date:
+                  type: string
+                  format: date
+                  description: >
+                    Updated date of the event in YYYY-MM-DD format. Cannot be a
+                    past date.
+                  example: '2026-04-20'
+                time:
+                  type: string
+                  description: Updated time of the event in HH:MM 24-hour format.
+                  example: '10:00'
+                link:
+                  type: string
+                  format: uri
+                  description: Updated URL for the event.
+                  example: 'https://meet.example.com/q2-kickoff-revised'
+                venue:
+                  type: string
+                  description: Updated venue or location for the event.
+                  example: Marina Bay Conference Centre
+                description:
+                  type: string
+                  minLength: 1
+                  description: Updated description or agenda for the event.
+                  example: Updated agenda covering revised Q2 targets.
+                groupIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    Replacement set of group UUIDs for the event. Existing
+                    `event_groups` entries are deleted and replaced with these
+                    values. For trainers, all IDs must be groups they manage.
+                  example:
+                    - 7c9e6679-7425-40de-944b-e07fc1f90ae7
+      responses:
+        '200':
+          description: Event updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/EventObject'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation (e.g.
+            no fields provided, `date` is in the past, a supplied group UUID
+            does not exist, or a trainer supplies a group they do not manage).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: custom
+                        message: At least one field must be provided
+                        path: []
+                invalidGroupIds:
+                  summary: One or more group IDs do not exist
+                  value:
+                    message: One or more group IDs are invalid
+                trainerUnmanagedGroups:
+                  summary: Trainer supplied groups they do not manage
+                  value:
+                    message: Trainer does not manage one or more of the supplied groups
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. Returned when the authenticated user has the `agent`
+            role, which is not permitted to update events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Not found. Returned when no event exists for the given `eventId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Event not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -1749,6 +2142,65 @@ components:
           type: string
           format: date-time
           example: '2026-03-12T08:00:00.000Z'
+
+    EventObject:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - event_title
+        - date
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        tenant_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        event_title:
+          type: string
+          example: Q2 Training Kickoff
+        date:
+          type: string
+          format: date-time
+          description: >
+            Date (and optional time) of the event stored as a TIMESTAMPTZ value.
+            When a `time` is supplied on create/update it is combined with the
+            `date` into a single ISO 8601 timestamp.
+          example: '2026-04-15T09:00:00.000Z'
+        description:
+          type: string
+          nullable: true
+          example: Quarterly training kickoff covering Q2 targets and new product modules.
+        meeting_link:
+          type: string
+          nullable: true
+          example: 'https://meet.example.com/q2-kickoff'
+        venue:
+          type: string
+          nullable: true
+          example: Raffles Place Conference Room
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        created_by_role:
+          type: string
+          nullable: true
+          example: trainer
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-14T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-14T08:00:00.000Z'
 
     ErrorResponse:
       type: object
