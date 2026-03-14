@@ -43,6 +43,9 @@ export interface IGetProspectByIdRes extends IBaseRes {
 export interface IUpdateProspectReq extends IBaseReq {
   params: { prospectId: string };
   body: {
+    fullName?: string;
+    phoneNum?: string;
+    email?: string;
     currentStage?: string;
     appointmentDate?: string;
     appointmentStartTime?: string;

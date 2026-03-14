@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: vistaq API
-  version: 1.0.0
+  version: 2.0.0
   description: |
     Backend API for the vistaq insurance agent management platform.
 
@@ -1483,6 +1483,20 @@ paths:
                     Required when `salesOutcome` is `unsuccessful`. Describes
                     why the sale was not completed.
                   example: Client budget constraints
+                fullName:
+                  type: string
+                  minLength: 1
+                  description: Full name of the prospect. Maps to `prospect_name`.
+                  example: Jane Doe
+                phoneNum:
+                  type: string
+                  description: Phone number of the prospect. Maps to `prospect_phone`.
+                  example: '+6591234567'
+                email:
+                  type: string
+                  format: email
+                  description: Email address of the prospect. Maps to `prospect_email`.
+                  example: jane.doe@example.com
       responses:
         '200':
           description: Prospect updated successfully

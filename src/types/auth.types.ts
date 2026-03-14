@@ -32,15 +32,36 @@ export type IUser = Pick<
   | 'updated_at'
 >;
 
-export type ITenant = Pick<TenantsRow, 'id' | 'slug' | 'name' | 'status' | 'created_at'>;
+export type ITenant = Pick<
+  TenantsRow,
+  'id' | 'slug' | 'name' | 'status' | 'created_at'
+>;
 
 export type IAgentCode = Pick<
   AgentCodesRow,
-  'id' | 'tenant_id' | 'agent_code' | 'user_id' | 'is_used' | 'created_at' | 'updated_at'
+  | 'id'
+  | 'tenant_id'
+  | 'agent_code'
+  | 'user_id'
+  | 'is_used'
+  | 'created_at'
+  | 'updated_at'
 >;
 
-export type IGroup = Pick<GroupsRow, 'id' | 'tenant_id' | 'name' | 'status' | 'leader_id' | 'created_at' | 'updated_at'>;
-export type IGroupTrainer = Pick<GroupTrainersRow, 'group_id' | 'trainer_id' | 'created_at'>;
+export type IGroup = Pick<
+  GroupsRow,
+  | 'id'
+  | 'tenant_id'
+  | 'name'
+  | 'status'
+  | 'leader_id'
+  | 'created_at'
+  | 'updated_at'
+>;
+export type IGroupTrainer = Pick<
+  GroupTrainersRow,
+  'group_id' | 'trainer_id' | 'created_at'
+>;
 
 export type IProspect = Pick<
   ProspectsRow,

@@ -21,6 +21,9 @@ interface IUpdateProspectParams {
   prospectId: string;
   token: string;
   data: {
+    fullName?: string;
+    phoneNum?: string;
+    email?: string;
     currentStage?: string;
     appointmentDate?: string;
     appointmentStartTime?: string;
@@ -99,6 +102,10 @@ class ProspectService {
       const { data } = params;
       const updateData: Record<string, unknown> = {};
 
+      if (data.fullName !== undefined) updateData.prospect_name = data.fullName;
+      if (data.phoneNum !== undefined) updateData.prospect_phone = data.phoneNum;
+      if (data.email !== undefined) updateData.prospect_email = data.email;
+
       if (data.currentStage !== undefined) {
         updateData.current_stage = data.currentStage;
 
@@ -115,10 +122,20 @@ class ProspectService {
       if (data.appointmentStartTime !== undefined) updateData.appointment_start_time = data.appointmentStartTime;
       if (data.appointmentEndTime !== undefined) updateData.appointment_end_time = data.appointmentEndTime;
       if (data.appointmentLocation !== undefined) updateData.appointment_location = data.appointmentLocation;
-      if (data.appointmentStatus !== undefined) updateData.appointment_status = data.appointmentStatus;
+      if (data.appointmentStatus !== undefined) {
+        updateData.appointment_status = data.appointmentStatus;
+        if (data.appointmentStatus === 'done') {
+          updateData.appointment_completed_at = new Date().toISOString();
+        }
+      }
       if (data.salesMeetingStages !== undefined) updateData.sales_parts_completed = data.salesMeetingStages;
       if (data.products !== undefined) updateData.products_sold = data.products;
-      if (data.salesOutcome !== undefined) updateData.sales_outcome = data.salesOutcome;
+      if (data.salesOutcome !== undefined) {
+        updateData.sales_outcome = data.salesOutcome;
+        if (data.salesOutcome === 'successful') {
+          updateData.sales_completed_at = new Date().toISOString();
+        }
+      }
       if (data.unsuccessfulReason !== undefined) updateData.unsuccessful_reason = data.unsuccessfulReason;
 
       updateData.updated_at = new Date().toISOString();

@@ -22,6 +22,9 @@ export const createProspectSchema = z.object({
 
 export const updateProspectSchema = z
   .object({
+    fullName: z.string().min(1).optional(),
+    phoneNum: z.string().optional(),
+    email: z.string().email().optional(),
     currentStage: z.enum(['prospect', 'appointment', 'sales']).optional(),
     appointmentDate: z.string().optional(),
     appointmentStartTime: z.string().optional(),
