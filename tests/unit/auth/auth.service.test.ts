@@ -1,6 +1,8 @@
 // Supply env vars before env.ts runs so the validation guards do not throw
 process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects

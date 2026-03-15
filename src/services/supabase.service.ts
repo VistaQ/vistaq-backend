@@ -594,6 +594,113 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // Auth — Reset Password For Email
+  // ---------------------------------------------------------------------------
+
+  async resetPasswordForEmail(email: string, redirectTo: string): Promise<void> {
+    try {
+      loggingService.info('SupabaseService.resetPasswordForEmail called', {
+        email,
+      });
+
+      const { error } = await this.adminClient.auth.resetPasswordForEmail(
+        email,
+        { redirectTo },
+      );
+
+      if (error) {
+        loggingService.error(
+          'SupabaseService.resetPasswordForEmail error',
+          error,
+          { email },
+        );
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      loggingService.error(
+        'SupabaseService.resetPasswordForEmail failed',
+        error,
+        { email },
+      );
+      throw new SupabaseServiceError(
+        'Reset password for email failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Get User ID From Token
+  // ---------------------------------------------------------------------------
+
+  async getUserIdFromToken(token: string): Promise<{ userId: string }> {
+    try {
+      loggingService.info('SupabaseService.getUserIdFromToken called');
+
+      const { data, error } = await this.adminClient.auth.getUser(token);
+
+      if (error) {
+        loggingService.error(
+          'SupabaseService.getUserIdFromToken error',
+          error,
+        );
+        throw new Error(error.message);
+      }
+
+      if (!data.user) {
+        throw new Error('No user returned for token');
+      }
+
+      return { userId: data.user.id };
+    } catch (error) {
+      loggingService.error(
+        'SupabaseService.getUserIdFromToken failed',
+        error,
+      );
+      throw new SupabaseServiceError(
+        'Get user ID from token failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — Admin Update Auth User Password
+  // ---------------------------------------------------------------------------
+
+  async adminUpdateAuthUserPassword(userId: string, password: string): Promise<void> {
+    try {
+      loggingService.info('SupabaseService.adminUpdateAuthUserPassword called', {
+        userId,
+      });
+
+      const { error } = await this.adminClient.auth.admin.updateUserById(
+        userId,
+        { password },
+      );
+
+      if (error) {
+        loggingService.error(
+          'SupabaseService.adminUpdateAuthUserPassword error',
+          error,
+          { userId },
+        );
+        throw new Error(error.message);
+      }
+    } catch (error) {
+      loggingService.error(
+        'SupabaseService.adminUpdateAuthUserPassword failed',
+        error,
+        { userId },
+      );
+      throw new SupabaseServiceError(
+        'Admin update auth user password failed in SupabaseService',
+        error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // User Select (RLS-enforced)
   // ---------------------------------------------------------------------------
 

@@ -20,6 +20,7 @@ const EnvVars = {
   SupabaseUrl: process.env.SUPABASE_URL || '',
   SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  FrontendResetPasswordUrl: process.env.FRONTEND_RESET_PASSWORD_URL || '',
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {
@@ -34,6 +35,10 @@ if (!EnvVars.SupabaseServiceRoleKey.trim()) {
   throw new Error(
     'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY',
   );
+}
+
+if (!EnvVars.FrontendResetPasswordUrl.trim()) {
+  throw new Error('Missing required environment variable: FRONTEND_RESET_PASSWORD_URL');
 }
 
 /******************************************************************************

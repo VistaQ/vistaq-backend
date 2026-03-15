@@ -247,6 +247,76 @@ class AuthRepository {
       return handleRepositoryError('AuthRepository.updateAgentCode', error);
     }
   }
+
+  async findUserByEmail(email: string, tenantId: string): Promise<IUser | null> {
+    try {
+      loggingService.info('AuthRepository.findUserByEmail called', { email, tenantId });
+
+      const response = await supabaseService.adminSelect('users', '*', {
+        email,
+        tenant_id: tenantId,
+      } as Partial<UsersRow>);
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        return null;
+      }
+
+      const row = response.data[0] as unknown as UsersRow;
+      const user: IUser = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return user;
+    } catch (error) {
+      return handleRepositoryError('AuthRepository.findUserByEmail', error);
+    }
+  }
+
+  async resetPasswordForEmail(email: string, redirectTo: string): Promise<void> {
+    try {
+      loggingService.info('AuthRepository.resetPasswordForEmail called', { email });
+
+      await supabaseService.resetPasswordForEmail(email, redirectTo);
+    } catch (error) {
+      return handleRepositoryError('AuthRepository.resetPasswordForEmail', error);
+    }
+  }
+
+  async getUserIdFromToken(token: string): Promise<{ userId: string }> {
+    try {
+      loggingService.info('AuthRepository.getUserIdFromToken called');
+
+      return await supabaseService.getUserIdFromToken(token);
+    } catch (error) {
+      return handleRepositoryError('AuthRepository.getUserIdFromToken', error);
+    }
+  }
+
+  async updateAuthUserPassword(userId: string, password: string): Promise<void> {
+    try {
+      loggingService.info('AuthRepository.updateAuthUserPassword called', { userId });
+
+      await supabaseService.adminUpdateAuthUserPassword(userId, password);
+    } catch (error) {
+      return handleRepositoryError('AuthRepository.updateAuthUserPassword', error);
+    }
+  }
 }
 
 /******************************************************************************

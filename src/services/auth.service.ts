@@ -5,6 +5,7 @@ import {
 } from '@src/models/errors/auth.errors';
 import authRepository from '@src/repositories/auth.repository';
 import loggingService from '@src/services/logging.service';
+import EnvVars from '@src/utils/env';
 import { IUser } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -36,6 +37,16 @@ interface ILoginParams {
 interface ILoginResult {
   user: IUser;
   token: string;
+}
+
+interface IForgotPasswordParams {
+  tenantSlug: string;
+  email: string;
+}
+
+interface IResetPasswordParams {
+  token: string;
+  newPassword: string;
 }
 
 class AuthService {
@@ -193,6 +204,47 @@ class AuthService {
         throw error;
       }
       return handleServiceError('AuthService.login', error);
+    }
+  }
+
+  async forgotPassword(params: IForgotPasswordParams): Promise<void> {
+    try {
+      loggingService.info('AuthService.forgotPassword called', {
+        email: params.email,
+      });
+
+      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
+      if (!tenant) {
+        throw new TenantNotFoundError();
+      }
+
+      const user = await authRepository.findUserByEmail(params.email, tenant.id);
+      if (!user) {
+        // Silently return — do not reveal whether the email exists
+        return;
+      }
+
+      await authRepository.resetPasswordForEmail(
+        params.email,
+        EnvVars.FrontendResetPasswordUrl,
+      );
+    } catch (error) {
+      if (error instanceof TenantNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('AuthService.forgotPassword', error);
+    }
+  }
+
+  async resetPassword(params: IResetPasswordParams): Promise<void> {
+    try {
+      loggingService.info('AuthService.resetPassword called');
+
+      const { userId } = await authRepository.getUserIdFromToken(params.token);
+
+      await authRepository.updateAuthUserPassword(userId, params.newPassword);
+    } catch (error) {
+      return handleServiceError('AuthService.resetPassword', error);
     }
   }
 }

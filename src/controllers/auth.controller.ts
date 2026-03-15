@@ -60,6 +60,24 @@ export interface IMeRes extends IBaseRes {
   data?: IUser;
 }
 
+export interface IForgotPasswordReq extends IBaseReq {
+  body: { email: string };
+}
+
+export interface IForgotPasswordRes extends IBaseRes {
+  success: boolean;
+  message: string;
+}
+
+export interface IResetPasswordReq extends IBaseReq {
+  body: { token: string; newPassword: string };
+}
+
+export interface IResetPasswordRes extends IBaseRes {
+  success: boolean;
+  message: string;
+}
+
 /******************************************************************************
                             AuthController
 ******************************************************************************/
@@ -246,6 +264,72 @@ class AuthController {
       }
 
       return handleControllerError('AuthController.login', error, next);
+    }
+  }
+
+  async forgotPassword(
+    req: IForgotPasswordReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('AuthController.forgotPassword called');
+
+      const tenantSlug = req.headers['x-tenant-slug'];
+
+      if (!tenantSlug || typeof tenantSlug !== 'string') {
+        loggingService.error(
+          'AuthController.forgotPassword — missing or invalid X-Tenant-Slug header',
+        );
+        next(
+          new RouteError(
+            HttpStatusCodes.BAD_REQUEST,
+            'X-Tenant-Slug header is required',
+          ),
+        );
+        return;
+      }
+
+      const { email } = req.body;
+
+      await authService.forgotPassword({ tenantSlug, email });
+
+      const responseBody: IForgotPasswordRes = {
+        success: true,
+        message: 'Password reset email sent',
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof TenantNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+
+      return handleControllerError('AuthController.forgotPassword', error, next);
+    }
+  }
+
+  async resetPassword(
+    req: IResetPasswordReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      loggingService.info('AuthController.resetPassword called');
+
+      const { token, newPassword } = req.body;
+
+      await authService.resetPassword({ token, newPassword });
+
+      const responseBody: IResetPasswordRes = {
+        success: true,
+        message: 'Password reset successful',
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('AuthController.resetPassword', error, next);
     }
   }
 }
