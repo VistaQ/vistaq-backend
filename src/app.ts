@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { randomUUID } from 'crypto';
 import path from 'path';
+import * as Sentry from '@sentry/node';
 
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 import { RouteError } from '@src/models/errors/route.error';
@@ -38,6 +39,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
     asyncLocalStorage.run({ correlationId }, () => {
       try {
+        // Tag every Sentry event in this request with the correlation ID
+        Sentry.setTag('correlationId', correlationId);
         // Redact sensitive request headers before logging
         const requestHeaders: Record<string, unknown> = { ...req.headers };
         if (requestHeaders['authorization']) {
@@ -47,11 +50,26 @@ app.use((req: Request, res: Response, next: NextFunction) => {
           requestHeaders['cookie'] = '[REDACTED]';
         }
 
+        // Redact sensitive fields from request body before logging
+        const SENSITIVE_BODY_FIELDS = [
+          'password', 'newPassword', 'confirmPassword',
+          'token', 'refreshToken', 'accessToken',
+        ];
+        let requestBody = req.body;
+        if (requestBody && typeof requestBody === 'object') {
+          requestBody = { ...requestBody };
+          for (const field of SENSITIVE_BODY_FIELDS) {
+            if (field in requestBody) {
+              (requestBody as Record<string, unknown>)[field] = '[REDACTED]';
+            }
+          }
+        }
+
         loggingService.info('Incoming request', {
           method: req.method,
           url: req.originalUrl,
           headers: requestHeaders,
-          body: req.body,
+          body: requestBody,
         });
 
         const startTime = Date.now();
@@ -130,6 +148,10 @@ app.get('/openapi.yaml', (_req: Request, res: Response) => {
 /******************************************************************************
                             Error Handler
 ******************************************************************************/
+
+// Sentry error handler — must be registered before custom error handler.
+// shouldHandleError: () => true captures both 4xx and 5xx errors.
+Sentry.setupExpressErrorHandler(app, { shouldHandleError: () => true });
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   if (EnvVars.NodeEnv !== NodeEnvs.TEST.valueOf()) {

@@ -21,6 +21,7 @@ const EnvVars = {
   SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   FrontendResetPasswordUrl: process.env.FRONTEND_RESET_PASSWORD_URL || '',
+  SentryDsn: process.env.SENTRY_DSN || '',
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {
@@ -38,7 +39,9 @@ if (!EnvVars.SupabaseServiceRoleKey.trim()) {
 }
 
 if (!EnvVars.FrontendResetPasswordUrl.trim()) {
-  throw new Error('Missing required environment variable: FRONTEND_RESET_PASSWORD_URL');
+  throw new Error(
+    'Missing required environment variable: FRONTEND_RESET_PASSWORD_URL',
+  );
 }
 
 /******************************************************************************

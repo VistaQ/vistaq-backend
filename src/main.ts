@@ -1,3 +1,4 @@
+import './instrument';
 import EnvVars from './utils/env';
 import server from './app';
 

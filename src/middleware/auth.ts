@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import * as Sentry from '@sentry/node';
 
 import { RouteError } from '@src/models/errors/route.error';
 import loggingService from '@src/services/logging.service';
@@ -72,6 +73,10 @@ export async function authenticate(
     }
 
     req.user = { id: userId, tenant_id: tenantId, role, group_id: groupId as string | null };
+
+    // Set Sentry user context so every event in this request is tagged
+    Sentry.setUser({ id: userId, tenant_id: tenantId, role });
+    Sentry.setTag('tenant_id', tenantId);
 
     next();
   } catch (error) {
