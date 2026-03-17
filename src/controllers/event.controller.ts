@@ -8,7 +8,6 @@ import {
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import eventService from '@src/services/event.service';
-import loggingService from '@src/services/logging.service';
 import { IEvent } from '@src/types/event.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -79,8 +78,6 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('EventController.create called');
-
       if (!ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
@@ -126,8 +123,6 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('EventController.update called');
-
       if (!ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
@@ -177,8 +172,6 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('EventController.getAll called');
-
       const token = req.headers['authorization']!.slice(7);
       const events = await eventService.getEvents(token);
 
@@ -195,8 +188,6 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('EventController.getById called');
-
       const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
 

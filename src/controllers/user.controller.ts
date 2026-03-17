@@ -6,7 +6,6 @@ import {
 } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
-import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
 import { IUser } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
@@ -88,8 +87,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('UserController.getById called');
-
       const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
@@ -117,8 +114,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('UserController.getAll called');
-
       const token = req.headers['authorization']!.slice(7);
 
       const users = await userService.getUsers(token);
@@ -140,8 +135,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('UserController.update called');
-
       const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
@@ -180,8 +173,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('UserController.delete called');
-
       const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
@@ -208,8 +199,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('UserController.create called');
-
       if (req.user!.role !== 'admin') {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;

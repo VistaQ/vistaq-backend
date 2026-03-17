@@ -4,7 +4,6 @@ import {
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
 import eventRepository from '@src/repositories/event.repository';
-import loggingService from '@src/services/logging.service';
 import { IEvent } from '@src/types/event.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -48,8 +47,6 @@ interface IUpdateEventParams {
 class EventService {
   async createEvent(params: ICreateEventParams): Promise<IEvent> {
     try {
-      loggingService.info('EventService.createEvent called');
-
       const foundGroupIds = await eventRepository.findGroupsByIds(
         params.groupIds,
         params.token,
@@ -109,10 +106,6 @@ class EventService {
 
   async updateEvent(params: IUpdateEventParams): Promise<IEvent> {
     try {
-      loggingService.info('EventService.updateEvent called', {
-        eventId: params.eventId,
-      });
-
       const existing = await eventRepository.findById(
         params.eventId,
         params.token,
@@ -201,7 +194,6 @@ class EventService {
 
   async getEvents(token: string): Promise<IEvent[]> {
     try {
-      loggingService.info('EventService.getEvents called');
       return await eventRepository.findAll(token);
     } catch (error) {
       return handleServiceError('EventService.getEvents', error);
@@ -210,7 +202,6 @@ class EventService {
 
   async getEventById(eventId: string, token: string): Promise<IEvent | null> {
     try {
-      loggingService.info('EventService.getEventById called', { eventId });
       return await eventRepository.findById(eventId, token);
     } catch (error) {
       return handleServiceError('EventService.getEventById', error);

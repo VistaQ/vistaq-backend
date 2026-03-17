@@ -1,4 +1,3 @@
-import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
 import { IProspect } from '@src/types/auth.types';
 import { Database } from '@src/types/database.types';
@@ -45,10 +44,6 @@ class ProspectRepository {
     userToken: string,
   ): Promise<IProspect> {
     try {
-      loggingService.info('ProspectRepository.insertProspect called', {
-        prospect_name: data.prospect_name,
-      });
-
       const response = await supabaseService.userInsert(
         userToken,
         'prospects',
@@ -72,8 +67,6 @@ class ProspectRepository {
 
   async findAll(userToken: string): Promise<IProspect[]> {
     try {
-      loggingService.info('ProspectRepository.findAll called');
-
       const response = await supabaseService.userSelect(
         userToken,
         'prospects',
@@ -96,8 +89,6 @@ class ProspectRepository {
     userToken: string,
   ): Promise<IProspect | null> {
     try {
-      loggingService.info('ProspectRepository.findById called', { prospectId });
-
       const response = await supabaseService.userSelect(
         userToken,
         'prospects',
@@ -126,10 +117,6 @@ class ProspectRepository {
     userToken: string,
   ): Promise<IProspect | null> {
     try {
-      loggingService.info('ProspectRepository.updateProspect called', {
-        prospectId,
-      });
-
       const response = await supabaseService.userUpdate(
         userToken,
         'prospects',

@@ -12,7 +12,6 @@ import {
 import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
-import loggingService from '@src/services/logging.service';
 import groupService from '@src/services/group.service';
 import { IGroup } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
@@ -72,8 +71,6 @@ export interface IGetGroupByIdRes extends IBaseRes {
 class GroupController {
   async getAll(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
     try {
-      loggingService.info('GroupController.getAll called');
-
       const token = req.headers['authorization']!.slice(7);
       const groups = await groupService.getGroups(token);
 
@@ -94,8 +91,6 @@ class GroupController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('GroupController.getById called');
-
       const token = req.headers['authorization']!.slice(7);
       const { groupId } = req.params;
 
@@ -123,8 +118,6 @@ class GroupController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('GroupController.create called');
-
       if (req.user!.role !== 'admin') {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
@@ -167,8 +160,6 @@ class GroupController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('GroupController.update called');
-
       if (req.user!.role !== 'admin') {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;

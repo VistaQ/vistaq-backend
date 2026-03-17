@@ -89,8 +89,6 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('AuthController.register called');
-
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
@@ -149,8 +147,6 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('AuthController.logout called');
-
       const authHeader = req.headers['authorization'];
 
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -193,8 +189,6 @@ class AuthController {
 
   async me(req: IMeReq, res: Response, next: NextFunction): Promise<void> {
     try {
-      loggingService.info('AuthController.me called');
-
       const userId: string = req.user!.id;
       const user = await authService.me(userId);
 
@@ -216,8 +210,6 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('AuthController.login called');
-
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
@@ -273,8 +265,6 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('AuthController.forgotPassword called');
-
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
@@ -316,8 +306,6 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('AuthController.resetPassword called');
-
       const { token, newPassword } = req.body;
 
       await authService.resetPassword({ token, newPassword });

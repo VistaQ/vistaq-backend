@@ -44,8 +44,6 @@ interface ICreateUserParams {
 class UserService {
   async getUsers(token: string): Promise<IUser[]> {
     try {
-      loggingService.info('UserService.getUsers called');
-
       const users = await userRepository.findAll(token);
 
       return users;
@@ -56,8 +54,6 @@ class UserService {
 
   async getUserById(userId: string, token: string): Promise<IUser | null> {
     try {
-      loggingService.info('UserService.getUserById called', { userId });
-
       const user = await userRepository.findById(userId, token);
 
       return user;
@@ -68,10 +64,6 @@ class UserService {
 
   async updateUser(params: IUpdateUserParams): Promise<IUser> {
     try {
-      loggingService.info('UserService.updateUser called', {
-        userId: params.userId,
-      });
-
       // Strip admin-only fields for non-admin callers
       const updateData = { ...params.data };
       if (params.callerRole !== 'admin') {
@@ -143,8 +135,6 @@ class UserService {
 
   async deleteUser(userId: string, token: string): Promise<void> {
     try {
-      loggingService.info('UserService.deleteUser called', { userId });
-
       const user = await userRepository.findById(userId, token);
       if (!user) {
         throw new UserNotFoundError();
@@ -171,7 +161,6 @@ class UserService {
 
   async findUsersByIds(userIds: string[], token: string): Promise<IUser[]> {
     try {
-      loggingService.info('UserService.findUsersByIds called', { count: userIds.length });
       return await userRepository.findByIds(userIds, token);
     } catch (error) {
       return handleServiceError('UserService.findUsersByIds', error);
@@ -180,7 +169,6 @@ class UserService {
 
   async updateUsersGroupId(userIds: string[], groupId: string, token: string): Promise<void> {
     try {
-      loggingService.info('UserService.updateUsersGroupId called', { count: userIds.length, groupId });
       await userRepository.updateGroupIdForUsers(userIds, groupId, token);
     } catch (error) {
       return handleServiceError('UserService.updateUsersGroupId', error);
@@ -189,11 +177,6 @@ class UserService {
 
   async createUser(params: ICreateUserParams): Promise<IUser> {
     try {
-      loggingService.info('UserService.createUser called', {
-        email: params.email,
-        role: params.role,
-      });
-
       // Step 1 — Validate agent code if role is agent
       let agentCodeRecord = null;
       if (params.role === 'agent') {

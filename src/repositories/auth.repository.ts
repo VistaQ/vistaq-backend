@@ -16,8 +16,6 @@ type UsersInsert = Database['public']['Tables']['users']['Insert'];
 class AuthRepository {
   async findTenantBySlug(slug: string): Promise<ITenant | null> {
     try {
-      loggingService.info('AuthRepository.findTenantBySlug called', { slug });
-
       const response = await supabaseService.adminSelect('tenants', '*', {
         slug,
       });
@@ -50,11 +48,6 @@ class AuthRepository {
     tenantId: string,
   ): Promise<IAgentCode | null> {
     try {
-      loggingService.info('AuthRepository.findAgentCode called', {
-        agentCode,
-        tenantId,
-      });
-
       const response = await supabaseService.adminSelect('agent_codes', '*', {
         agent_code: agentCode,
         tenant_id: tenantId,
@@ -88,10 +81,6 @@ class AuthRepository {
 
   async insertUser(userData: UsersInsert): Promise<IUser> {
     try {
-      loggingService.info('AuthRepository.insertUser called', {
-        email: userData.email,
-      });
-
       const response = await supabaseService.adminInsert('users', userData);
 
       if (response.error) {
@@ -130,8 +119,6 @@ class AuthRepository {
     password: string,
   ): Promise<{ id: string }> {
     try {
-      loggingService.info('AuthRepository.createAuthUser called', { email });
-
       const authUser = await supabaseService.adminCreateAuthUser(
         email,
         password,
@@ -145,8 +132,6 @@ class AuthRepository {
 
   async deleteAuthUser(userId: string): Promise<void> {
     try {
-      loggingService.info('AuthRepository.deleteAuthUser called', { userId });
-
       await supabaseService.adminDeleteAuthUser(userId);
     } catch (error) {
       return handleRepositoryError('AuthRepository.deleteAuthUser', error);
@@ -158,8 +143,6 @@ class AuthRepository {
     password: string,
   ): Promise<{ userId: string; token: string } | null> {
     try {
-      loggingService.info('AuthRepository.signInWithPassword called', { email });
-
       const response = await supabaseService.signInWithPassword(email, password);
 
       if (response.error || !response.data.session) {
@@ -180,8 +163,6 @@ class AuthRepository {
 
   async findUserById(id: string): Promise<IUser | null> {
     try {
-      loggingService.info('AuthRepository.findUserById called', { id });
-
       const response = await supabaseService.adminSelect('users', '*', {
         id,
       } as Partial<UsersRow>);
@@ -219,8 +200,6 @@ class AuthRepository {
 
   async signOut(token: string): Promise<void> {
     try {
-      loggingService.info('AuthRepository.signOut called');
-
       await supabaseService.signOut(token);
     } catch (error) {
       return handleRepositoryError('AuthRepository.signOut', error);
@@ -229,11 +208,6 @@ class AuthRepository {
 
   async updateAgentCode(agentCodeId: string, userId: string): Promise<void> {
     try {
-      loggingService.info('AuthRepository.updateAgentCode called', {
-        agentCodeId,
-        userId,
-      });
-
       const response = await supabaseService.adminUpdate(
         'agent_codes',
         { is_used: true, user_id: userId },
@@ -250,8 +224,6 @@ class AuthRepository {
 
   async findUserByEmail(email: string, tenantId: string): Promise<IUser | null> {
     try {
-      loggingService.info('AuthRepository.findUserByEmail called', { email, tenantId });
-
       const response = await supabaseService.adminSelect('users', '*', {
         email,
         tenant_id: tenantId,
@@ -290,8 +262,6 @@ class AuthRepository {
 
   async resetPasswordForEmail(email: string, redirectTo: string): Promise<void> {
     try {
-      loggingService.info('AuthRepository.resetPasswordForEmail called', { email });
-
       await supabaseService.resetPasswordForEmail(email, redirectTo);
     } catch (error) {
       return handleRepositoryError('AuthRepository.resetPasswordForEmail', error);
@@ -300,8 +270,6 @@ class AuthRepository {
 
   async getUserIdFromToken(token: string): Promise<{ userId: string }> {
     try {
-      loggingService.info('AuthRepository.getUserIdFromToken called');
-
       return await supabaseService.getUserIdFromToken(token);
     } catch (error) {
       return handleRepositoryError('AuthRepository.getUserIdFromToken', error);
@@ -310,8 +278,6 @@ class AuthRepository {
 
   async updateAuthUserPassword(userId: string, password: string): Promise<void> {
     try {
-      loggingService.info('AuthRepository.updateAuthUserPassword called', { userId });
-
       await supabaseService.adminUpdateAuthUserPassword(userId, password);
     } catch (error) {
       return handleRepositoryError('AuthRepository.updateAuthUserPassword', error);

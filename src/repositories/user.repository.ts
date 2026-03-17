@@ -1,4 +1,3 @@
-import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
 import { IAgentCode, IUser } from '@src/types/auth.types';
 import { Database } from '@src/types/database.types';
@@ -20,11 +19,6 @@ class UserRepository {
     userToken: string,
   ): Promise<IAgentCode | null> {
     try {
-      loggingService.info('UserRepository.findAgentCode called', {
-        agentCode,
-        tenantId,
-      });
-
       const response = await supabaseService.userSelect(
         userToken,
         'agent_codes',
@@ -66,8 +60,6 @@ class UserRepository {
     password: string,
   ): Promise<{ id: string }> {
     try {
-      loggingService.info('UserRepository.createAuthUser called', { email });
-
       const authUser = await supabaseService.adminCreateAuthUser(
         email,
         password,
@@ -81,10 +73,6 @@ class UserRepository {
 
   async insertUser(userData: UsersInsert, userToken: string): Promise<IUser> {
     try {
-      loggingService.info('UserRepository.insertUser called', {
-        email: userData.email,
-      });
-
       const response = await supabaseService.userInsert(
         userToken,
         'users',
@@ -124,8 +112,6 @@ class UserRepository {
 
   async findAll(userToken: string): Promise<IUser[]> {
     try {
-      loggingService.info('UserRepository.findAll called');
-
       const response = await supabaseService.userSelect(
         userToken,
         'users',
@@ -164,8 +150,6 @@ class UserRepository {
     userToken: string,
   ): Promise<IUser | null> {
     try {
-      loggingService.info('UserRepository.findById called', { userId });
-
       const response = await supabaseService.userSelect(
         userToken,
         'users',
@@ -206,8 +190,6 @@ class UserRepository {
 
   async deleteUser(userId: string): Promise<void> {
     try {
-      loggingService.info('UserRepository.deleteUser called', { userId });
-
       await supabaseService.adminDelete('users', { id: userId });
     } catch (error) {
       return handleRepositoryError('UserRepository.deleteUser', error);
@@ -216,8 +198,6 @@ class UserRepository {
 
   async deleteAuthUser(userId: string): Promise<void> {
     try {
-      loggingService.info('UserRepository.deleteAuthUser called', { userId });
-
       await supabaseService.adminDeleteAuthUser(userId);
     } catch (error) {
       return handleRepositoryError('UserRepository.deleteAuthUser', error);
@@ -230,8 +210,6 @@ class UserRepository {
     userToken: string,
   ): Promise<IUser> {
     try {
-      loggingService.info('UserRepository.updateUser called', { userId });
-
       const response = await supabaseService.userUpdate(
         userToken,
         'users',
@@ -272,10 +250,6 @@ class UserRepository {
 
   async findByIds(userIds: string[], userToken: string): Promise<IUser[]> {
     try {
-      loggingService.info('UserRepository.findByIds called', {
-        count: userIds.length,
-      });
-
       const response = await supabaseService.userSelectIn(
         userToken,
         'users',
@@ -317,11 +291,6 @@ class UserRepository {
     userToken: string,
   ): Promise<void> {
     try {
-      loggingService.info('UserRepository.updateGroupIdForUsers called', {
-        count: userIds.length,
-        groupId,
-      });
-
       const response = await supabaseService.userUpdateIn(
         userToken,
         'users',
@@ -343,10 +312,6 @@ class UserRepository {
 
   async updateAuthUserEmail(userId: string, email: string): Promise<void> {
     try {
-      loggingService.info('UserRepository.updateAuthUserEmail called', {
-        userId,
-      });
-
       await supabaseService.adminUpdateAuthUserEmail(userId, email);
     } catch (error) {
       return handleRepositoryError(
@@ -362,11 +327,6 @@ class UserRepository {
     userToken: string,
   ): Promise<void> {
     try {
-      loggingService.info('UserRepository.updateAgentCode called', {
-        agentCodeId,
-        userId,
-      });
-
       const response = await supabaseService.userUpdate(
         userToken,
         'agent_codes',

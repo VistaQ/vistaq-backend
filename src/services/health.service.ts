@@ -1,6 +1,5 @@
 import { IHealthRes } from '@src/models/health/health.interface';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import loggingService from '@src/services/logging.service';
 
 /******************************************************************************
                             HealthService
@@ -13,8 +12,6 @@ class HealthService {
    */
   check(): IHealthRes {
     try {
-      loggingService.info('HealthService.check called');
-
       const result: IHealthRes = {
         status: 'ok',
         timestamp: new Date().toISOString(),

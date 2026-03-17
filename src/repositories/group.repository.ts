@@ -1,4 +1,3 @@
-import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
 import { IGroup, IGroupTrainer } from '@src/types/auth.types';
 import { Database } from '@src/types/database.types';
@@ -17,8 +16,6 @@ type GroupTrainersInsert = Database['public']['Tables']['group_trainers']['Inser
 class GroupRepository {
   async insertGroup(data: GroupsInsert, userToken: string): Promise<IGroup> {
     try {
-      loggingService.info('GroupRepository.insertGroup called', { name: data.name });
-
       const response = await supabaseService.userInsert(userToken, 'groups', data);
 
       if (response.error) {
@@ -48,8 +45,6 @@ class GroupRepository {
 
   async findAll(userToken: string): Promise<IGroup[]> {
     try {
-      loggingService.info('GroupRepository.findAll called');
-
       const response = await supabaseService.userSelect(userToken, 'groups', '*');
 
       if (response.error) {
@@ -73,8 +68,6 @@ class GroupRepository {
 
   async findById(groupId: string, userToken: string): Promise<IGroup | null> {
     try {
-      loggingService.info('GroupRepository.findById called', { groupId });
-
       const response = await supabaseService.userSelect(
         userToken,
         'groups',
@@ -113,8 +106,6 @@ class GroupRepository {
     userToken: string,
   ): Promise<IGroup> {
     try {
-      loggingService.info('GroupRepository.updateGroup called', { groupId });
-
       const response = await supabaseService.userUpdate(
         userToken,
         'groups',
@@ -149,11 +140,6 @@ class GroupRepository {
 
   async insertGroupTrainer(data: GroupTrainersInsert, userToken: string): Promise<IGroupTrainer> {
     try {
-      loggingService.info('GroupRepository.insertGroupTrainer called', {
-        group_id: data.group_id,
-        trainer_id: data.trainer_id,
-      });
-
       const response = await supabaseService.userInsert(userToken, 'group_trainers', data);
 
       if (response.error) {

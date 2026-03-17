@@ -3,7 +3,6 @@ import { NextFunction, Response } from 'express';
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
-import loggingService from '@src/services/logging.service';
 import prospectService from '@src/services/prospect.service';
 import { IProspect } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
@@ -75,8 +74,6 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('ProspectController.create called');
-
       if (!['agent', 'group_leader'].includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
@@ -111,8 +108,6 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('ProspectController.getAll called');
-
       const token = req.headers['authorization']!.slice(7);
       const prospects = await prospectService.getProspects(token);
 
@@ -133,8 +128,6 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('ProspectController.getById called');
-
       const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
@@ -162,8 +155,6 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      loggingService.info('ProspectController.update called');
-
       if (!['agent', 'group_leader'].includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;

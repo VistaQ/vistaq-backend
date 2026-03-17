@@ -3,7 +3,6 @@ import { NextFunction, Request, Response } from 'express';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import healthService from '@src/services/health.service';
-import loggingService from '@src/services/logging.service';
 
 /******************************************************************************
                             HealthController
@@ -17,8 +16,6 @@ class HealthController {
    */
   check(_req: Request, res: Response, next: NextFunction): void {
     try {
-      loggingService.info('HealthController.check called');
-
       const result = healthService.check();
 
       res.status(HttpStatusCodes.OK).json(result);

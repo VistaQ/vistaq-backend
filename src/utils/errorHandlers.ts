@@ -15,26 +15,24 @@ import { getRootCause } from '@src/utils/sentry.utils';
 ******************************************************************************/
 
 /**
- * Logs the error and rethrows it wrapped in a RepositoryError.
+ * Wraps the error in a RepositoryError and rethrows.
  * Call this in every Repository catch block.
  *
  * @param context - Identifies the method, e.g. 'UserRepository.findById'.
  * @param error   - The caught error.
  */
 export function handleRepositoryError(context: string, error: unknown): never {
-  loggingService.error(`${context} failed`, error);
   throw new RepositoryError(`${context} failed`, error);
 }
 
 /**
- * Logs the error and rethrows it wrapped in a ServiceError.
+ * Wraps the error in a ServiceError and rethrows.
  * Call this in every Service catch block.
  *
  * @param context - Identifies the method, e.g. 'UserService.getById'.
  * @param error   - The caught error.
  */
 export function handleServiceError(context: string, error: unknown): never {
-  loggingService.error(`${context} failed`, error);
   throw new ServiceError(`${context} failed`, error);
 }
 

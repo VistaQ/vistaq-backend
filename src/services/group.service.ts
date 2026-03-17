@@ -48,7 +48,6 @@ interface IUpdateGroupParams {
 class GroupService {
   async getGroups(token: string): Promise<IGroup[]> {
     try {
-      loggingService.info('GroupService.getGroups called');
       return await groupRepository.findAll(token);
     } catch (error) {
       return handleServiceError('GroupService.getGroups', error);
@@ -57,7 +56,6 @@ class GroupService {
 
   async getGroupById(groupId: string, token: string): Promise<IGroup | null> {
     try {
-      loggingService.info('GroupService.getGroupById called', { groupId });
       return await groupRepository.findById(groupId, token);
     } catch (error) {
       return handleServiceError('GroupService.getGroupById', error);
@@ -66,10 +64,6 @@ class GroupService {
 
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
     try {
-      loggingService.info('GroupService.createGroup called', {
-        name: params.name,
-      });
-
       // Step 1 — Validate leader if provided
       if (params.leaderId) {
         const leader = await userService.getUserById(
@@ -179,10 +173,6 @@ class GroupService {
 
   async updateGroup(params: IUpdateGroupParams): Promise<IGroup> {
     try {
-      loggingService.info('GroupService.updateGroup called', {
-        groupId: params.groupId,
-      });
-
       const { groupId, token, data } = params;
 
       // Step 1 — Verify group exists

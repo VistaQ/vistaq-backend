@@ -52,10 +52,6 @@ interface IResetPasswordParams {
 class AuthService {
   async register(params: IRegisterParams): Promise<IRegisterResult> {
     try {
-      loggingService.info('AuthService.register called', {
-        email: params.email,
-      });
-
       // Step 1 — Resolve tenant
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
       if (!tenant) {
@@ -143,8 +139,6 @@ class AuthService {
 
   async me(userId: string): Promise<IUser | null> {
     try {
-      loggingService.info('AuthService.me called', { userId });
-
       const user = await authRepository.findUserById(userId);
       return user;
     } catch (error) {
@@ -154,8 +148,6 @@ class AuthService {
 
   async logout(token: string): Promise<void> {
     try {
-      loggingService.info('AuthService.logout called');
-
       await authRepository.signOut(token);
     } catch (error) {
       return handleServiceError('AuthService.logout', error);
@@ -164,10 +156,6 @@ class AuthService {
 
   async login(params: ILoginParams): Promise<ILoginResult> {
     try {
-      loggingService.info('AuthService.login called', {
-        email: params.email,
-      });
-
       // Step 1 — Resolve tenant
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
       if (!tenant) {
@@ -209,10 +197,6 @@ class AuthService {
 
   async forgotPassword(params: IForgotPasswordParams): Promise<void> {
     try {
-      loggingService.info('AuthService.forgotPassword called', {
-        email: params.email,
-      });
-
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
       if (!tenant) {
         throw new TenantNotFoundError();
@@ -238,8 +222,6 @@ class AuthService {
 
   async resetPassword(params: IResetPasswordParams): Promise<void> {
     try {
-      loggingService.info('AuthService.resetPassword called');
-
       const { userId } = await authRepository.getUserIdFromToken(params.token);
 
       await authRepository.updateAuthUserPassword(userId, params.newPassword);

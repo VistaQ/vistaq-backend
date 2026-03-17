@@ -1,4 +1,3 @@
-import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
 import { Database } from '@src/types/database.types';
 import { IEvent } from '@src/types/event.types';
@@ -33,8 +32,6 @@ class EventRepository {
 
   async insertEvent(data: EventsInsert, userToken: string): Promise<IEvent> {
     try {
-      loggingService.info('EventRepository.insertEvent called');
-
       const response = await supabaseService.userInsert(userToken, 'events', data);
 
       if (response.error) {
@@ -54,8 +51,6 @@ class EventRepository {
 
   async findAll(userToken: string): Promise<IEvent[]> {
     try {
-      loggingService.info('EventRepository.findAll called');
-
       const response = await supabaseService.userSelect(userToken, 'events', '*');
 
       if (response.error) {
@@ -71,8 +66,6 @@ class EventRepository {
 
   async findById(eventId: string, userToken: string): Promise<IEvent | null> {
     try {
-      loggingService.info('EventRepository.findById called', { eventId });
-
       const response = await supabaseService.userSelect(
         userToken,
         'events',
@@ -101,8 +94,6 @@ class EventRepository {
     userToken: string,
   ): Promise<IEvent | null> {
     try {
-      loggingService.info('EventRepository.updateEvent called', { eventId });
-
       const response = await supabaseService.userUpdate(
         userToken,
         'events',
@@ -130,10 +121,6 @@ class EventRepository {
     userToken: string,
   ): Promise<void> {
     try {
-      loggingService.info('EventRepository.insertEventGroups called', {
-        count: entries.length,
-      });
-
       const response = await supabaseService.userInsert(
         userToken,
         'event_groups',
@@ -153,10 +140,6 @@ class EventRepository {
     userToken: string,
   ): Promise<void> {
     try {
-      loggingService.info('EventRepository.deleteEventGroupsByEventId called', {
-        eventId,
-      });
-
       const response = await supabaseService.userDelete(
         userToken,
         'event_groups',
@@ -179,10 +162,6 @@ class EventRepository {
     userToken: string,
   ): Promise<string[]> {
     try {
-      loggingService.info('EventRepository.findGroupsByIds called', {
-        count: groupIds.length,
-      });
-
       const response = await supabaseService.userSelectIn(
         userToken,
         'groups',
@@ -204,10 +183,6 @@ class EventRepository {
 
   async findTrainerGroups(trainerId: string): Promise<string[]> {
     try {
-      loggingService.info('EventRepository.findTrainerGroups called', {
-        trainerId,
-      });
-
       const response = await supabaseService.adminSelect(
         'group_trainers',
         'group_id',

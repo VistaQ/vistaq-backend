@@ -1,5 +1,4 @@
 import prospectRepository from '@src/repositories/prospect.repository';
-import loggingService from '@src/services/logging.service';
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import { IProspect } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
@@ -44,10 +43,6 @@ interface IUpdateProspectParams {
 class ProspectService {
   async createProspect(params: ICreateProspectParams): Promise<IProspect> {
     try {
-      loggingService.info('ProspectService.createProspect called', {
-        prospectName: params.prospectName,
-      });
-
       const prospect = await prospectRepository.insertProspect(
         {
           prospect_name: params.prospectName,
@@ -68,8 +63,6 @@ class ProspectService {
 
   async getProspects(token: string): Promise<IProspect[]> {
     try {
-      loggingService.info('ProspectService.getProspects called');
-
       const prospects = await prospectRepository.findAll(token);
       return prospects;
     } catch (error) {
@@ -79,8 +72,6 @@ class ProspectService {
 
   async getProspectById(prospectId: string, token: string): Promise<IProspect | null> {
     try {
-      loggingService.info('ProspectService.getProspectById called', { prospectId });
-
       const prospect = await prospectRepository.findById(prospectId, token);
       return prospect;
     } catch (error) {
@@ -90,10 +81,6 @@ class ProspectService {
 
   async updateProspect(params: IUpdateProspectParams): Promise<IProspect> {
     try {
-      loggingService.info('ProspectService.updateProspect called', {
-        prospectId: params.prospectId,
-      });
-
       const existing = await prospectRepository.findById(params.prospectId, params.token);
       if (!existing) {
         throw new ProspectNotFoundError();
