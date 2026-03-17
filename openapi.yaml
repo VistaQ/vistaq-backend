@@ -1422,8 +1422,8 @@ paths:
       description: >
         Creates a new prospect record scoped to the authenticated user's tenant.
         The caller must supply a valid Bearer token belonging to a user with the
-        `agent` or `group_leader` role. The `agent_id`, `tenant_id`, and
-        `group_id` are extracted directly from the JWT claims — they are not
+        `agent` or `group_leader` role. The `agent_id` and `tenant_id`
+        are extracted directly from the JWT claims — they are not
         accepted in the request body. The `current_stage` is automatically set
         to `prospect` on creation.
       security:
@@ -2251,7 +2251,6 @@ components:
         - id
         - tenant_id
         - agent_id
-        - group_id
         - prospect_name
         - prospect_email
         - prospect_phone
@@ -2272,11 +2271,6 @@ components:
           type: string
           format: uuid
           example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
-        group_id:
-          type: string
-          format: uuid
-          nullable: true
-          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
         prospect_name:
           type: string
           example: Alice Johnson

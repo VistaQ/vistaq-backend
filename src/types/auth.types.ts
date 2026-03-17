@@ -68,7 +68,6 @@ export type IProspect = Pick<
   | 'id'
   | 'tenant_id'
   | 'agent_id'
-  | 'group_id'
   | 'prospect_name'
   | 'prospect_email'
   | 'prospect_phone'

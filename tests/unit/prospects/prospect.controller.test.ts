@@ -69,7 +69,6 @@ const mockProspect: IProspect = {
   id: PROSPECT_ID,
   tenant_id: TENANT_ID,
   agent_id: AGENT_ID,
-  group_id: GROUP_ID,
   prospect_name: 'John Doe',
   prospect_email: 'john@example.com',
   prospect_phone: '+61400000000',

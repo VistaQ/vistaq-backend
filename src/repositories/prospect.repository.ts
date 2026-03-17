@@ -18,7 +18,6 @@ class ProspectRepository {
       id: row.id,
       tenant_id: row.tenant_id,
       agent_id: row.agent_id,
-      group_id: row.group_id,
       prospect_name: row.prospect_name,
       prospect_email: row.prospect_email,
       prospect_phone: row.prospect_phone,
@@ -41,13 +40,20 @@ class ProspectRepository {
     };
   }
 
-  async insertProspect(data: ProspectsInsert, userToken: string): Promise<IProspect> {
+  async insertProspect(
+    data: ProspectsInsert,
+    userToken: string,
+  ): Promise<IProspect> {
     try {
       loggingService.info('ProspectRepository.insertProspect called', {
         prospect_name: data.prospect_name,
       });
 
-      const response = await supabaseService.userInsert(userToken, 'prospects', data);
+      const response = await supabaseService.userInsert(
+        userToken,
+        'prospects',
+        data,
+      );
 
       if (response.error) {
         throw new Error(response.error.message);
@@ -68,7 +74,11 @@ class ProspectRepository {
     try {
       loggingService.info('ProspectRepository.findAll called');
 
-      const response = await supabaseService.userSelect(userToken, 'prospects', '*');
+      const response = await supabaseService.userSelect(
+        userToken,
+        'prospects',
+        '*',
+      );
 
       if (response.error) {
         throw new Error(response.error.message);
@@ -81,7 +91,10 @@ class ProspectRepository {
     }
   }
 
-  async findById(prospectId: string, userToken: string): Promise<IProspect | null> {
+  async findById(
+    prospectId: string,
+    userToken: string,
+  ): Promise<IProspect | null> {
     try {
       loggingService.info('ProspectRepository.findById called', { prospectId });
 
@@ -107,9 +120,15 @@ class ProspectRepository {
     }
   }
 
-  async updateProspect(prospectId: string, data: ProspectsUpdate, userToken: string): Promise<IProspect | null> {
+  async updateProspect(
+    prospectId: string,
+    data: ProspectsUpdate,
+    userToken: string,
+  ): Promise<IProspect | null> {
     try {
-      loggingService.info('ProspectRepository.updateProspect called', { prospectId });
+      loggingService.info('ProspectRepository.updateProspect called', {
+        prospectId,
+      });
 
       const response = await supabaseService.userUpdate(
         userToken,
