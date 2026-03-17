@@ -41,15 +41,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
       try {
         // Tag every Sentry event in this request with the correlation ID
         Sentry.setTag('correlationId', correlationId);
-        // Redact sensitive request headers before logging
-        const requestHeaders: Record<string, unknown> = { ...req.headers };
-        if (requestHeaders['authorization']) {
-          requestHeaders['authorization'] = '[REDACTED]';
-        }
-        if (requestHeaders['cookie']) {
-          requestHeaders['cookie'] = '[REDACTED]';
-        }
-
         // Redact sensitive fields from request body before logging
         const SENSITIVE_BODY_FIELDS = [
           'password', 'newPassword', 'confirmPassword',
@@ -68,7 +59,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         loggingService.info('Incoming request', {
           method: req.method,
           url: req.originalUrl,
-          headers: requestHeaders,
+          headers: req.headers,
           body: requestBody,
         });
 
@@ -91,18 +82,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         // versions, wrap this listener in asyncLocalStorage.run({ correlationId }, ...).
         res.on('finish', () => {
           try {
-            // Redact sensitive response headers before logging
-            const responseHeaders: Record<string, unknown> = { ...res.getHeaders() };
-            if (responseHeaders['set-cookie']) {
-              responseHeaders['set-cookie'] = '[REDACTED]';
-            }
-
             loggingService.info('Outgoing response', {
               method: req.method,
               url: req.originalUrl,
               statusCode: res.statusCode,
               durationMs: Date.now() - startTime,
-              headers: responseHeaders,
+              headers: res.getHeaders(),
               body: capturedResponseBody,
             });
           } catch (err) {
