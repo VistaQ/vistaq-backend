@@ -1,4 +1,7 @@
-CREATE OR REPLACE FUNCTION get_dashboard_stats(period_start TIMESTAMPTZ)
+CREATE OR REPLACE FUNCTION get_dashboard_stats(
+  period_start TIMESTAMPTZ,
+  p_group_id UUID DEFAULT NULL
+)
 RETURNS JSON AS $$
 SELECT json_build_object(
   'prospects', COUNT(*) FILTER (WHERE created_at >= period_start),
@@ -22,5 +25,11 @@ SELECT json_build_object(
     AND COALESCE(sales_completed_at, updated_at) >= period_start
   ), 0)
 )
-FROM public.prospects;
+FROM public.prospects
+WHERE (
+  p_group_id IS NULL
+  OR agent_id IN (
+    SELECT id FROM public.users WHERE group_id = p_group_id
+  )
+);
 $$ LANGUAGE sql STABLE SECURITY INVOKER;
