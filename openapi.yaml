@@ -22,6 +22,8 @@ tags:
     description: Prospect management endpoints
   - name: Events
     description: Event management endpoints
+  - name: Dashboard
+    description: Dashboard statistics endpoints
 
 ################################################################################
 # Paths
@@ -2135,6 +2137,53 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # DASHBOARD
+  ##############################################################################
+
+  /dashboard/stats:
+    get:
+      tags: [Dashboard]
+      summary: Get dashboard statistics
+      description: >
+        Returns aggregated year-to-date (YTD) and month-to-date (MTD) dashboard
+        statistics for the authenticated user's tenant. YTD figures cover the
+        period from 1 January of the current year; MTD figures cover the period
+        from the 1st of the current month. The caller must supply a valid Bearer
+        token. All roles are permitted to call this endpoint.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/DashboardStatsObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -2430,6 +2479,61 @@ components:
           type: string
           format: date-time
           example: '2026-03-14T08:00:00.000Z'
+
+    DashboardStatsObject:
+      type: object
+      required: [ytd, mtd]
+      properties:
+        ytd:
+          $ref: '#/components/schemas/DashboardStatsPeriod'
+        mtd:
+          $ref: '#/components/schemas/DashboardStatsPeriod'
+
+    DashboardStatsPeriod:
+      type: object
+      description: >
+        Aggregated statistics for a single time period (YTD or MTD).
+        `agents_count` reflects the current total count of users with the
+        `agent` or `group_leader` role and is identical in both periods.
+      required:
+        - prospects
+        - appointments_set
+        - sales_meetings
+        - sales_noc
+        - sales_ace
+        - agents_count
+      properties:
+        prospects:
+          type: integer
+          description: Total prospects created in the period.
+          example: 120
+        appointments_set:
+          type: integer
+          description: >
+            Prospects whose appointment status is `scheduled` or `rescheduled`
+            in the period.
+          example: 85
+        sales_meetings:
+          type: integer
+          description: >
+            Prospects whose appointment status is `done` in the period.
+          example: 60
+        sales_noc:
+          type: integer
+          description: Prospects with a successful sales outcome in the period.
+          example: 30
+        sales_ace:
+          type: number
+          description: >
+            Total sum of products sold amounts for successful sales in the
+            period.
+          example: 450000
+        agents_count:
+          type: integer
+          description: >
+            Current total count of users with the `agent` or `group_leader`
+            role. This value is the same for both YTD and MTD periods.
+          example: 24
 
     ErrorResponse:
       type: object
