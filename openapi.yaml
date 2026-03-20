@@ -1370,6 +1370,109 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /groups/stats:
+    get:
+      tags: [Groups]
+      summary: Get group statistics
+      description: >
+        Returns a list of all groups in the authenticated user's tenant with
+        their year-to-date (YTD) sales statistics, sorted by `ytd_sales_ace`
+        descending. The caller must supply a valid Bearer token. All roles are
+        permitted to call this endpoint.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Group statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupStatsObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /groups/{groupId}/stats:
+    get:
+      tags: [Groups]
+      summary: Get per-group detail statistics
+      description: >
+        Returns YTD and MTD aggregated statistics scoped to a specific group,
+        plus the current agent count for that group. The caller must supply a
+        valid Bearer token. All roles are permitted to call this endpoint.
+        Returns 404 if the group does not exist.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: UUID of the group to retrieve statistics for.
+          schema:
+            type: string
+            format: uuid
+            example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+      responses:
+        '200':
+          description: Group detail statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/GroupDetailStatsObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Not found. Returned when no group exists for the given `groupId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Group not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   ##############################################################################
   # PROSPECTS
   ##############################################################################
@@ -2293,6 +2396,88 @@ components:
           type: string
           format: date-time
           example: '2026-03-10T08:00:00.000Z'
+
+    GroupStatsObject:
+      type: object
+      required:
+        - group_id
+        - group_name
+        - ytd_sales_noc
+        - ytd_sales_ace
+      properties:
+        group_id:
+          type: string
+          format: uuid
+          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        group_name:
+          type: string
+          example: Alpha Team
+        ytd_sales_noc:
+          type: integer
+          description: Total number of successful sales (NOC) for the group year-to-date.
+          example: 25
+        ytd_sales_ace:
+          type: number
+          description: Total sum of products sold amounts (ACE) for the group year-to-date.
+          example: 380000
+
+    GroupDetailStatsObject:
+      type: object
+      required:
+        - group_id
+        - group_name
+        - ytd
+        - mtd
+      properties:
+        group_id:
+          type: string
+          format: uuid
+          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        group_name:
+          type: string
+          example: Alpha Team
+        ytd:
+          $ref: '#/components/schemas/DashboardStatsPeriod'
+        mtd:
+          $ref: '#/components/schemas/GroupDetailStatsMtdPeriod'
+
+    GroupDetailStatsMtdPeriod:
+      type: object
+      description: >
+        Aggregated statistics for the month-to-date period scoped to a specific
+        group. Excludes `agents_count` — agent count is a current point-in-time
+        figure and is only present in the `ytd` object.
+      required:
+        - prospects
+        - appointments_set
+        - sales_meetings
+        - sales_noc
+        - sales_ace
+      properties:
+        prospects:
+          type: integer
+          description: Total prospects created in the period.
+          example: 8
+        appointments_set:
+          type: integer
+          description: >
+            Prospects whose appointment status is `scheduled` or `rescheduled`
+            in the period.
+          example: 5
+        sales_meetings:
+          type: integer
+          description: Prospects whose appointment status is `done` in the period.
+          example: 4
+        sales_noc:
+          type: integer
+          description: Prospects with a successful sales outcome in the period.
+          example: 2
+        sales_ace:
+          type: number
+          description: >
+            Total sum of products sold amounts for successful sales in the
+            period.
+          example: 30000
 
     ProspectObject:
       type: object

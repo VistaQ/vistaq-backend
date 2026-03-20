@@ -13,6 +13,9 @@ import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
 import { IGroup } from '@src/types/auth.types';
 import { Database } from '@src/types/database.types';
+import { IDashboardPeriodStats } from '@src/types/dashboard.types';
+import { IGroupDetailStats } from '@src/types/group-detail-stats.types';
+import { IGroupStats } from '@src/types/group-stats.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
@@ -46,6 +49,50 @@ interface IUpdateGroupParams {
 ******************************************************************************/
 
 class GroupService {
+  async getGroupDetailStats(groupId: string, token: string): Promise<IGroupDetailStats> {
+    try {
+      const group = await groupRepository.findById(groupId, token);
+
+      if (!group) {
+        throw new GroupNotFoundError();
+      }
+
+      const now = new Date();
+      const ytdStart = new Date(now.getFullYear(), 0, 1).toISOString();
+      const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+      const [ytdRes, mtdRes, agentsCount] = await Promise.all([
+        groupRepository.getGroupDetailStats(token, ytdStart, groupId),
+        groupRepository.getGroupDetailStats(token, mtdStart, groupId),
+        groupRepository.getGroupAgentsCount(token, groupId),
+      ]);
+
+      const ytdStats = (ytdRes?.data ?? {}) as Omit<IDashboardPeriodStats, 'agents_count'>;
+      const mtdStats = (mtdRes?.data ?? {}) as Omit<IDashboardPeriodStats, 'agents_count'>;
+
+      return {
+        group_id: group.id,
+        group_name: group.name,
+        ytd: { ...ytdStats, agents_count: agentsCount ?? 0 },
+        mtd: mtdStats,
+      };
+    } catch (error) {
+      if (error instanceof GroupNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('GroupService.getGroupDetailStats', error);
+    }
+  }
+
+  async getGroupStats(token: string): Promise<IGroupStats[]> {
+    try {
+      const response = await groupRepository.getGroupStats(token);
+      return (response?.data ?? []) as IGroupStats[];
+    } catch (error) {
+      return handleServiceError('GroupService.getGroupStats', error);
+    }
+  }
+
   async getGroups(token: string): Promise<IGroup[]> {
     try {
       return await groupRepository.findAll(token);

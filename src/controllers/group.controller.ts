@@ -14,6 +14,8 @@ import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import groupService from '@src/services/group.service';
 import { IGroup } from '@src/types/auth.types';
+import { IGroupDetailStats } from '@src/types/group-detail-stats.types';
+import { IGroupStats } from '@src/types/group-stats.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -64,11 +66,41 @@ export interface IGetGroupByIdRes extends IBaseRes {
   data: IGroup;
 }
 
+export interface IGetGroupStatsRes extends IBaseRes {
+  success: boolean;
+  data: IGroupStats[];
+}
+
+export interface IGetGroupStatsByIdReq extends IBaseReq {
+  params: { groupId: string };
+}
+
+export interface IGetGroupStatsByIdRes extends IBaseRes {
+  success: boolean;
+  data: IGroupDetailStats;
+}
+
 /******************************************************************************
                             GroupController
 ******************************************************************************/
 
 class GroupController {
+  async getStats(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const token = req.headers['authorization']!.slice(7);
+      const data = await groupService.getGroupStats(token);
+
+      const responseBody: IGetGroupStatsRes = {
+        success: true,
+        data,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('GroupController.getStats', error, next);
+    }
+  }
+
   async getAll(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
     try {
       const token = req.headers['authorization']!.slice(7);
@@ -151,6 +183,32 @@ class GroupController {
       }
 
       return handleControllerError('GroupController.create', error, next);
+    }
+  }
+
+  async getStatsById(
+    req: IGetGroupStatsByIdReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const token = req.headers['authorization']!.slice(7);
+      const { groupId } = req.params;
+
+      const data = await groupService.getGroupDetailStats(groupId, token);
+
+      const responseBody: IGetGroupStatsByIdRes = {
+        success: true,
+        data,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof GroupNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Group not found'));
+        return;
+      }
+      return handleControllerError('GroupController.getStatsById', error, next);
     }
   }
 

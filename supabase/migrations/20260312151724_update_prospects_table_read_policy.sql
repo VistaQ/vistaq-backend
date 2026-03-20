@@ -1,5 +1,3 @@
-DROP POLICY IF EXISTS "prospects_read" ON prospects;
-
 CREATE POLICY "prospects_read" ON prospects
 FOR SELECT USING (
 CASE (auth.jwt() ->> 'app_role'::text)

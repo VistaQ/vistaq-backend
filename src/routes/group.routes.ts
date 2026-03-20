@@ -4,6 +4,7 @@ import { z } from 'zod';
 import groupController, {
   ICreateGroupReq,
   IGetGroupByIdReq,
+  IGetGroupStatsByIdReq,
   IUpdateGroupReq,
 } from '@src/controllers/group.controller';
 import { IBaseReq } from '@src/models/interfaces/base.interface';
@@ -42,6 +43,12 @@ router.get(
   (req, res, next) =>
     groupController.getAll(req as unknown as IBaseReq, res, next),
 );
+
+router.get('/stats', authenticate, (req, res, next) =>
+  groupController.getStats(req as unknown as IBaseReq, res, next));
+
+router.get('/:groupId/stats', authenticate, (req, res, next) =>
+  groupController.getStatsById(req as unknown as IGetGroupStatsByIdReq, res, next));
 
 router.get(
   '/:groupId',

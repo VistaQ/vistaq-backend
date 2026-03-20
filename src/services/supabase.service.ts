@@ -1109,6 +1109,58 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // User Count With Eq (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns the count of rows matching both eq filters and an .in() filter,
+   * using a user-scoped client to enforce RLS. No rows are fetched — only the count.
+   *
+   * @param userToken  - The user's JWT, used to build the user-scoped client.
+   * @param table      - The table to query.
+   * @param eqFilters  - Key/value pairs applied as .eq() filters.
+   * @param inColumn   - The column to filter on using .in().
+   * @param inValues   - The list of values to match against.
+   */
+  async userCountWithEq<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    eqFilters: Partial<Database['public']['Tables'][T]['Row']>,
+    inColumn: string & keyof Database['public']['Tables'][T]['Row'],
+    inValues: unknown[],
+  ): Promise<number> {
+    try {
+      loggingService.info('SupabaseService.userCountWithEq called', { table, inColumn });
+
+      const userClient = this.getUserClient(userToken);
+      let query = userClient
+        .from(table)
+        .select('*', { count: 'exact', head: true });
+
+      for (const column of Object.keys(eqFilters) as (string & keyof typeof eqFilters)[]) {
+        const value = eqFilters[column];
+        if (value !== undefined) {
+          query = query.eq(column, value as never);
+        }
+      }
+
+      query = query.in(inColumn, inValues as never[]);
+
+      const { count, error } = await query;
+
+      if (error) {
+        loggingService.error('SupabaseService.userCountWithEq query error', error, { table });
+        throw new SupabaseServiceError('Count with eq query returned an error', error);
+      }
+
+      return count ?? 0;
+    } catch (error) {
+      loggingService.error('SupabaseService.userCountWithEq failed', error, { table });
+      throw new SupabaseServiceError('Count with eq operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Delete (RLS-bypassing)
   // ---------------------------------------------------------------------------
 

@@ -138,6 +138,39 @@ class GroupRepository {
     }
   }
 
+  async getGroupStats(token: string) {
+    try {
+      return await supabaseService.userRpc(token, 'get_group_stats', {});
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.getGroupStats', error);
+    }
+  }
+
+  async getGroupDetailStats(token: string, periodStart: string, groupId: string) {
+    try {
+      return await supabaseService.userRpc(token, 'get_dashboard_stats', {
+        period_start: periodStart,
+        p_group_id: groupId,
+      });
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.getGroupDetailStats', error);
+    }
+  }
+
+  async getGroupAgentsCount(token: string, groupId: string): Promise<number> {
+    try {
+      return await supabaseService.userCountWithEq(
+        token,
+        'users',
+        { group_id: groupId },
+        'role',
+        ['agent', 'group_leader'],
+      );
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.getGroupAgentsCount', error);
+    }
+  }
+
   async insertGroupTrainer(data: GroupTrainersInsert, userToken: string): Promise<IGroupTrainer> {
     try {
       const response = await supabaseService.userInsert(userToken, 'group_trainers', data);
