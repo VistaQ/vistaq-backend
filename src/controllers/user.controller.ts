@@ -7,7 +7,7 @@ import {
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import userService from '@src/services/user.service';
-import { IUser } from '@src/types/auth.types';
+import { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -33,12 +33,12 @@ export interface IGetUserByIdReq extends IBaseReq {
 
 export interface IGetUserByIdRes extends IBaseRes {
   success: boolean;
-  data: IUser;
+  data: IUserWithManagedGroups;
 }
 
 export interface IGetUsersRes extends IBaseRes {
   success: boolean;
-  data: IUser[];
+  data: IUserWithManagedGroups[];
 }
 
 export interface IUpdateUserReq extends IBaseReq {

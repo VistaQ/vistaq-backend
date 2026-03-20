@@ -28,7 +28,7 @@ interface ICreateGroupParams {
   name: string;
   tenantId: string;
   leaderId?: string;
-  trainerId?: string;
+  trainerIds?: string[];
   token: string;
 }
 
@@ -39,7 +39,7 @@ interface IUpdateGroupParams {
     name?: string;
     status?: string;
     leader_id?: string;
-    trainer_id?: string;
+    trainer_ids?: string[];
     member_ids?: string[];
   };
 }
@@ -109,6 +109,44 @@ class GroupService {
     }
   }
 
+  private async validateTrainers(
+    trainerIds: string[],
+    token: string,
+    errorClass: 'create' | 'update' = 'create',
+  ): Promise<string[]> {
+    try {
+      const uniqueIds = [...new Set(trainerIds)];
+      const foundTrainers = await userService.findUsersByIds(uniqueIds, token);
+
+      if (foundTrainers.length !== uniqueIds.length) {
+        const foundIds = new Set(foundTrainers.map((u) => u.id));
+        const missingIds = uniqueIds.filter((id) => !foundIds.has(id));
+        const message = `The following trainer IDs were not found: ${missingIds.join(', ')}`;
+        if (errorClass === 'update') throw new InvalidTrainerError(message);
+        throw new UserNotInTenantError(message);
+      }
+
+      const nonTrainers = foundTrainers.filter((u) => u.role !== 'trainer');
+      if (nonTrainers.length > 0) {
+        const badIds = nonTrainers.map((u) => u.id).join(', ');
+        const message = `The following user IDs do not have the trainer role: ${badIds}`;
+        if (errorClass === 'update') throw new InvalidTrainerError(message);
+        throw new InvalidTrainerRoleError(message);
+      }
+
+      return uniqueIds;
+    } catch (error) {
+      if (
+        error instanceof InvalidTrainerRoleError ||
+        error instanceof InvalidTrainerError ||
+        error instanceof UserNotInTenantError
+      ) {
+        throw error;
+      }
+      return handleServiceError('GroupService.validateTrainers', error);
+    }
+  }
+
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
     try {
       // Step 1 — Validate leader if provided
@@ -125,18 +163,9 @@ class GroupService {
         }
       }
 
-      // Step 2 — Validate trainer if provided
-      if (params.trainerId) {
-        const trainer = await userService.getUserById(
-          params.trainerId,
-          params.token,
-        );
-        if (!trainer) {
-          throw new UserNotInTenantError();
-        }
-        if (trainer.role !== 'trainer') {
-          throw new InvalidTrainerRoleError();
-        }
+      // Step 2 — Validate trainers if provided
+      if (params.trainerIds && params.trainerIds.length > 0) {
+        await this.validateTrainers(params.trainerIds, params.token, 'create');
       }
 
       // Step 3 — Insert group
@@ -171,18 +200,19 @@ class GroupService {
         }
       }
 
-      // Step 5 — Insert group_trainers record (with rollback on failure)
-      if (params.trainerId) {
+      // Step 5 — Insert group_trainers records (with rollback on failure)
+      if (params.trainerIds && params.trainerIds.length > 0) {
         try {
-          await groupRepository.insertGroupTrainer(
-            { group_id: group.id, trainer_id: params.trainerId },
-            params.token,
-          );
+          const trainerInserts = params.trainerIds.map((id) => ({
+            group_id: group.id,
+            trainer_id: id,
+          }));
+          await groupRepository.insertGroupTrainers(trainerInserts, params.token);
         } catch (trainerError) {
           loggingService.error(
-            'GroupService.createGroup — group trainer insert failed, rolling back leader role and group',
+            'GroupService.createGroup — group trainers insert failed, rolling back leader role and group',
             trainerError,
-            { groupId: group.id, trainerId: params.trainerId },
+            { groupId: group.id, trainerIds: params.trainerIds },
           );
           // Rollback leader role back to agent
           if (params.leaderId) {
@@ -210,6 +240,7 @@ class GroupService {
       if (
         error instanceof InvalidLeaderRoleError ||
         error instanceof InvalidTrainerRoleError ||
+        error instanceof InvalidTrainerError ||
         error instanceof UserNotInTenantError
       ) {
         throw error;
@@ -257,19 +288,42 @@ class GroupService {
         });
       }
 
-      // Step 3 — Trainer logic
-      if (data.trainer_id) {
-        const trainer = await userService.getUserById(data.trainer_id, token);
-        if (!trainer) {
-          throw new UserNotFoundError();
+      // Step 3 — Trainer logic (replace)
+      if (data.trainer_ids && data.trainer_ids.length > 0) {
+        const uniqueTrainerIds = await this.validateTrainers(data.trainer_ids, token, 'update');
+
+        // Fetch existing trainers before deleting (for rollback)
+        const existingTrainers = await groupRepository.findGroupTrainersByGroupId(groupId, token);
+
+        await groupRepository.deleteGroupTrainersByGroupId(groupId, token);
+        const trainerInserts = uniqueTrainerIds.map((id) => ({
+          group_id: groupId,
+          trainer_id: id,
+        }));
+        try {
+          await groupRepository.insertGroupTrainers(trainerInserts, token);
+        } catch (insertError) {
+          loggingService.error(
+            'GroupService.updateGroup — trainer insert failed after delete, attempting rollback',
+            insertError,
+            { groupId, trainerIds: uniqueTrainerIds },
+          );
+          if (existingTrainers.length > 0) {
+            try {
+              await groupRepository.insertGroupTrainers(
+                existingTrainers.map((t) => ({ group_id: t.group_id, trainer_id: t.trainer_id })),
+                token,
+              );
+            } catch (rollbackError) {
+              loggingService.error(
+                'GroupService.updateGroup — trainer rollback failed',
+                rollbackError,
+                { groupId },
+              );
+            }
+          }
+          throw insertError;
         }
-        if (trainer.role !== 'trainer') {
-          throw new InvalidTrainerError();
-        }
-        await groupRepository.insertGroupTrainer(
-          { group_id: groupId, trainer_id: data.trainer_id },
-          token,
-        );
       }
 
       // Step 4 — Members logic

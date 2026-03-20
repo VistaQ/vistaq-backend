@@ -4,6 +4,7 @@ import { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
+type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
 type UsersRow = Database['public']['Tables']['users']['Row'];
 type UsersInsert = Database['public']['Tables']['users']['Insert'];
 type UsersUpdate = Database['public']['Tables']['users']['Update'];
@@ -316,6 +317,41 @@ class UserRepository {
     } catch (error) {
       return handleRepositoryError(
         'UserRepository.updateAuthUserEmail',
+        error,
+      );
+    }
+  }
+
+  async findManagedGroupIdsByUserIds(
+    userIds: string[],
+    userToken: string,
+  ): Promise<Map<string, string[]>> {
+    try {
+      if (userIds.length === 0) return new Map();
+
+      const response = await supabaseService.userSelectIn(
+        userToken,
+        'group_trainers',
+        'group_id,trainer_id',
+        'trainer_id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as GroupTrainersRow[];
+      const map = new Map<string, string[]>();
+      for (const row of rows) {
+        const existing = map.get(row.trainer_id) ?? [];
+        existing.push(row.group_id);
+        map.set(row.trainer_id, existing);
+      }
+      return map;
+    } catch (error) {
+      return handleRepositoryError(
+        'UserRepository.findManagedGroupIdsByUserIds',
         error,
       );
     }

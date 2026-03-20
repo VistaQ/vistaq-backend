@@ -63,6 +63,10 @@ export type IGroupTrainer = Pick<
   'group_id' | 'trainer_id' | 'created_at'
 >;
 
+export type IUserWithManagedGroups = IUser & {
+  managed_group_ids: string[];
+};
+
 export type IProspect = Pick<
   ProspectsRow,
   | 'id'
@@ -88,4 +92,3 @@ export type IProspect = Pick<
   | 'created_at'
   | 'updated_at'
 >;
-

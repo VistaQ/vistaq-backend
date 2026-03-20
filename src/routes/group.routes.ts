@@ -18,14 +18,14 @@ import { validate } from '@src/middleware/validate';
 export const createGroupSchema = z.object({
   name: z.string().min(1),
   leader_id: z.string().uuid().optional(),
-  trainer_id: z.string().uuid().optional(),
+  trainer_ids: z.array(z.string().uuid()).min(1).optional(),
 }).strict();
 
 export const updateGroupSchema = z.object({
   name: z.string().min(1).optional(),
   status: z.enum(['active', 'inactive']).optional(),
   leader_id: z.string().uuid().optional(),
-  trainer_id: z.string().uuid().optional(),
+  trainer_ids: z.array(z.string().uuid()).min(1).optional(),
   member_ids: z.array(z.string().uuid()).min(1).optional(),
 }).strict().refine((data) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',

@@ -27,7 +27,7 @@ export interface ICreateGroupReq extends IBaseReq {
   body: {
     name: string;
     leader_id?: string;
-    trainer_id?: string;
+    trainer_ids?: string[];
   };
 }
 
@@ -47,7 +47,7 @@ export interface IUpdateGroupReq extends IBaseReq {
     name?: string;
     status?: string;
     leader_id?: string;
-    trainer_id?: string;
+    trainer_ids?: string[];
     member_ids?: string[];
   };
 }
@@ -156,13 +156,13 @@ class GroupController {
       }
 
       const token = req.headers['authorization']!.slice(7);
-      const { name, leader_id, trainer_id } = req.body;
+      const { name, leader_id, trainer_ids } = req.body;
 
       const group = await groupService.createGroup({
         name,
         tenantId: req.user!.tenant_id,
         leaderId: leader_id,
-        trainerId: trainer_id,
+        trainerIds: trainer_ids,
         token,
       });
 

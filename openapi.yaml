@@ -1048,7 +1048,7 @@ paths:
         Creates a new group within the authenticated admin's tenant.
         The caller must supply a valid Bearer token belonging to a user with
         the `admin` role. The optional `leader_id` must reference a user with
-        the `agent` role, and the optional `trainer_id` must reference a user
+        the `agent` role, and the optional `trainer_ids` must each reference a user
         with the `trainer` role. Both referenced users must belong to the
         caller's tenant.
       security:
@@ -1073,13 +1073,18 @@ paths:
                     UUID of the user to assign as group leader. Must be a user
                     with the `agent` role and must belong to the caller's tenant.
                   example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
-                trainer_id:
-                  type: string
-                  format: uuid
+                trainer_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
                   description: >
-                    UUID of the user to assign as group trainer. Must be a user
-                    with the `trainer` role and must belong to the caller's tenant.
-                  example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    Array of UUIDs of users to assign as group trainers. Each
+                    must be a user with the `trainer` role and must belong to
+                    the caller's tenant.
+                  example:
+                    - 3fa85f64-5717-4562-b3fc-2c963f66afa6
       responses:
         '201':
           description: Group created successfully
@@ -1223,7 +1228,7 @@ paths:
         fields are optional, but at least one must be provided. When `leader_id`
         is supplied and differs from the current leader, the new leader is promoted
         to `group_leader` and the previous leader is demoted back to `agent`. When
-        `trainer_id` is supplied, a new `group_trainers` record is inserted. When
+        `trainer_ids` is supplied, the existing trainer assignments for the group are replaced with the provided set. When
         `member_ids` is supplied, the `group_id` field on each referenced user is
         set to this group. All referenced users must exist within the caller's tenant.
       security:
@@ -1261,13 +1266,18 @@ paths:
                     with the `agent` role. If the group already has a leader,
                     that leader is demoted back to `agent`.
                   example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
-                trainer_id:
-                  type: string
-                  format: uuid
+                trainer_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
                   description: >
-                    UUID of the user to add as a group trainer. Must be a user
-                    with the `trainer` role. Inserts a new `group_trainers` record.
-                  example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    Array of UUIDs of users to set as group trainers. Replaces
+                    all existing trainer assignments for the group. Each must be
+                    a user with the `trainer` role.
+                  example:
+                    - 3fa85f64-5717-4562-b3fc-2c963f66afa6
                 member_ids:
                   type: array
                   minItems: 1
@@ -2357,6 +2367,17 @@ components:
           type: string
           format: date-time
           example: '2026-03-07T08:00:00.000Z'
+        managed_group_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: >
+            IDs of groups managed by this user. Populated for trainers; empty
+            array for all other roles.
+          example:
+            - abc-123-uuid
+            - def-456-uuid
 
     GroupObject:
       type: object

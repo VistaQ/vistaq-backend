@@ -61,7 +61,7 @@ import {
 } from '@src/models/errors/group.errors';
 import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import { ServiceError } from '@src/models/errors/layer.errors';
-import type { IGroup, IGroupTrainer, IUser } from '@src/types/auth.types';
+import type { IGroup, IGroupTrainer, IUserWithManagedGroups } from '@src/types/auth.types';
 
 /******************************************************************************
   Fixtures
@@ -94,7 +94,7 @@ const mockGroupTrainer: IGroupTrainer = {
   created_at: '2024-01-01T00:00:00.000Z',
 };
 
-const mockLeaderUser: IUser = {
+const mockLeaderUser: IUserWithManagedGroups = {
   id: LEADER_ID,
   tenant_id: TENANT_ID,
   email: 'leader@example.com',
@@ -108,9 +108,10 @@ const mockLeaderUser: IUser = {
   status: 'active',
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
+  managed_group_ids: [],
 };
 
-const mockTrainerUser: IUser = {
+const mockTrainerUser: IUserWithManagedGroups = {
   id: TRAINER_ID,
   tenant_id: TENANT_ID,
   email: 'trainer@example.com',
@@ -124,9 +125,10 @@ const mockTrainerUser: IUser = {
   status: 'active',
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
+  managed_group_ids: [],
 };
 
-const mockUpdatedLeader: IUser = { ...mockLeaderUser, role: 'group_leader' };
+const mockUpdatedLeader: IUserWithManagedGroups = { ...mockLeaderUser, role: 'group_leader' };
 
 const BASE_PARAMS = {
   name: 'Alpha Squad',
@@ -238,33 +240,31 @@ describe('GroupService.createGroup', () => {
     });
   });
 
-  it('success with valid trainer — verifies insertGroupTrainer called', async () => {
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(mockTrainerUser);
+  it('success with valid trainer — verifies insertGroupTrainers called', async () => {
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
     jest.spyOn(groupRepository, 'insertGroup').mockResolvedValue(mockGroup);
-    jest.spyOn(groupRepository, 'insertGroupTrainer').mockResolvedValue(mockGroupTrainer);
+    jest.spyOn(groupRepository, 'insertGroupTrainers').mockResolvedValue([mockGroupTrainer]);
 
-    const result = await groupService.createGroup({ ...BASE_PARAMS, trainerId: TRAINER_ID });
+    const result = await groupService.createGroup({ ...BASE_PARAMS, trainerIds: [TRAINER_ID] });
 
     expect(result).toEqual(mockGroup);
-    expect(groupRepository.insertGroupTrainer).toHaveBeenCalledWith(
-      { group_id: GROUP_ID, trainer_id: TRAINER_ID },
+    expect(groupRepository.insertGroupTrainers).toHaveBeenCalledWith(
+      [{ group_id: GROUP_ID, trainer_id: TRAINER_ID }],
       USER_TOKEN,
     );
   });
 
   it('success with both leader and trainer', async () => {
-    jest
-      .spyOn(userService, 'getUserById')
-      .mockResolvedValueOnce(mockLeaderUser)
-      .mockResolvedValueOnce(mockTrainerUser);
+    jest.spyOn(userService, 'getUserById').mockResolvedValueOnce(mockLeaderUser);
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
     jest.spyOn(groupRepository, 'insertGroup').mockResolvedValue(mockGroupWithLeader);
     jest.spyOn(userService, 'updateUser').mockResolvedValue(mockUpdatedLeader);
-    jest.spyOn(groupRepository, 'insertGroupTrainer').mockResolvedValue(mockGroupTrainer);
+    jest.spyOn(groupRepository, 'insertGroupTrainers').mockResolvedValue([mockGroupTrainer]);
 
     const result = await groupService.createGroup({
       ...BASE_PARAMS,
       leaderId: LEADER_ID,
-      trainerId: TRAINER_ID,
+      trainerIds: [TRAINER_ID],
     });
 
     expect(result).toEqual(mockGroupWithLeader);
@@ -274,8 +274,8 @@ describe('GroupService.createGroup', () => {
       token: USER_TOKEN,
       data: { role: 'group_leader' },
     });
-    expect(groupRepository.insertGroupTrainer).toHaveBeenCalledWith(
-      { group_id: GROUP_ID, trainer_id: TRAINER_ID },
+    expect(groupRepository.insertGroupTrainers).toHaveBeenCalledWith(
+      [{ group_id: GROUP_ID, trainer_id: TRAINER_ID }],
       USER_TOKEN,
     );
   });
@@ -289,7 +289,7 @@ describe('GroupService.createGroup', () => {
   });
 
   it('throws InvalidLeaderRoleError when leader has wrong role', async () => {
-    const wrongRoleLeader: IUser = { ...mockLeaderUser, role: 'group_leader' };
+    const wrongRoleLeader: IUserWithManagedGroups = { ...mockLeaderUser, role: 'group_leader' };
     jest.spyOn(userService, 'getUserById').mockResolvedValue(wrongRoleLeader);
 
     await expect(
@@ -297,20 +297,20 @@ describe('GroupService.createGroup', () => {
     ).rejects.toBeInstanceOf(InvalidLeaderRoleError);
   });
 
-  it('throws UserNotInTenantError when trainer not found', async () => {
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(null);
+  it('throws InvalidTrainerRoleError when trainer not found', async () => {
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([]);
 
     await expect(
-      groupService.createGroup({ ...BASE_PARAMS, trainerId: TRAINER_ID }),
-    ).rejects.toBeInstanceOf(UserNotInTenantError);
+      groupService.createGroup({ ...BASE_PARAMS, trainerIds: [TRAINER_ID] }),
+    ).rejects.toBeInstanceOf(InvalidTrainerRoleError);
   });
 
   it('throws InvalidTrainerRoleError when trainer has wrong role', async () => {
-    const wrongRoleTrainer: IUser = { ...mockTrainerUser, role: 'agent' };
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(wrongRoleTrainer);
+    const wrongRoleTrainer: IUserWithManagedGroups = { ...mockTrainerUser, role: 'agent' };
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([wrongRoleTrainer]);
 
     await expect(
-      groupService.createGroup({ ...BASE_PARAMS, trainerId: TRAINER_ID }),
+      groupService.createGroup({ ...BASE_PARAMS, trainerIds: [TRAINER_ID] }),
     ).rejects.toBeInstanceOf(InvalidTrainerRoleError);
   });
 
@@ -332,21 +332,19 @@ describe('GroupService.createGroup', () => {
     );
   });
 
-  it('rollback: when insertGroupTrainer fails, rolls back leader role to agent', async () => {
-    const trainerError = new Error('group trainer insert failed');
+  it('rollback: when insertGroupTrainers fails, rolls back leader role to agent', async () => {
+    const trainerError = new Error('group trainers insert failed');
 
-    jest
-      .spyOn(userService, 'getUserById')
-      .mockResolvedValueOnce(mockLeaderUser)
-      .mockResolvedValueOnce(mockTrainerUser);
+    jest.spyOn(userService, 'getUserById').mockResolvedValueOnce(mockLeaderUser);
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
     jest.spyOn(groupRepository, 'insertGroup').mockResolvedValue(mockGroupWithLeader);
     jest.spyOn(userService, 'updateUser')
       .mockResolvedValueOnce(mockUpdatedLeader) // leader role → group_leader succeeds
       .mockResolvedValueOnce({ ...mockLeaderUser, role: 'agent' }); // rollback → agent succeeds
-    jest.spyOn(groupRepository, 'insertGroupTrainer').mockRejectedValue(trainerError);
+    jest.spyOn(groupRepository, 'insertGroupTrainers').mockRejectedValue(trainerError);
 
     await expect(
-      groupService.createGroup({ ...BASE_PARAMS, leaderId: LEADER_ID, trainerId: TRAINER_ID }),
+      groupService.createGroup({ ...BASE_PARAMS, leaderId: LEADER_ID, trainerIds: [TRAINER_ID] }),
     ).rejects.toBeInstanceOf(ServiceError);
 
     // Verify rollback call was made to restore leader role to agent
@@ -358,9 +356,9 @@ describe('GroupService.createGroup', () => {
     });
 
     expect(mockLoggingError).toHaveBeenCalledWith(
-      expect.stringContaining('group trainer insert failed'),
+      expect.stringContaining('group trainers insert failed'),
       trainerError,
-      expect.objectContaining({ trainerId: TRAINER_ID }),
+      expect.objectContaining({ trainerIds: [TRAINER_ID] }),
     );
   });
 });
@@ -378,7 +376,7 @@ const mockGroupWithOldLeader: IGroup = {
   leader_id: OLD_LEADER_ID,
 };
 
-const mockOldLeader: IUser = {
+const mockOldLeader: IUserWithManagedGroups = {
   id: OLD_LEADER_ID,
   tenant_id: TENANT_ID,
   email: 'old-leader@example.com',
@@ -392,9 +390,10 @@ const mockOldLeader: IUser = {
   status: 'active',
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
+  managed_group_ids: [],
 };
 
-const mockMember1: IUser = {
+const mockMember1: IUserWithManagedGroups = {
   id: MEMBER_ID_1,
   tenant_id: TENANT_ID,
   email: 'member1@example.com',
@@ -408,9 +407,10 @@ const mockMember1: IUser = {
   status: 'active',
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
+  managed_group_ids: [],
 };
 
-const mockMember2: IUser = {
+const mockMember2: IUserWithManagedGroups = {
   id: MEMBER_ID_2,
   tenant_id: TENANT_ID,
   email: 'member2@example.com',
@@ -424,6 +424,7 @@ const mockMember2: IUser = {
   status: 'active',
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',
+  managed_group_ids: [],
 };
 
 const mockUpdatedGroup: IGroup = {
@@ -456,7 +457,7 @@ describe('GroupService.updateGroup', () => {
   });
 
   it('throws InvalidLeaderError when leader role is not agent', async () => {
-    const nonAgentLeader: IUser = { ...mockLeaderUser, role: 'group_leader' };
+    const nonAgentLeader: IUserWithManagedGroups = { ...mockLeaderUser, role: 'group_leader' };
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
     jest.spyOn(userService, 'getUserById').mockResolvedValue(nonAgentLeader);
 
@@ -512,46 +513,48 @@ describe('GroupService.updateGroup', () => {
     });
   });
 
-  it('throws UserNotFoundError when trainer not found', async () => {
+  it('throws InvalidTrainerError when trainer not found', async () => {
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(null);
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([]);
 
     await expect(
       groupService.updateGroup({
         groupId: GROUP_ID,
         token: USER_TOKEN,
-        data: { trainer_id: TRAINER_ID },
-      }),
-    ).rejects.toBeInstanceOf(UserNotFoundError);
-  });
-
-  it('throws InvalidTrainerError when trainer role is not trainer', async () => {
-    const nonTrainer: IUser = { ...mockTrainerUser, role: 'agent' };
-    jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(nonTrainer);
-
-    await expect(
-      groupService.updateGroup({
-        groupId: GROUP_ID,
-        token: USER_TOKEN,
-        data: { trainer_id: TRAINER_ID },
+        data: { trainer_ids: [TRAINER_ID] },
       }),
     ).rejects.toBeInstanceOf(InvalidTrainerError);
   });
 
-  it('inserts group_trainer when trainer_id is provided and valid', async () => {
+  it('throws InvalidTrainerError when trainer role is not trainer', async () => {
+    const nonTrainer: IUserWithManagedGroups = { ...mockTrainerUser, role: 'agent' };
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(mockTrainerUser);
-    jest.spyOn(groupRepository, 'insertGroupTrainer').mockResolvedValue(mockGroupTrainer);
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([nonTrainer]);
+
+    await expect(
+      groupService.updateGroup({
+        groupId: GROUP_ID,
+        token: USER_TOKEN,
+        data: { trainer_ids: [TRAINER_ID] },
+      }),
+    ).rejects.toBeInstanceOf(InvalidTrainerError);
+  });
+
+  it('replaces group trainers when trainer_ids is provided and valid', async () => {
+    jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
+    jest.spyOn(groupRepository, 'deleteGroupTrainersByGroupId').mockResolvedValue(undefined);
+    jest.spyOn(groupRepository, 'insertGroupTrainers').mockResolvedValue([mockGroupTrainer]);
 
     await groupService.updateGroup({
       groupId: GROUP_ID,
       token: USER_TOKEN,
-      data: { trainer_id: TRAINER_ID },
+      data: { trainer_ids: [TRAINER_ID] },
     });
 
-    expect(groupRepository.insertGroupTrainer).toHaveBeenCalledWith(
-      { group_id: GROUP_ID, trainer_id: TRAINER_ID },
+    expect(groupRepository.deleteGroupTrainersByGroupId).toHaveBeenCalledWith(GROUP_ID, USER_TOKEN);
+    expect(groupRepository.insertGroupTrainers).toHaveBeenCalledWith(
+      [{ group_id: GROUP_ID, trainer_id: TRAINER_ID }],
       USER_TOKEN,
     );
   });
@@ -587,16 +590,17 @@ describe('GroupService.updateGroup', () => {
     );
   });
 
-  it('returns existingGroup directly when updatePayload is empty (only trainer_id/member_ids sent)', async () => {
+  it('returns existingGroup directly when updatePayload is empty (only trainer_ids/member_ids sent)', async () => {
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
-    jest.spyOn(userService, 'getUserById').mockResolvedValue(mockTrainerUser);
-    jest.spyOn(groupRepository, 'insertGroupTrainer').mockResolvedValue(mockGroupTrainer);
+    jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
+    jest.spyOn(groupRepository, 'deleteGroupTrainersByGroupId').mockResolvedValue(undefined);
+    jest.spyOn(groupRepository, 'insertGroupTrainers').mockResolvedValue([mockGroupTrainer]);
     const updateGroupSpy = jest.spyOn(groupRepository, 'updateGroup');
 
     const result = await groupService.updateGroup({
       groupId: GROUP_ID,
       token: USER_TOKEN,
-      data: { trainer_id: TRAINER_ID },
+      data: { trainer_ids: [TRAINER_ID] },
     });
 
     expect(updateGroupSpy).not.toHaveBeenCalled();

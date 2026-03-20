@@ -4,7 +4,7 @@ import {
 } from '@src/models/errors/auth.errors';
 import userRepository from '@src/repositories/user.repository';
 import loggingService from '@src/services/logging.service';
-import { IUser } from '@src/types/auth.types';
+import { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************
@@ -42,21 +42,37 @@ interface ICreateUserParams {
 ******************************************************************************/
 
 class UserService {
-  async getUsers(token: string): Promise<IUser[]> {
+  private async enrichWithManagedGroupIds(
+    users: IUser[],
+    token: string,
+  ): Promise<IUserWithManagedGroups[]> {
+    try {
+      const userIds = users.map((u) => u.id);
+      const managedGroupMap = await userRepository.findManagedGroupIdsByUserIds(userIds, token);
+      return users.map((user) => ({
+        ...user,
+        managed_group_ids: managedGroupMap.get(user.id) ?? [],
+      }));
+    } catch (error) {
+      return handleServiceError('UserService.enrichWithManagedGroupIds', error);
+    }
+  }
+
+  async getUsers(token: string): Promise<IUserWithManagedGroups[]> {
     try {
       const users = await userRepository.findAll(token);
-
-      return users;
+      return await this.enrichWithManagedGroupIds(users, token);
     } catch (error) {
       return handleServiceError('UserService.getUsers', error);
     }
   }
 
-  async getUserById(userId: string, token: string): Promise<IUser | null> {
+  async getUserById(userId: string, token: string): Promise<IUserWithManagedGroups | null> {
     try {
       const user = await userRepository.findById(userId, token);
-
-      return user;
+      if (!user) return null;
+      const [enriched] = await this.enrichWithManagedGroupIds([user], token);
+      return enriched;
     } catch (error) {
       return handleServiceError('UserService.getUserById', error);
     }

@@ -171,6 +171,29 @@ class GroupRepository {
     }
   }
 
+  async findGroupTrainersByGroupId(groupId: string, userToken: string): Promise<Array<{ group_id: string; trainer_id: string }>> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'group_trainers',
+        'group_id,trainer_id',
+        { group_id: groupId } as Partial<GroupTrainersRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as GroupTrainersRow[];
+      return rows.map((row) => ({
+        group_id: row.group_id,
+        trainer_id: row.trainer_id,
+      }));
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.findGroupTrainersByGroupId', error);
+    }
+  }
+
   async insertGroupTrainer(data: GroupTrainersInsert, userToken: string): Promise<IGroupTrainer> {
     try {
       const response = await supabaseService.userInsert(userToken, 'group_trainers', data);
@@ -193,6 +216,43 @@ class GroupRepository {
       return groupTrainer;
     } catch (error) {
       return handleRepositoryError('GroupRepository.insertGroupTrainer', error);
+    }
+  }
+
+  async insertGroupTrainers(data: GroupTrainersInsert[], userToken: string): Promise<IGroupTrainer[]> {
+    try {
+      const response = await supabaseService.userInsert(userToken, 'group_trainers', data);
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error('No group trainers returned after insert');
+      }
+
+      const rows = response.data as unknown as GroupTrainersRow[];
+      return rows.map((row) => ({
+        group_id: row.group_id,
+        trainer_id: row.trainer_id,
+        created_at: row.created_at,
+      }));
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.insertGroupTrainers', error);
+    }
+  }
+
+  async deleteGroupTrainersByGroupId(groupId: string, userToken: string): Promise<void> {
+    try {
+      const response = await supabaseService.userDelete(userToken, 'group_trainers', {
+        group_id: groupId,
+      } as Partial<GroupTrainersRow>);
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.deleteGroupTrainersByGroupId', error);
     }
   }
 }
