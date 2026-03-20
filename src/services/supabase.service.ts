@@ -1039,6 +1039,76 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // User RPC (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Invokes a Postgres function via RPC using a user-scoped client, enforcing RLS.
+   *
+   * @param userToken    - The user's JWT, used to build the user-scoped client.
+   * @param functionName - The name of the Postgres function to call.
+   * @param params       - Optional parameters to pass to the function.
+   */
+  async userRpc(userToken: string, functionName: string, params?: Record<string, unknown>) {
+    try {
+      loggingService.info('SupabaseService.userRpc called', { functionName });
+
+      const userClient = this.getUserClient(userToken);
+      const response = await userClient.rpc(functionName as never, params as never);
+
+      if (response.error) {
+        loggingService.error('SupabaseService.userRpc query error', response.error, { functionName });
+        throw new SupabaseServiceError('RPC query returned an error', response.error);
+      }
+
+      return response;
+    } catch (error) {
+      loggingService.error('SupabaseService.userRpc failed', error, { functionName });
+      throw new SupabaseServiceError('RPC operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Count (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns the count of rows matching an .in() filter, using a user-scoped
+   * client to enforce RLS. No rows are fetched — only the count is returned.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to query.
+   * @param column    - The column to filter on using `.in()`.
+   * @param values    - The list of values to match against.
+   */
+  async userCount<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    column: string & keyof Database['public']['Tables'][T]['Row'],
+    values: unknown[],
+  ): Promise<number> {
+    try {
+      loggingService.info('SupabaseService.userCount called', { table, column });
+
+      const userClient = this.getUserClient(userToken);
+      const { count, error } = await userClient
+        .from(table)
+        .select('*', { count: 'exact', head: true })
+        .in(column, values as never[]);
+
+      if (error) {
+        loggingService.error('SupabaseService.userCount query error', error, { table });
+        throw new SupabaseServiceError('Count query returned an error', error);
+      }
+
+      return count ?? 0;
+    } catch (error) {
+      loggingService.error('SupabaseService.userCount failed', error, { table });
+      throw new SupabaseServiceError('Count operation failed in SupabaseService', error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Delete (RLS-bypassing)
   // ---------------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 import express from 'express';
 
 import authRoutes from '@src/routes/auth.routes';
+import dashboardRoutes from '@src/routes/dashboard.routes';
 import eventRoutes from '@src/routes/event.routes';
 import groupRoutes from '@src/routes/group.routes';
 import prospectRoutes from '@src/routes/prospect.routes';
@@ -19,5 +20,6 @@ router.use('/users', userRoutes);
 router.use('/groups', groupRoutes);
 router.use('/prospects', prospectRoutes);
 router.use('/events', eventRoutes);
+router.use('/dashboard', dashboardRoutes);
 
 export default router;

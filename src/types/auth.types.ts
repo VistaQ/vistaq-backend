@@ -88,3 +88,4 @@ export type IProspect = Pick<
   | 'created_at'
   | 'updated_at'
 >;
+
