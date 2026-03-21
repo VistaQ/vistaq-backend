@@ -1,5 +1,6 @@
 import {
   EventNotFoundError,
+  InvalidAgentIdsError,
   InvalidGroupIdsError,
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
@@ -14,11 +15,15 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 interface ICreateEventParams {
   title: string;
   date: string;
-  time?: string;
+  startTime: string;
+  endTime: string;
+  status?: string;
+  type: string;
   link?: string;
   venue?: string;
   description: string;
-  groupIds: string[];
+  groupIds?: string[];
+  agentIds?: string[];
   tenantId: string;
   createdBy: string;
   createdByRole: string;
@@ -30,11 +35,16 @@ interface IUpdateEventParams {
   eventId: string;
   title?: string;
   date?: string;
-  time?: string;
+  startTime?: string;
+  endTime?: string;
+  status?: string;
+  type?: string;
   link?: string;
   venue?: string;
   description?: string;
   groupIds?: string[];
+  agentIds?: string[];
+  tenantId: string;
   role: string;
   userId: string;
   token: string;
@@ -47,34 +57,58 @@ interface IUpdateEventParams {
 class EventService {
   async createEvent(params: ICreateEventParams): Promise<IEvent> {
     try {
-      const foundGroupIds = await eventRepository.findGroupsByIds(
-        params.groupIds,
-        params.token,
-      );
-
-      if (foundGroupIds.length !== params.groupIds.length) {
-        throw new InvalidGroupIdsError();
-      }
-
-      if (params.role === 'trainer') {
-        const managedGroupIds = await eventRepository.findTrainerGroups(
-          params.createdBy,
+      if (params.groupIds) {
+        const foundGroupIds = await eventRepository.findGroupsByIds(
+          params.groupIds,
+          params.token,
         );
-        const managedSet = new Set(managedGroupIds);
 
-        if (!params.groupIds.every((id) => managedSet.has(id))) {
-          throw new UnauthorizedGroupAccessError();
+        if (foundGroupIds.length !== params.groupIds.length) {
+          throw new InvalidGroupIdsError();
+        }
+
+        if (params.role === 'trainer') {
+          const managedGroupIds = await eventRepository.findTrainerGroups(
+            params.createdBy,
+          );
+          const managedSet = new Set(managedGroupIds);
+
+          if (!params.groupIds.every((id) => managedSet.has(id))) {
+            throw new UnauthorizedGroupAccessError();
+          }
         }
       }
 
-      const dateValue = params.time
-        ? `${params.date}T${params.time}`
-        : params.date;
+      if (params.agentIds) {
+        const agentRows = await eventRepository.findUsersByIdsAndRoles(
+          params.agentIds,
+          params.token,
+        );
+
+        if (agentRows.length !== params.agentIds.length) {
+          throw new InvalidAgentIdsError();
+        }
+
+        const allowedRoles = ['agent', 'group_leader'];
+        if (agentRows.some((row) => !allowedRoles.includes(row.role))) {
+          throw new InvalidAgentIdsError();
+        }
+
+        if (agentRows.some((row) => row.tenant_id !== params.tenantId)) {
+          throw new InvalidAgentIdsError();
+        }
+      }
+
+      const startDate = `${params.date}T${params.startTime}`;
+      const endDate = `${params.date}T${params.endTime}`;
 
       const event = await eventRepository.insertEvent(
         {
           event_title: params.title,
-          date: dateValue,
+          start_date: startDate,
+          end_date: endDate,
+          status: params.status,
+          type: params.type,
           description: params.description,
           meeting_link: params.link ?? null,
           venue: params.venue ?? null,
@@ -85,18 +119,28 @@ class EventService {
         params.token,
       );
 
-      const eventGroups = params.groupIds.map((groupId) => ({
-        event_id: event.id,
-        group_id: groupId,
-      }));
+      if (params.groupIds) {
+        const eventGroups = params.groupIds.map((groupId) => ({
+          event_id: event.id,
+          group_id: groupId,
+        }));
+        await eventRepository.insertEventGroups(eventGroups, params.token);
+      }
 
-      await eventRepository.insertEventGroups(eventGroups, params.token);
+      if (params.agentIds) {
+        const eventAgents = params.agentIds.map((userId) => ({
+          event_id: event.id,
+          user_id: userId,
+        }));
+        await eventRepository.insertEventAgents(eventAgents, params.token);
+      }
 
       return event;
     } catch (error) {
       if (
         error instanceof InvalidGroupIdsError ||
-        error instanceof UnauthorizedGroupAccessError
+        error instanceof UnauthorizedGroupAccessError ||
+        error instanceof InvalidAgentIdsError
       ) {
         throw error;
       }
@@ -137,6 +181,26 @@ class EventService {
         }
       }
 
+      if (params.agentIds) {
+        const agentRows = await eventRepository.findUsersByIdsAndRoles(
+          params.agentIds,
+          params.token,
+        );
+
+        if (agentRows.length !== params.agentIds.length) {
+          throw new InvalidAgentIdsError();
+        }
+
+        const allowedRoles = ['agent', 'group_leader'];
+        if (agentRows.some((row) => !allowedRoles.includes(row.role))) {
+          throw new InvalidAgentIdsError();
+        }
+
+        if (agentRows.some((row) => row.tenant_id !== params.tenantId)) {
+          throw new InvalidAgentIdsError();
+        }
+      }
+
       const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
@@ -146,15 +210,31 @@ class EventService {
       if (params.venue !== undefined) updateData.venue = params.venue;
       if (params.description !== undefined)
         updateData.description = params.description;
+      if (params.status !== undefined) updateData.status = params.status;
+      if (params.type !== undefined) updateData.type = params.type;
 
-      if (params.date !== undefined) {
-        updateData.date =
-          params.time !== undefined
-            ? `${params.date}T${params.time}`
-            : params.date;
-      } else if (params.time !== undefined) {
-        const existingDatePart = existing.date.split('T')[0];
-        updateData.date = `${existingDatePart}T${params.time}`;
+      if (params.date !== undefined && params.startTime !== undefined) {
+        updateData.start_date = `${params.date}T${params.startTime}`;
+      } else if (params.date !== undefined) {
+        // Only date provided — preserve existing time from start_date
+        const existingTimePart = existing.start_date.split('T')[1] ?? '00:00';
+        updateData.start_date = `${params.date}T${existingTimePart}`;
+      } else if (params.startTime !== undefined) {
+        const existingDatePart = existing.start_date.split('T')[0];
+        updateData.start_date = `${existingDatePart}T${params.startTime}`;
+      }
+
+      if (params.date !== undefined && params.endTime !== undefined) {
+        updateData.end_date = `${params.date}T${params.endTime}`;
+      } else if (params.date !== undefined) {
+        // Only date provided — preserve existing time from end_date (fallback to start_date if end_date null)
+        const existingEnd = existing.end_date ?? existing.start_date;
+        const existingTimePart = existingEnd.split('T')[1] ?? '00:00';
+        updateData.end_date = `${params.date}T${existingTimePart}`;
+      } else if (params.endTime !== undefined) {
+        const existingEnd = existing.end_date ?? existing.start_date;
+        const existingDatePart = existingEnd.split('T')[0];
+        updateData.end_date = `${existingDatePart}T${params.endTime}`;
       }
 
       const updatedEvent = await eventRepository.updateEvent(
@@ -179,12 +259,25 @@ class EventService {
         await eventRepository.insertEventGroups(eventGroups, params.token);
       }
 
+      if (params.agentIds) {
+        await eventRepository.deleteEventAgentsByEventId(
+          params.eventId,
+          params.token,
+        );
+        const eventAgents = params.agentIds.map((userId) => ({
+          event_id: params.eventId,
+          user_id: userId,
+        }));
+        await eventRepository.insertEventAgents(eventAgents, params.token);
+      }
+
       return updatedEvent;
     } catch (error) {
       if (
         error instanceof EventNotFoundError ||
         error instanceof InvalidGroupIdsError ||
-        error instanceof UnauthorizedGroupAccessError
+        error instanceof UnauthorizedGroupAccessError ||
+        error instanceof InvalidAgentIdsError
       ) {
         throw error;
       }

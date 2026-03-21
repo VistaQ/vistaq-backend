@@ -31,16 +31,29 @@ export const createEventSchema = z
       .string()
       .regex(DATE_REGEX, 'Date must be in YYYY-MM-DD format')
       .refine(isNotPastDate, { message: 'Date cannot be in the past' }),
-    time: z
-      .string()
-      .regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format')
-      .optional(),
+    startTime: z.string().regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format'),
+    endTime: z.string().regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format'),
+    status: z.enum(['upcoming', 'completed', 'cancelled']).optional(),
+    type: z.enum(['Face to Face', 'Online']),
     link: z.string().url('Link must be a valid URL').optional(),
     venue: z.string().optional(),
     description: z.string().min(1),
-    groupIds: z.array(z.string().uuid()).min(1),
+    groupIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
+      .optional(),
+    agentIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
+      .optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => data.groupIds !== undefined || data.agentIds !== undefined,
+    { message: 'At least one of groupIds or agentIds must be provided' },
+  );
 
 export const updateEventSchema = z
   .object({
@@ -50,14 +63,23 @@ export const updateEventSchema = z
       .regex(DATE_REGEX, 'Date must be in YYYY-MM-DD format')
       .refine(isNotPastDate, { message: 'Date cannot be in the past' })
       .optional(),
-    time: z
-      .string()
-      .regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format')
-      .optional(),
+    startTime: z.string().regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format').optional(),
+    endTime: z.string().regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format').optional(),
+    status: z.enum(['upcoming', 'completed', 'cancelled']).optional(),
+    type: z.enum(['Face to Face', 'Online']).optional(),
     link: z.string().url('Link must be a valid URL').optional(),
     venue: z.string().optional(),
     description: z.string().min(1).optional(),
-    groupIds: z.array(z.string().uuid()).min(1).optional(),
+    groupIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
+      .optional(),
+    agentIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
+      .optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {

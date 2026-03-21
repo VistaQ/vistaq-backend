@@ -2,6 +2,7 @@ import { NextFunction, Response } from 'express';
 
 import {
   EventNotFoundError,
+  InvalidAgentIdsError,
   InvalidGroupIdsError,
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
@@ -20,11 +21,15 @@ export interface ICreateEventReq extends IBaseReq {
   body: {
     title: string;
     date: string;
-    time?: string;
+    startTime: string;
+    endTime: string;
+    status?: string;
+    type: string;
     link?: string;
     venue?: string;
     description: string;
-    groupIds: string[];
+    groupIds?: string[];
+    agentIds?: string[];
   };
 }
 
@@ -38,11 +43,15 @@ export interface IUpdateEventReq extends IBaseReq {
   body: {
     title?: string;
     date?: string;
-    time?: string;
+    startTime?: string;
+    endTime?: string;
+    status?: string;
+    type?: string;
     link?: string;
     venue?: string;
     description?: string;
     groupIds?: string[];
+    agentIds?: string[];
   };
 }
 
@@ -84,17 +93,21 @@ class EventController {
       }
 
       const token = req.headers['authorization']!.slice(7);
-      const { title, date, time, link, venue, description, groupIds } =
+      const { title, date, startTime, endTime, status, type, link, venue, description, groupIds, agentIds } =
         req.body;
 
       const event = await eventService.createEvent({
         title,
         date,
-        time,
+        startTime,
+        endTime,
+        status,
+        type,
         link,
         venue,
         description,
         groupIds,
+        agentIds,
         tenantId: req.user!.tenant_id,
         createdBy: req.user!.id,
         createdByRole: req.user!.role,
@@ -110,6 +123,10 @@ class EventController {
         return;
       }
       if (error instanceof UnauthorizedGroupAccessError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+      if (error instanceof InvalidAgentIdsError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
         return;
       }
@@ -130,18 +147,23 @@ class EventController {
 
       const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
-      const { title, date, time, link, venue, description, groupIds } =
+      const { title, date, startTime, endTime, status, type, link, venue, description, groupIds, agentIds } =
         req.body;
 
       const event = await eventService.updateEvent({
         eventId,
         title,
         date,
-        time,
+        startTime,
+        endTime,
+        status,
+        type,
         link,
         venue,
         description,
         groupIds,
+        agentIds,
+        tenantId: req.user!.tenant_id,
         role: req.user!.role,
         userId: req.user!.id,
         token,
@@ -159,6 +181,10 @@ class EventController {
         return;
       }
       if (error instanceof UnauthorizedGroupAccessError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+      if (error instanceof InvalidAgentIdsError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
         return;
       }

@@ -22,3 +22,10 @@ export class UnauthorizedGroupAccessError extends Error {
     this.name = 'UnauthorizedGroupAccessError';
   }
 }
+
+export class InvalidAgentIdsError extends Error {
+  public constructor(message = 'One or more agent IDs are invalid, not within your tenant, or do not have the required role') {
+    super(message);
+    this.name = 'InvalidAgentIdsError';
+  }
+}

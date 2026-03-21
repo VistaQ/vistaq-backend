@@ -8,6 +8,7 @@ type EventsInsert = Database['public']['Tables']['events']['Insert'];
 type EventsUpdate = Database['public']['Tables']['events']['Update'];
 type EventGroupsRow = Database['public']['Tables']['event_groups']['Row'];
 type EventGroupsInsert = Database['public']['Tables']['event_groups']['Insert'];
+type EventAgentsInsert = Database['public']['Tables']['event_agents']['Insert'];
 
 /******************************************************************************
                             EventRepository
@@ -19,7 +20,10 @@ class EventRepository {
       id: row.id,
       tenant_id: row.tenant_id,
       event_title: row.event_title,
-      date: row.date,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      status: row.status,
+      type: row.type,
       description: row.description,
       meeting_link: row.meeting_link,
       venue: row.venue,
@@ -199,6 +203,80 @@ class EventRepository {
       return rows.map((r) => r.group_id);
     } catch (error) {
       return handleRepositoryError('EventRepository.findTrainerGroups', error);
+    }
+  }
+
+  async findUsersByIdsAndRoles(
+    userIds: string[],
+    userToken: string,
+  ): Promise<{ id: string; role: string; tenant_id: string }[]> {
+    try {
+      const response = await supabaseService.userSelectIn(
+        userToken,
+        'users',
+        'id,role,tenant_id',
+        'id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as {
+        id: string;
+        role: string;
+        tenant_id: string;
+      }[];
+      return rows;
+    } catch (error) {
+      return handleRepositoryError(
+        'EventRepository.findUsersByIdsAndRoles',
+        error,
+      );
+    }
+  }
+
+  async insertEventAgents(
+    entries: EventAgentsInsert[],
+    userToken: string,
+  ): Promise<void> {
+    try {
+      const response = await supabaseService.userInsert(
+        userToken,
+        'event_agents',
+        entries,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError('EventRepository.insertEventAgents', error);
+    }
+  }
+
+  async deleteEventAgentsByEventId(
+    eventId: string,
+    userToken: string,
+  ): Promise<void> {
+    try {
+      const response = await supabaseService.userDelete(
+        userToken,
+        'event_agents',
+        { event_id: eventId } as Partial<
+          Database['public']['Tables']['event_agents']['Row']
+        >,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError(
+        'EventRepository.deleteEventAgentsByEventId',
+        error,
+      );
     }
   }
 }
