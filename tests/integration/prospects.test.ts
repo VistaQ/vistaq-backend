@@ -1,3 +1,4 @@
+import path from 'path';
 import request from 'supertest';
 
 import app from '@src/app';
@@ -7,16 +8,26 @@ import { supabaseService } from '@src/services/supabase.service';
   Integration — GET /api/prospects, GET /api/prospects/:id, PUT /api/prospects/:id
 ******************************************************************************/
 
-const TENANT_SLUG = 'demo-agency';
+// Credentials are sourced from the seed manifest written by scripts/bootstrap.js.
+// Run `npx supabase db reset && node scripts/bootstrap.js` to regenerate.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json')) as {
+  tenantSlug: string;
+  adminPassword: string;
+  password: string;
+  users: Record<string, { id: string; email: string; role: string; groupId?: string }>;
+};
 
-const AGENT_EMAIL = 'Deshaun.Bartell@hotmail.com';
-const AGENT_PASSWORD = 'Password1!';
+const TENANT_SLUG = manifest.tenantSlug;
 
-const ADMIN_EMAIL = 'jeremy.nathan1@gmail.com';
-const ADMIN_PASSWORD = 'password';
+const AGENT_EMAIL = manifest.users.mdrt_stars_agent.email;
+const AGENT_PASSWORD = manifest.password;
 
-const GROUP_LEADER_EMAIL = 'Abner_Cormier@gmail.com';
-const GROUP_LEADER_PASSWORD = 'Password1!';
+const ADMIN_EMAIL = manifest.users.admin.email;
+const ADMIN_PASSWORD = manifest.adminPassword;
+
+const GROUP_LEADER_EMAIL = manifest.users.mdrt_stars_leader.email;
+const GROUP_LEADER_PASSWORD = manifest.password;
 
 let agentToken: string | null = null;
 let adminToken: string | null = null;
