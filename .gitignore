@@ -5,3 +5,5 @@ api/index.js
 tsconfig.tsbuildinfo
 .env
 serviceAccountKey.json
+.mcp.json
+docs/
