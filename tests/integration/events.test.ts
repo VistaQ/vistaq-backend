@@ -44,6 +44,9 @@ let adminToken: string | null = null;
 let agentToken: string | null = null;
 let trainerToken: string | null = null;
 
+/** ID of the admin user — looked up in beforeAll for agentIds invalid-role tests */
+let adminUserId: string | null = null;
+
 /** ID of the agent user created in beforeAll — deleted in afterAll */
 let agentUserId: string | null = null;
 
@@ -82,7 +85,19 @@ beforeAll(async () => {
     adminToken = adminRes.body.data.token as string;
   }
 
-  // ── 2. Clean up any stale agent from a previous run ────────────────────────
+  // ── 2. Look up admin user ID (for invalid-role agentIds tests) ───────────────
+  try {
+    const { data: adminUsers } = await supabaseService.adminSelect(
+      'users',
+      'id',
+      { email: ADMIN_EMAIL, tenant_id: TENANT_ID },
+    );
+    if (adminUsers && (adminUsers as unknown as { id: string }[]).length > 0) {
+      adminUserId = (adminUsers as unknown as { id: string }[])[0].id;
+    }
+  } catch { /* best-effort */ }
+
+  // ── 3. Clean up any stale agent from a previous run ────────────────────────
   try {
     const { data: staleAgents } = await supabaseService.adminSelect(
       'users',
@@ -109,7 +124,7 @@ beforeAll(async () => {
     );
   } catch { /* best-effort */ }
 
-  // ── 3. Register an agent user for 403 / read tests ─────────────────────────
+  // ── 4. Register an agent user for 403 / read tests ─────────────────────────
   const agentRegisterRes = await request(app)
     .post('/api/auth/register')
     .set('X-Tenant-Slug', TENANT_SLUG)
@@ -139,7 +154,7 @@ beforeAll(async () => {
     }
   }
 
-  // ── 4. Clean up any stale trainer from a previous run ──────────────────────
+  // ── 5. Clean up any stale trainer from a previous run ──────────────────────
   try {
     const { data: staleTrainers } = await supabaseService.adminSelect(
       'users',
@@ -166,7 +181,7 @@ beforeAll(async () => {
     );
   } catch { /* best-effort */ }
 
-  // ── 5. Create a trainer user (admin-only POST /api/users) ───────────────────
+  // ── 6. Create a trainer user (admin-only POST /api/users) ───────────────────
   if (adminToken) {
     const createRes = await request(app)
       .post('/api/users')
@@ -200,7 +215,9 @@ beforeAll(async () => {
 ******************************************************************************/
 
 afterAll(async () => {
-  // Delete all events created during the test run
+  // Delete all events created during the test run.
+  // Cascading deletes on event_agents and event_groups are handled by the DB
+  // foreign key constraints, so no manual cleanup of those join tables is needed.
   for (const eventId of createdEventIds) {
     try {
       await supabaseService.adminDelete('events', { id: eventId });
@@ -253,7 +270,7 @@ afterAll(async () => {
 ******************************************************************************/
 
 describe('POST /api/events — happy path', () => {
-  it('returns 201 with event object when called by admin', async () => {
+  it('returns 201 with event object when called by admin (groupIds only)', async () => {
     expect(adminToken).not.toBeNull();
 
     const res = await request(app)
@@ -262,6 +279,9 @@ describe('POST /api/events — happy path', () => {
       .send({
         title: 'Integration Test Event',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Created by integration test suite',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -275,12 +295,80 @@ describe('POST /api/events — happy path', () => {
     expect(event).toHaveProperty('tenant_id');
     expect(event).toHaveProperty('event_title', 'Integration Test Event');
     expect(event).toHaveProperty('description', 'Created by integration test suite');
+    expect(event).toHaveProperty('start_date');
+    expect(event).toHaveProperty('end_date');
+    expect(event).toHaveProperty('status', 'upcoming');
+    expect(event).toHaveProperty('type', 'Face to Face');
     expect(event).toHaveProperty('created_by');
     expect(event).toHaveProperty('created_by_role');
     expect(event).toHaveProperty('created_at');
     expect(event).toHaveProperty('updated_at');
 
     // Track for cleanup
+    if (event.id) {
+      createdEventIds.push(event.id as string);
+    }
+  });
+
+  it('returns 201 with agentIds only (no groupIds) — status defaults to upcoming', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'AgentIds Only Event',
+        date: futureDate(7),
+        startTime: '10:00',
+        endTime: '12:00',
+        type: 'Face to Face',
+        description: 'Event targeting agents directly',
+        agentIds: [agentUserId!],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('success', true);
+    expect(res.body).toHaveProperty('data');
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('id');
+    expect(event).toHaveProperty('status', 'upcoming');
+    expect(event).toHaveProperty('type', 'Face to Face');
+    expect(event).toHaveProperty('start_date');
+    expect(event).toHaveProperty('end_date');
+
+    if (event.id) {
+      createdEventIds.push(event.id as string);
+    }
+  });
+
+  it('returns 201 with both groupIds and agentIds', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Groups And Agents Event',
+        date: futureDate(7),
+        startTime: '14:00',
+        endTime: '16:00',
+        type: 'Online',
+        description: 'Event targeting both groups and agents',
+        groupIds: [GROUP_ID_ALPHA],
+        agentIds: [agentUserId!],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('success', true);
+    expect(res.body).toHaveProperty('data');
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('id');
+    expect(event).toHaveProperty('type', 'Online');
+
     if (event.id) {
       createdEventIds.push(event.id as string);
     }
@@ -297,6 +385,9 @@ describe('POST /api/events — role guard', () => {
       .send({
         title: 'Agent Event Attempt',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should be rejected',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -310,6 +401,9 @@ describe('POST /api/events — role guard', () => {
       .send({
         title: 'No Auth Event',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should be rejected',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -328,6 +422,9 @@ describe('POST /api/events — validation', () => {
       .send({
         title: 'Past Event',
         date: pastDate(1),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should fail validation',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -345,6 +442,9 @@ describe('POST /api/events — validation', () => {
       .send({
         title: 'Invalid Groups Event',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should fail group validation',
         groupIds: ['00000000-0000-0000-0000-000000000099'],
       });
@@ -362,6 +462,9 @@ describe('POST /api/events — validation', () => {
       .send({
         title: 'Trainer Unmanaged Group Event',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should fail group ownership check',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -376,16 +479,37 @@ describe('POST /api/events — validation', () => {
       .post('/api/events')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
-        title: 'Missing Description Event',
+        title: 'Missing Fields Event',
         date: futureDate(7),
-        // description and groupIds omitted
+        startTime: '09:00',
+        endTime: '11:00',
+        // type and description omitted, no groupIds/agentIds
       });
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty('message', 'Validation failed');
   });
 
-  it('returns 400 when groupIds is empty', async () => {
+  it('returns 400 when both groupIds and agentIds are omitted', async () => {
+    expect(adminToken).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'No Audience Event',
+        date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
+        description: 'Should fail — at least one of groupIds or agentIds required',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('message', 'Validation failed');
+  });
+
+  it('returns 400 when groupIds is an empty array', async () => {
     expect(adminToken).not.toBeNull();
 
     const res = await request(app)
@@ -394,12 +518,96 @@ describe('POST /api/events — validation', () => {
       .send({
         title: 'No Groups Event',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should fail validation',
         groupIds: [],
       });
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty('message', 'Validation failed');
+  });
+
+  it('returns 400 for an invalid type value', async () => {
+    expect(adminToken).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Bad Type Event',
+        date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Virtual',
+        description: 'Should fail type validation',
+        groupIds: [GROUP_ID_ALPHA],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('message', 'Validation failed');
+  });
+
+  it('returns 400 when agentIds contains duplicate UUIDs', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Duplicate Agent IDs Event',
+        date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
+        description: 'Should fail — duplicate agentIds',
+        agentIds: [agentUserId!, agentUserId!],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('message', 'Validation failed');
+  });
+
+  it('returns 400 when agentIds contains a user with non-agent/non-group_leader role', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(adminUserId).not.toBeNull();
+
+    // Admin role is not agent or group_leader — service should reject with InvalidAgentIdsError
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Invalid Role Agent Event',
+        date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
+        description: 'Should fail — admin user is not agent/group_leader',
+        agentIds: [adminUserId!],
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when agentIds contains a non-existent UUID', async () => {
+    expect(adminToken).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Non-existent Agent Event',
+        date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
+        description: 'Should fail — non-existent agentId',
+        agentIds: ['00000000-0000-0000-0000-000000000099'],
+      });
+
+    expect(res.status).toBe(400);
   });
 
   it('returns 400 for unknown fields (strict mode)', async () => {
@@ -411,6 +619,9 @@ describe('POST /api/events — validation', () => {
       .send({
         title: 'Extra Field Event',
         date: futureDate(7),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Should fail strict validation',
         groupIds: [GROUP_ID_ALPHA],
         unknownField: 'value',
@@ -436,6 +647,9 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .send({
         title: 'Event To Update',
         date: futureDate(10),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Original description',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -460,6 +674,10 @@ describe('PUT /api/events/:eventId — happy path', () => {
     expect(event).toHaveProperty('id', eventId);
     expect(event).toHaveProperty('event_title', 'Updated Event Title');
     expect(event).toHaveProperty('description', 'Updated description');
+    expect(event).toHaveProperty('start_date');
+    expect(event).toHaveProperty('end_date');
+    expect(event).toHaveProperty('status');
+    expect(event).toHaveProperty('type');
   });
 
   it('returns 200 and verifies groups are replaced when groupIds is updated', async () => {
@@ -472,6 +690,9 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .send({
         title: 'Event For Group Update',
         date: futureDate(10),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Will have groups replaced',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -494,6 +715,114 @@ describe('PUT /api/events/:eventId — happy path', () => {
 
     const event = res.body.data as Record<string, unknown>;
     expect(event).toHaveProperty('id', eventId);
+  });
+
+  it('returns 200 when updating with only agentIds', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    // Create an event with groupIds first
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Event For AgentIds Update',
+        date: futureDate(10),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Online',
+        description: 'Will have agentIds added via PUT',
+        groupIds: [GROUP_ID_ALPHA],
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    createdEventIds.push(eventId);
+
+    const res = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        agentIds: [agentUserId!],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('id', eventId);
+  });
+
+  it('returns 200 when updating status to completed', async () => {
+    expect(adminToken).not.toBeNull();
+
+    // Create an event to update
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Event To Complete',
+        date: futureDate(10),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
+        description: 'Will be marked completed',
+        groupIds: [GROUP_ID_ALPHA],
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    createdEventIds.push(eventId);
+
+    const res = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        status: 'completed',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('id', eventId);
+    expect(event).toHaveProperty('status', 'completed');
+  });
+
+  it('returns 200 when updating the type field', async () => {
+    expect(adminToken).not.toBeNull();
+
+    // Create a Face to Face event
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Event To Change Type',
+        date: futureDate(10),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
+        description: 'Type will be changed to Online',
+        groupIds: [GROUP_ID_ALPHA],
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    createdEventIds.push(eventId);
+
+    const res = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        type: 'Online',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('id', eventId);
+    expect(event).toHaveProperty('type', 'Online');
   });
 });
 
@@ -542,6 +871,9 @@ describe('PUT /api/events/:eventId — validation', () => {
       .send({
         title: 'Event For Past Date Update',
         date: futureDate(10),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Face to Face',
         description: 'Will attempt a past-date update',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -603,7 +935,10 @@ describe('GET /api/events — happy path', () => {
       expect(event).toHaveProperty('id');
       expect(event).toHaveProperty('tenant_id');
       expect(event).toHaveProperty('event_title');
-      expect(event).toHaveProperty('date');
+      expect(event).toHaveProperty('start_date');
+      expect(event).toHaveProperty('end_date');
+      expect(event).toHaveProperty('status');
+      expect(event).toHaveProperty('type');
       expect(event).toHaveProperty('description');
       expect(event).toHaveProperty('created_by');
       expect(event).toHaveProperty('created_by_role');
@@ -646,6 +981,9 @@ describe('GET /api/events/:eventId — happy path', () => {
       .send({
         title: 'Event For Get By ID',
         date: futureDate(5),
+        startTime: '09:00',
+        endTime: '11:00',
+        type: 'Online',
         description: 'Fetched in GET by ID test',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -667,6 +1005,10 @@ describe('GET /api/events/:eventId — happy path', () => {
     expect(event).toHaveProperty('event_title', 'Event For Get By ID');
     expect(event).toHaveProperty('description', 'Fetched in GET by ID test');
     expect(event).toHaveProperty('tenant_id');
+    expect(event).toHaveProperty('start_date');
+    expect(event).toHaveProperty('end_date');
+    expect(event).toHaveProperty('status');
+    expect(event).toHaveProperty('type', 'Online');
     expect(event).toHaveProperty('created_by');
     expect(event).toHaveProperty('created_at');
     expect(event).toHaveProperty('updated_at');
