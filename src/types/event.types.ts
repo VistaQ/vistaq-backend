@@ -26,4 +26,7 @@ export type IEvent = Pick<
   | 'created_by_role'
   | 'created_at'
   | 'updated_at'
->;
+> & {
+  groupIds: string[];
+  agentIds: string[];
+};

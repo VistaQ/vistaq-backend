@@ -303,6 +303,9 @@ describe('POST /api/events — happy path', () => {
     expect(event).toHaveProperty('created_by_role');
     expect(event).toHaveProperty('created_at');
     expect(event).toHaveProperty('updated_at');
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.groupIds).toContain(GROUP_ID_ALPHA);
 
     // Track for cleanup
     if (event.id) {
@@ -337,6 +340,9 @@ describe('POST /api/events — happy path', () => {
     expect(event).toHaveProperty('type', 'Face to Face');
     expect(event).toHaveProperty('start_date');
     expect(event).toHaveProperty('end_date');
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.agentIds).toContain(agentUserId!);
 
     if (event.id) {
       createdEventIds.push(event.id as string);
@@ -368,6 +374,10 @@ describe('POST /api/events — happy path', () => {
     const event = res.body.data as Record<string, unknown>;
     expect(event).toHaveProperty('id');
     expect(event).toHaveProperty('type', 'Online');
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.groupIds).toContain(GROUP_ID_ALPHA);
+    expect(event.agentIds).toContain(agentUserId!);
 
     if (event.id) {
       createdEventIds.push(event.id as string);
@@ -678,6 +688,8 @@ describe('PUT /api/events/:eventId — happy path', () => {
     expect(event).toHaveProperty('end_date');
     expect(event).toHaveProperty('status');
     expect(event).toHaveProperty('type');
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(Array.isArray(event.agentIds)).toBe(true);
   });
 
   it('returns 200 and verifies groups are replaced when groupIds is updated', async () => {
@@ -715,6 +727,9 @@ describe('PUT /api/events/:eventId — happy path', () => {
 
     const event = res.body.data as Record<string, unknown>;
     expect(event).toHaveProperty('id', eventId);
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(event.groupIds).toContain(GROUP_ID_BETA);
+    expect(Array.isArray(event.agentIds)).toBe(true);
   });
 
   it('returns 200 when updating with only agentIds', async () => {
@@ -751,6 +766,9 @@ describe('PUT /api/events/:eventId — happy path', () => {
 
     const event = res.body.data as Record<string, unknown>;
     expect(event).toHaveProperty('id', eventId);
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.agentIds).toContain(agentUserId!);
   });
 
   it('returns 200 when updating status to completed', async () => {
@@ -944,6 +962,8 @@ describe('GET /api/events — happy path', () => {
       expect(event).toHaveProperty('created_by_role');
       expect(event).toHaveProperty('created_at');
       expect(event).toHaveProperty('updated_at');
+      expect(Array.isArray(event.groupIds)).toBe(true);
+      expect(Array.isArray(event.agentIds)).toBe(true);
     }
   });
 
@@ -1012,6 +1032,113 @@ describe('GET /api/events/:eventId — happy path', () => {
     expect(event).toHaveProperty('created_by');
     expect(event).toHaveProperty('created_at');
     expect(event).toHaveProperty('updated_at');
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.groupIds).toContain(GROUP_ID_ALPHA);
+  });
+
+  it('returns groupIds for event created with groupIds', async () => {
+    expect(adminToken).not.toBeNull();
+
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Event With GroupIds Only',
+        date: futureDate(5),
+        startTime: '10:00',
+        endTime: '12:00',
+        type: 'Online',
+        description: 'Testing groupIds returned on GET by ID',
+        groupIds: [GROUP_ID_ALPHA, GROUP_ID_BETA],
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    createdEventIds.push(eventId);
+
+    const res = await request(app)
+      .get(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    const event = res.body.data as Record<string, unknown>;
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect(event.groupIds).toContain(GROUP_ID_ALPHA);
+    expect(event.groupIds).toContain(GROUP_ID_BETA);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect((event.agentIds as string[]).length).toBe(0);
+  });
+
+  it('returns agentIds for event created with agentIds', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Event With AgentIds Only',
+        date: futureDate(5),
+        startTime: '13:00',
+        endTime: '15:00',
+        type: 'Face to Face',
+        description: 'Testing agentIds returned on GET by ID',
+        agentIds: [agentUserId!],
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    createdEventIds.push(eventId);
+
+    const res = await request(app)
+      .get(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    const event = res.body.data as Record<string, unknown>;
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.agentIds).toContain(agentUserId!);
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect((event.groupIds as string[]).length).toBe(0);
+  });
+
+  it('returns empty groupIds and agentIds for event with neither', async () => {
+    // This scenario is not possible via the API (validation requires at least one),
+    // so we seed the event directly via the admin client and check the GET response.
+    expect(adminToken).not.toBeNull();
+
+    // Insert an event row directly — bypasses the junction tables
+    const { data: insertedRows } = await supabaseService.adminInsert('events', {
+      tenant_id: TENANT_ID,
+      event_title: 'Bare Event No Audience',
+      start_date: futureDate(6),
+      end_date: futureDate(6),
+      type: 'Online',
+      description: 'No groups, no agents',
+      status: 'upcoming',
+      created_by: adminUserId,
+      created_by_role: 'admin',
+    });
+
+    const rows = insertedRows as unknown as { id: string }[];
+    if (!rows || rows.length === 0) {
+      // If direct insert is unavailable, skip gracefully
+      return;
+    }
+    const eventId = rows[0].id;
+    createdEventIds.push(eventId);
+
+    const res = await request(app)
+      .get(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    const event = res.body.data as Record<string, unknown>;
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect((event.groupIds as string[]).length).toBe(0);
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect((event.agentIds as string[]).length).toBe(0);
   });
 });
 

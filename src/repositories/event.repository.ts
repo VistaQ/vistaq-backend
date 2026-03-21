@@ -10,12 +10,17 @@ type EventGroupsRow = Database['public']['Tables']['event_groups']['Row'];
 type EventGroupsInsert = Database['public']['Tables']['event_groups']['Insert'];
 type EventAgentsInsert = Database['public']['Tables']['event_agents']['Insert'];
 
+type EventWithRelationsRow = EventsRow & {
+  event_groups: { group_id: string }[];
+  event_agents: { user_id: string }[];
+};
+
 /******************************************************************************
                             EventRepository
 ******************************************************************************/
 
 class EventRepository {
-  private mapRowToEvent(row: EventsRow): IEvent {
+  private mapRowWithRelationsToEvent(row: EventWithRelationsRow): IEvent {
     return {
       id: row.id,
       tenant_id: row.tenant_id,
@@ -31,6 +36,29 @@ class EventRepository {
       created_by_role: row.created_by_role,
       created_at: row.created_at,
       updated_at: row.updated_at,
+      groupIds: (row.event_groups ?? []).map((eg) => eg.group_id),
+      agentIds: (row.event_agents ?? []).map((ea) => ea.user_id),
+    };
+  }
+
+  private mapInsertRowToEvent(row: EventsRow): IEvent {
+    return {
+      id: row.id,
+      tenant_id: row.tenant_id,
+      event_title: row.event_title,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      status: row.status,
+      type: row.type,
+      description: row.description,
+      meeting_link: row.meeting_link,
+      venue: row.venue,
+      created_by: row.created_by,
+      created_by_role: row.created_by_role,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      groupIds: [],
+      agentIds: [],
     };
   }
 
@@ -47,7 +75,7 @@ class EventRepository {
       }
 
       const row = response.data[0] as unknown as EventsRow;
-      return this.mapRowToEvent(row);
+      return this.mapInsertRowToEvent(row);
     } catch (error) {
       return handleRepositoryError('EventRepository.insertEvent', error);
     }
@@ -55,14 +83,18 @@ class EventRepository {
 
   async findAll(userToken: string): Promise<IEvent[]> {
     try {
-      const response = await supabaseService.userSelect(userToken, 'events', '*');
+      const response = await supabaseService.userSelect(
+        userToken,
+        'events',
+        '*, event_groups(group_id), event_agents(user_id)',
+      );
 
       if (response.error) {
         throw new Error(response.error.message);
       }
 
-      const rows = (response.data ?? []) as unknown as EventsRow[];
-      return rows.map((row) => this.mapRowToEvent(row));
+      const rows = (response.data ?? []) as unknown as EventWithRelationsRow[];
+      return rows.map((row) => this.mapRowWithRelationsToEvent(row));
     } catch (error) {
       return handleRepositoryError('EventRepository.findAll', error);
     }
@@ -73,7 +105,7 @@ class EventRepository {
       const response = await supabaseService.userSelect(
         userToken,
         'events',
-        '*',
+        '*, event_groups(group_id), event_agents(user_id)',
         { id: eventId } as Partial<EventsRow>,
       );
 
@@ -85,8 +117,8 @@ class EventRepository {
         return null;
       }
 
-      const row = response.data[0] as unknown as EventsRow;
-      return this.mapRowToEvent(row);
+      const row = response.data[0] as unknown as EventWithRelationsRow;
+      return this.mapRowWithRelationsToEvent(row);
     } catch (error) {
       return handleRepositoryError('EventRepository.findById', error);
     }
@@ -114,7 +146,7 @@ class EventRepository {
       }
 
       const row = response.data[0] as unknown as EventsRow;
-      return this.mapRowToEvent(row);
+      return this.mapInsertRowToEvent(row);
     } catch (error) {
       return handleRepositoryError('EventRepository.updateEvent', error);
     }

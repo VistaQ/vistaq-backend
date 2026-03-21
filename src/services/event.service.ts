@@ -135,7 +135,13 @@ class EventService {
         await eventRepository.insertEventAgents(eventAgents, params.token);
       }
 
-      return event;
+      const finalEvent = await eventRepository.findById(event.id, params.token);
+
+      if (!finalEvent) {
+        throw new EventNotFoundError();
+      }
+
+      return finalEvent;
     } catch (error) {
       if (
         error instanceof InvalidGroupIdsError ||
@@ -271,7 +277,16 @@ class EventService {
         await eventRepository.insertEventAgents(eventAgents, params.token);
       }
 
-      return updatedEvent;
+      const finalEvent = await eventRepository.findById(
+        params.eventId,
+        params.token,
+      );
+
+      if (!finalEvent) {
+        throw new EventNotFoundError();
+      }
+
+      return finalEvent;
     } catch (error) {
       if (
         error instanceof EventNotFoundError ||

@@ -6,7 +6,7 @@ RETURNS JSON AS $$
 SELECT json_build_object(
   'prospects', COUNT(*) FILTER (WHERE created_at >= period_start),
   'appointments_set', COUNT(*) FILTER (
-    WHERE appointment_status IN ('scheduled', 'rescheduled')
+    WHERE appointment_status IN ('scheduled', 'rescheduled', 'done')
     AND appointment_date >= period_start::DATE
   ),
   'sales_meetings', COUNT(*) FILTER (
