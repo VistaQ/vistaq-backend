@@ -1871,9 +1871,10 @@ paths:
         Creates a new event scoped to the authenticated user's tenant. The caller
         must supply a valid Bearer token belonging to a user with the `admin`,
         `master_trainer`, `trainer`, or `group_leader` role — `agent` users will
-        receive a 403. For `trainer` users, all supplied `groupIds` must belong to
-        groups that the trainer manages via the `group_trainers` junction table;
-        any unmanaged group IDs result in a 400.
+        receive a 403. At least one of `groupIds` or `agentIds` must be provided.
+        For `trainer` users, all supplied `groupIds` must belong to groups that
+        the trainer manages via the `group_trainers` junction table; any unmanaged
+        group IDs result in a 400.
       security:
         - bearerAuth: []
       requestBody:
@@ -1885,8 +1886,10 @@ paths:
               required:
                 - title
                 - date
+                - startTime
+                - endTime
+                - type
                 - description
-                - groupIds
               additionalProperties: false
               properties:
                 title:
@@ -1901,10 +1904,27 @@ paths:
                     Date of the event in YYYY-MM-DD format. Cannot be a past
                     date.
                   example: '2026-04-15'
-                time:
+                startTime:
                   type: string
-                  description: Time of the event in HH:MM 24-hour format (optional).
+                  description: Start time of the event in HH:MM 24-hour format.
                   example: '09:00'
+                endTime:
+                  type: string
+                  description: End time of the event in HH:MM 24-hour format.
+                  example: '11:00'
+                status:
+                  type: string
+                  enum: [upcoming, completed, cancelled]
+                  description: >
+                    Status of the event. Defaults to `upcoming` when not supplied.
+                  example: upcoming
+                type:
+                  type: string
+                  enum: ['Face to Face', 'Online']
+                  description: >
+                    Delivery format of the event. Must be either `Face to Face`
+                    or `Online`.
+                  example: 'Face to Face'
                 link:
                   type: string
                   format: uri
@@ -1926,11 +1946,25 @@ paths:
                     type: string
                     format: uuid
                   description: >
-                    Array of group UUIDs the event is associated with. At least
-                    one must be provided. For trainers, all IDs must be groups
-                    they manage.
+                    Array of group UUIDs the event is associated with. Must
+                    contain at least one UUID if provided, and must not contain
+                    duplicates. For trainers, all IDs must be groups they manage.
+                    At least one of `groupIds` or `agentIds` must be supplied.
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                agentIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    Array of agent user UUIDs to assign individually to the
+                    event via the `event_agents` junction table. Must contain at
+                    least one UUID if provided, and must not contain duplicates.
+                    At least one of `groupIds` or `agentIds` must be supplied.
+                  example:
+                    - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
         '201':
           description: Event created successfully
@@ -1948,9 +1982,9 @@ paths:
         '400':
           description: >
             Bad request. Returned when the request body fails validation (e.g.
-            `title` is missing, `date` is in the past, `groupIds` is empty, a
-            supplied group UUID does not exist, or a trainer supplies a group
-            they do not manage).
+            `title` is missing, `date` is in the past, neither `groupIds` nor
+            `agentIds` is provided, a supplied group UUID does not exist, or a
+            trainer supplies a group they do not manage).
           content:
             application/json:
               schema:
@@ -1966,6 +2000,14 @@ paths:
                       - code: custom
                         message: Date cannot be in the past
                         path: [date]
+                missingGroupsOrAgents:
+                  summary: Neither groupIds nor agentIds provided
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: custom
+                        message: At least one of groupIds or agentIds must be provided
+                        path: []
                 invalidGroupIds:
                   summary: One or more group IDs do not exist
                   value:
@@ -2110,8 +2152,10 @@ paths:
         `trainer`, or `group_leader` role — `agent` users will receive a 403.
         All request body fields are optional, but at least one must be provided.
         When `groupIds` is supplied, the existing `event_groups` entries for this
-        event are replaced entirely. For `trainer` users, all supplied `groupIds`
-        must belong to groups they manage; any unmanaged group IDs result in a 400.
+        event are replaced entirely. When `agentIds` is supplied, the existing
+        `event_agents` entries for this event are replaced entirely. For `trainer`
+        users, all supplied `groupIds` must belong to groups they manage; any
+        unmanaged group IDs result in a 400.
       security:
         - bearerAuth: []
       parameters:
@@ -2143,10 +2187,24 @@ paths:
                     Updated date of the event in YYYY-MM-DD format. Cannot be a
                     past date.
                   example: '2026-04-20'
-                time:
+                startTime:
                   type: string
-                  description: Updated time of the event in HH:MM 24-hour format.
+                  description: Updated start time of the event in HH:MM 24-hour format.
                   example: '10:00'
+                endTime:
+                  type: string
+                  description: Updated end time of the event in HH:MM 24-hour format.
+                  example: '12:00'
+                status:
+                  type: string
+                  enum: [upcoming, completed, cancelled]
+                  description: Updated status of the event.
+                  example: completed
+                type:
+                  type: string
+                  enum: ['Face to Face', 'Online']
+                  description: Updated delivery format of the event.
+                  example: Online
                 link:
                   type: string
                   format: uri
@@ -2170,9 +2228,22 @@ paths:
                   description: >
                     Replacement set of group UUIDs for the event. Existing
                     `event_groups` entries are deleted and replaced with these
-                    values. For trainers, all IDs must be groups they manage.
+                    values. Must not contain duplicates. For trainers, all IDs
+                    must be groups they manage.
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                agentIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    Replacement set of agent user UUIDs for the event. Existing
+                    `event_agents` entries are deleted and replaced with these
+                    values. Must not contain duplicates.
+                  example:
+                    - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
         '200':
           description: Event updated successfully
@@ -2633,7 +2704,9 @@ components:
         - id
         - tenant_id
         - event_title
-        - date
+        - start_date
+        - status
+        - type
         - created_at
         - updated_at
       properties:
@@ -2648,14 +2721,33 @@ components:
         event_title:
           type: string
           example: Q2 Training Kickoff
-        date:
+        start_date:
           type: string
           format: date-time
           description: >
-            Date (and optional time) of the event stored as a TIMESTAMPTZ value.
-            When a `time` is supplied on create/update it is combined with the
-            `date` into a single ISO 8601 timestamp.
+            Start date and time of the event stored as a TIMESTAMPTZ value.
+            Formed by combining the `date` and `startTime` fields supplied on
+            create/update into a single ISO 8601 timestamp.
           example: '2026-04-15T09:00:00.000Z'
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            End date and time of the event stored as a TIMESTAMPTZ value.
+            Formed by combining the `date` and `endTime` fields supplied on
+            create/update into a single ISO 8601 timestamp.
+          example: '2026-04-15T11:00:00.000Z'
+        status:
+          type: string
+          enum: [upcoming, completed, cancelled]
+          description: Current status of the event. Defaults to `upcoming` on creation.
+          example: upcoming
+        type:
+          type: string
+          enum: ['Face to Face', 'Online']
+          description: Delivery format of the event.
+          example: 'Face to Face'
         description:
           type: string
           nullable: true
