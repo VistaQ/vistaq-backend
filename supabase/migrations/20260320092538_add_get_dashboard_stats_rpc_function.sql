@@ -31,5 +31,9 @@ WHERE (
   OR agent_id IN (
     SELECT id FROM public.users WHERE group_id = p_group_id
   )
+)
+AND (
+  (auth.jwt() ->> 'app_role') NOT IN ('group_leader', 'agent')
+  OR agent_id = (auth.jwt() ->> 'user_id')::UUID
 );
 $$ LANGUAGE sql STABLE SECURITY INVOKER;
