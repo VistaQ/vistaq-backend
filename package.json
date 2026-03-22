@@ -8,6 +8,7 @@
     "dev": "node -r dotenv/config ./node_modules/.bin/ts-node ./src/main",
     "dev:watch": "nodemon --exec \"npm run dev\" --watch ./src --ext .ts",
     "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
     "bootstrap": "supabase db reset && node scripts/bootstrap.js",
     "lint": "eslint .",
     "format": "prettier --write .",
