@@ -148,12 +148,23 @@ class GroupRepository {
 
   async getGroupDetailStats(token: string, periodStart: string, groupId: string) {
     try {
-      return await supabaseService.userRpc(token, 'get_dashboard_stats', {
-        period_start: periodStart,
+      return await supabaseService.userRpc(token, 'get_group_detail_stats', {
         p_group_id: groupId,
+        period_start: periodStart,
       });
     } catch (error) {
       return handleRepositoryError('GroupRepository.getGroupDetailStats', error);
+    }
+  }
+
+  async getAgentStats(token: string, groupId: string, periodStart: string) {
+    try {
+      return await supabaseService.userRpc(token, 'get_agent_stats', {
+        p_group_id: groupId,
+        period_start: periodStart,
+      });
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.getAgentStats', error);
     }
   }
 

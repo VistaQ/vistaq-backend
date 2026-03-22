@@ -2494,8 +2494,12 @@ components:
       required:
         - group_id
         - group_name
+        - ytd_prospects
+        - ytd_appointments_set
+        - ytd_sales_meetings
         - ytd_sales_noc
         - ytd_sales_ace
+        - ytd_agents_count
       properties:
         group_id:
           type: string
@@ -2504,14 +2508,32 @@ components:
         group_name:
           type: string
           example: Alpha Team
+        ytd_prospects:
+          type: integer
+          description: Total prospects created for the group year-to-date.
+          example: 45
+        ytd_appointments_set:
+          type: integer
+          description: >
+            Prospects whose appointment status is `scheduled` or `rescheduled`
+            for the group year-to-date.
+          example: 30
+        ytd_sales_meetings:
+          type: integer
+          description: Prospects whose appointment status is `done` for the group year-to-date.
+          example: 20
         ytd_sales_noc:
           type: integer
           description: Total number of successful sales (NOC) for the group year-to-date.
-          example: 25
+          example: 12
         ytd_sales_ace:
           type: number
           description: Total sum of products sold amounts (ACE) for the group year-to-date.
-          example: 380000
+          example: 180000
+        ytd_agents_count:
+          type: integer
+          description: Current total count of agents belonging to the group.
+          example: 8
 
     GroupDetailStatsObject:
       type: object
@@ -2520,6 +2542,7 @@ components:
         - group_name
         - ytd
         - mtd
+        - agents
       properties:
         group_id:
           type: string
@@ -2532,6 +2555,11 @@ components:
           $ref: '#/components/schemas/DashboardStatsPeriod'
         mtd:
           $ref: '#/components/schemas/GroupDetailStatsMtdPeriod'
+        agents:
+          type: array
+          description: List of individual agent statistics for the group.
+          items:
+            $ref: '#/components/schemas/AgentStats'
 
     GroupDetailStatsMtdPeriod:
       type: object
@@ -2570,6 +2598,76 @@ components:
             Total sum of products sold amounts for successful sales in the
             period.
           example: 30000
+
+    AgentStats:
+      type: object
+      description: >
+        YTD and MTD statistics for an individual agent within a group.
+      required:
+        - agent_id
+        - agent_name
+        - ytd_prospects
+        - ytd_appointments_set
+        - ytd_sales_meetings
+        - ytd_sales_noc
+        - ytd_sales_ace
+        - mtd_prospects
+        - mtd_appointments_set
+        - mtd_sales_meetings
+        - mtd_sales_noc
+        - mtd_sales_ace
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        agent_name:
+          type: string
+          example: John Doe
+        ytd_prospects:
+          type: integer
+          description: Total prospects created by the agent year-to-date.
+          example: 15
+        ytd_appointments_set:
+          type: integer
+          description: >
+            Prospects whose appointment status is `scheduled` or `rescheduled`
+            for the agent year-to-date.
+          example: 10
+        ytd_sales_meetings:
+          type: integer
+          description: Prospects whose appointment status is `done` for the agent year-to-date.
+          example: 7
+        ytd_sales_noc:
+          type: integer
+          description: Prospects with a successful sales outcome for the agent year-to-date.
+          example: 4
+        ytd_sales_ace:
+          type: number
+          description: Total sum of products sold amounts for the agent year-to-date.
+          example: 60000
+        mtd_prospects:
+          type: integer
+          description: Total prospects created by the agent month-to-date.
+          example: 2
+        mtd_appointments_set:
+          type: integer
+          description: >
+            Prospects whose appointment status is `scheduled` or `rescheduled`
+            for the agent month-to-date.
+          example: 1
+        mtd_sales_meetings:
+          type: integer
+          description: Prospects whose appointment status is `done` for the agent month-to-date.
+          example: 1
+        mtd_sales_noc:
+          type: integer
+          description: Prospects with a successful sales outcome for the agent month-to-date.
+          example: 1
+        mtd_sales_ace:
+          type: number
+          description: Total sum of products sold amounts for the agent month-to-date.
+          example: 10000
 
     ProspectObject:
       type: object
