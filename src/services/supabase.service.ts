@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 import { SupabaseServiceError } from '@src/models/errors/supabase.error';
@@ -37,10 +38,36 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   private getUserClient(userToken: string): SupabaseClient<Database> {
-    return createClient<Database>(EnvVars.SupabaseUrl, EnvVars.SupabaseAnonKey, {
-      global: { headers: { Authorization: `Bearer ${userToken}` } },
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    return createClient<Database>(
+      EnvVars.SupabaseUrl,
+      EnvVars.SupabaseAnonKey,
+      {
+        global: { headers: { Authorization: `Bearer ${userToken}` } },
+        auth: { autoRefreshToken: false, persistSession: false },
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Span Helper
+  // ---------------------------------------------------------------------------
+
+  private async withSpan<R>(
+    op: string,
+    name: string,
+    attributes: Record<string, string | number | undefined>,
+    fn: () => Promise<R>,
+  ): Promise<R> {
+    return Sentry.startSpan(
+      {
+        op,
+        name,
+        attributes: Object.fromEntries(
+          Object.entries(attributes).filter(([, v]) => v !== undefined),
+        ),
+      },
+      fn,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -59,39 +86,56 @@ class SupabaseService {
     columns = '*',
     filters?: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.select called', { table, columns });
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.select',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'anon',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.select called', {
+            table,
+            columns,
+          });
 
-      let query = this.client.from(table).select(columns);
+          let query = this.client.from(table).select(columns);
 
-      if (filters) {
-        for (const column of Object.keys(filters) as (string &
-          keyof typeof filters)[]) {
-          const value = filters[column];
-          if (value !== undefined) {
-            query = query.eq(column, value as never);
+          if (filters) {
+            for (const column of Object.keys(filters) as (string &
+              keyof typeof filters)[]) {
+              const value = filters[column];
+              if (value !== undefined) {
+                query = query.eq(column, value as never);
+              }
+            }
           }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.select query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.select failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Select operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.select query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.select failed', error, { table });
-      throw new SupabaseServiceError(
-        'Select operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -110,30 +154,44 @@ class SupabaseService {
       | Database['public']['Tables'][T]['Insert']
       | Database['public']['Tables'][T]['Insert'][],
   ) {
-    try {
-      loggingService.info('SupabaseService.insert called', { table });
+    return this.withSpan(
+      'db.insert',
+      'SupabaseService.insert',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'insert',
+        'db.collection.name': table as string,
+        'db.client_type': 'anon',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.insert called', { table });
 
-      const response = await this.client
-        .from(table)
-        .insert(values as never)
-        .select();
+          const response = await this.client
+            .from(table)
+            .insert(values as never)
+            .select();
 
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.insert query error',
-          response.error,
-          { table },
-        );
-      }
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.insert query error',
+              response.error,
+              { table },
+            );
+          }
 
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.insert failed', error, { table });
-      throw new SupabaseServiceError(
-        'Insert operation failed in SupabaseService',
-        error,
-      );
-    }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.insert failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Insert operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -152,46 +210,60 @@ class SupabaseService {
     values: Database['public']['Tables'][T]['Update'],
     filters: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.update called', { table });
+    return this.withSpan(
+      'db.update',
+      'SupabaseService.update',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'update',
+        'db.collection.name': table as string,
+        'db.client_type': 'anon',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.update called', { table });
 
-      if (Object.keys(filters).length === 0) {
-        throw new SupabaseServiceError(
-          'Update operation rejected: filters must not be empty. Refusing to update all rows.',
-        );
-      }
+          if (Object.keys(filters).length === 0) {
+            throw new SupabaseServiceError(
+              'Update operation rejected: filters must not be empty. Refusing to update all rows.',
+            );
+          }
 
-      let query = this.client
-        .from(table)
-        .update(values as never)
-        .select();
+          let query = this.client
+            .from(table)
+            .update(values as never)
+            .select();
 
-      for (const column of Object.keys(filters) as (string &
-        keyof typeof filters)[]) {
-        const value = filters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.update query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.update failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Update operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.update query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.update failed', error, { table });
-      throw new SupabaseServiceError(
-        'Update operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -208,43 +280,57 @@ class SupabaseService {
     table: T,
     filters: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.delete called', { table });
+    return this.withSpan(
+      'db.delete',
+      'SupabaseService.delete',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'delete',
+        'db.collection.name': table as string,
+        'db.client_type': 'anon',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.delete called', { table });
 
-      if (Object.keys(filters).length === 0) {
-        throw new SupabaseServiceError(
-          'Delete operation rejected: filters must not be empty. Refusing to delete all rows.',
-        );
-      }
+          if (Object.keys(filters).length === 0) {
+            throw new SupabaseServiceError(
+              'Delete operation rejected: filters must not be empty. Refusing to delete all rows.',
+            );
+          }
 
-      let query = this.client.from(table).delete().select();
+          let query = this.client.from(table).delete().select();
 
-      for (const column of Object.keys(filters) as (string &
-        keyof typeof filters)[]) {
-        const value = filters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.delete query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.delete failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Delete operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.delete query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.delete failed', error, { table });
-      throw new SupabaseServiceError(
-        'Delete operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -263,44 +349,56 @@ class SupabaseService {
     columns = '*',
     filters?: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.adminSelect called', {
-        table,
-        columns,
-      });
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelect',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelect called', {
+            table,
+            columns,
+          });
 
-      let query = this.adminClient.from(table).select(columns);
+          let query = this.adminClient.from(table).select(columns);
 
-      if (filters) {
-        for (const column of Object.keys(filters) as (string &
-          keyof typeof filters)[]) {
-          const value = filters[column];
-          if (value !== undefined) {
-            query = query.eq(column, value as never);
+          if (filters) {
+            for (const column of Object.keys(filters) as (string &
+              keyof typeof filters)[]) {
+              const value = filters[column];
+              if (value !== undefined) {
+                query = query.eq(column, value as never);
+              }
+            }
           }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelect query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminSelect failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Admin select operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.adminSelect query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.adminSelect failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'Admin select operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -319,32 +417,44 @@ class SupabaseService {
       | Database['public']['Tables'][T]['Insert']
       | Database['public']['Tables'][T]['Insert'][],
   ) {
-    try {
-      loggingService.info('SupabaseService.adminInsert called', { table });
+    return this.withSpan(
+      'db.insert',
+      'SupabaseService.adminInsert',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'insert',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminInsert called', { table });
 
-      const response = await this.adminClient
-        .from(table)
-        .insert(values as never)
-        .select();
+          const response = await this.adminClient
+            .from(table)
+            .insert(values as never)
+            .select();
 
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.adminInsert query error',
-          response.error,
-          { table },
-        );
-      }
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminInsert query error',
+              response.error,
+              { table },
+            );
+          }
 
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.adminInsert failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'Admin insert operation failed in SupabaseService',
-        error,
-      );
-    }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminInsert failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Admin insert operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -364,48 +474,60 @@ class SupabaseService {
     values: Database['public']['Tables'][T]['Update'],
     filters: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.adminUpdate called', { table });
+    return this.withSpan(
+      'db.update',
+      'SupabaseService.adminUpdate',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'update',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminUpdate called', { table });
 
-      if (Object.keys(filters).length === 0) {
-        throw new SupabaseServiceError(
-          'Admin update operation rejected: filters must not be empty. Refusing to update all rows.',
-        );
-      }
+          if (Object.keys(filters).length === 0) {
+            throw new SupabaseServiceError(
+              'Admin update operation rejected: filters must not be empty. Refusing to update all rows.',
+            );
+          }
 
-      let query = this.adminClient
-        .from(table)
-        .update(values as never)
-        .select();
+          let query = this.adminClient
+            .from(table)
+            .update(values as never)
+            .select();
 
-      for (const column of Object.keys(filters) as (string &
-        keyof typeof filters)[]) {
-        const value = filters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminUpdate query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminUpdate failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Admin update operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.adminUpdate query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.adminUpdate failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'Admin update operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -413,42 +535,52 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   async adminCreateAuthUser(email: string, password: string) {
-    try {
-      loggingService.info('SupabaseService.adminCreateAuthUser called', {
-        email,
-      });
+    return this.withSpan(
+      'auth.create_user',
+      'SupabaseService.adminCreateAuthUser',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'create_user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminCreateAuthUser called', {
+            email,
+          });
 
-      const { data, error } = await this.adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-      });
+          const { data, error } = await this.adminClient.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+          });
 
-      if (error) {
-        loggingService.error(
-          'SupabaseService.adminCreateAuthUser error',
-          error,
-          { email },
-        );
-        throw new Error(error.message);
-      }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.adminCreateAuthUser error',
+              error,
+              { email },
+            );
+            throw new Error(error.message);
+          }
 
-      if (!data.user) {
-        throw new Error('No auth user returned after creation');
-      }
+          if (!data.user) {
+            throw new Error('No auth user returned after creation');
+          }
 
-      return data.user;
-    } catch (error) {
-      loggingService.error(
-        'SupabaseService.adminCreateAuthUser failed',
-        error,
-        { email },
-      );
-      throw new SupabaseServiceError(
-        'Admin create auth user failed in SupabaseService',
-        error,
-      );
-    }
+          return data.user;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminCreateAuthUser failed',
+            error,
+            { email },
+          );
+          throw new SupabaseServiceError(
+            'Admin create auth user failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -456,35 +588,48 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   async adminUpdateAuthUserEmail(userId: string, email: string): Promise<void> {
-    try {
-      loggingService.info('SupabaseService.adminUpdateAuthUserEmail called', {
-        userId,
-      });
+    return this.withSpan(
+      'auth.update_user',
+      'SupabaseService.adminUpdateAuthUserEmail',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'update_user_email',
+      },
+      async () => {
+        try {
+          loggingService.info(
+            'SupabaseService.adminUpdateAuthUserEmail called',
+            {
+              userId,
+            },
+          );
 
-      const { error } = await this.adminClient.auth.admin.updateUserById(
-        userId,
-        { email },
-      );
+          const { error } = await this.adminClient.auth.admin.updateUserById(
+            userId,
+            { email },
+          );
 
-      if (error) {
-        loggingService.error(
-          'SupabaseService.adminUpdateAuthUserEmail error',
-          error,
-          { userId },
-        );
-        throw new Error(error.message);
-      }
-    } catch (error) {
-      loggingService.error(
-        'SupabaseService.adminUpdateAuthUserEmail failed',
-        error,
-        { userId },
-      );
-      throw new SupabaseServiceError(
-        'Admin update auth user email failed in SupabaseService',
-        error,
-      );
-    }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.adminUpdateAuthUserEmail error',
+              error,
+              { userId },
+            );
+            throw new Error(error.message);
+          }
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminUpdateAuthUserEmail failed',
+            error,
+            { userId },
+          );
+          throw new SupabaseServiceError(
+            'Admin update auth user email failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -492,32 +637,43 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   async adminDeleteAuthUser(userId: string) {
-    try {
-      loggingService.info('SupabaseService.adminDeleteAuthUser called', {
-        userId,
-      });
+    return this.withSpan(
+      'auth.delete_user',
+      'SupabaseService.adminDeleteAuthUser',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'delete_user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminDeleteAuthUser called', {
+            userId,
+          });
 
-      const { error } = await this.adminClient.auth.admin.deleteUser(userId);
+          const { error } =
+            await this.adminClient.auth.admin.deleteUser(userId);
 
-      if (error) {
-        loggingService.error(
-          'SupabaseService.adminDeleteAuthUser error',
-          error,
-          { userId },
-        );
-        throw new Error(error.message);
-      }
-    } catch (error) {
-      loggingService.error(
-        'SupabaseService.adminDeleteAuthUser failed',
-        error,
-        { userId },
-      );
-      throw new SupabaseServiceError(
-        'Admin delete auth user failed in SupabaseService',
-        error,
-      );
-    }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.adminDeleteAuthUser error',
+              error,
+              { userId },
+            );
+            throw new Error(error.message);
+          }
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminDeleteAuthUser failed',
+            error,
+            { userId },
+          );
+          throw new SupabaseServiceError(
+            'Admin delete auth user failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -528,21 +684,35 @@ class SupabaseService {
     email: string,
     password: string,
   ): Promise<ReturnType<typeof this.client.auth.signInWithPassword>> {
-    try {
-      loggingService.info('SupabaseService.signInWithPassword called', {
-        email,
-      });
+    return this.withSpan(
+      'auth.sign_in',
+      'SupabaseService.signInWithPassword',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'sign_in',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.signInWithPassword called', {
+            email,
+          });
 
-      return await this.client.auth.signInWithPassword({ email, password });
-    } catch (error) {
-      loggingService.error('SupabaseService.signInWithPassword failed', error, {
-        email,
-      });
-      throw new SupabaseServiceError(
-        'Sign in with password failed in SupabaseService',
-        error,
-      );
-    }
+          return await this.client.auth.signInWithPassword({ email, password });
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.signInWithPassword failed',
+            error,
+            {
+              email,
+            },
+          );
+          throw new SupabaseServiceError(
+            'Sign in with password failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -550,22 +720,32 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   async signOut(token: string): Promise<void> {
-    try {
-      loggingService.info('SupabaseService.signOut called');
+    return this.withSpan(
+      'auth.sign_out',
+      'SupabaseService.signOut',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'sign_out',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.signOut called');
 
-      const { error } = await this.adminClient.auth.admin.signOut(token);
+          const { error } = await this.adminClient.auth.admin.signOut(token);
 
-      if (error) {
-        loggingService.error('SupabaseService.signOut error', error);
-        throw new Error(error.message);
-      }
-    } catch (error) {
-      loggingService.error('SupabaseService.signOut failed', error);
-      throw new SupabaseServiceError(
-        'Sign out failed in SupabaseService',
-        error,
-      );
-    }
+          if (error) {
+            loggingService.error('SupabaseService.signOut error', error);
+            throw new Error(error.message);
+          }
+        } catch (error) {
+          loggingService.error('SupabaseService.signOut failed', error);
+          throw new SupabaseServiceError(
+            'Sign out failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -580,53 +760,76 @@ class SupabaseService {
    * @param token - The raw JWT from the Authorization header.
    */
   async verifyToken(token: string) {
-    try {
-      loggingService.info('SupabaseService.verifyToken called');
+    return this.withSpan(
+      'auth.get_user',
+      'SupabaseService.verifyToken',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'verify_token',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.verifyToken called');
 
-      return await this.adminClient.auth.getUser(token);
-    } catch (error) {
-      loggingService.error('SupabaseService.verifyToken failed', error);
-      throw new SupabaseServiceError(
-        'Token verification failed in SupabaseService',
-        error,
-      );
-    }
+          return await this.adminClient.auth.getUser(token);
+        } catch (error) {
+          loggingService.error('SupabaseService.verifyToken failed', error);
+          throw new SupabaseServiceError(
+            'Token verification failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
   // Auth — Reset Password For Email
   // ---------------------------------------------------------------------------
 
-  async resetPasswordForEmail(email: string, redirectTo: string): Promise<void> {
-    try {
-      loggingService.info('SupabaseService.resetPasswordForEmail called', {
-        email,
-      });
+  async resetPasswordForEmail(
+    email: string,
+    redirectTo: string,
+  ): Promise<void> {
+    return this.withSpan(
+      'auth.reset_password',
+      'SupabaseService.resetPasswordForEmail',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'reset_password',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.resetPasswordForEmail called', {
+            email,
+          });
 
-      const { error } = await this.adminClient.auth.resetPasswordForEmail(
-        email,
-        { redirectTo },
-      );
+          const { error } = await this.adminClient.auth.resetPasswordForEmail(
+            email,
+            { redirectTo },
+          );
 
-      if (error) {
-        loggingService.error(
-          'SupabaseService.resetPasswordForEmail error',
-          error,
-          { email },
-        );
-        throw new Error(error.message);
-      }
-    } catch (error) {
-      loggingService.error(
-        'SupabaseService.resetPasswordForEmail failed',
-        error,
-        { email },
-      );
-      throw new SupabaseServiceError(
-        'Reset password for email failed in SupabaseService',
-        error,
-      );
-    }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.resetPasswordForEmail error',
+              error,
+              { email },
+            );
+            throw new Error(error.message);
+          }
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.resetPasswordForEmail failed',
+            error,
+            { email },
+          );
+          throw new SupabaseServiceError(
+            'Reset password for email failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -634,70 +837,96 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   async getUserIdFromToken(token: string): Promise<{ userId: string }> {
-    try {
-      loggingService.info('SupabaseService.getUserIdFromToken called');
+    return this.withSpan(
+      'auth.get_user',
+      'SupabaseService.getUserIdFromToken',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'get_user_id',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.getUserIdFromToken called');
 
-      const { data, error } = await this.adminClient.auth.getUser(token);
+          const { data, error } = await this.adminClient.auth.getUser(token);
 
-      if (error) {
-        loggingService.error(
-          'SupabaseService.getUserIdFromToken error',
-          error,
-        );
-        throw new Error(error.message);
-      }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.getUserIdFromToken error',
+              error,
+            );
+            throw new Error(error.message);
+          }
 
-      if (!data.user) {
-        throw new Error('No user returned for token');
-      }
+          if (!data.user) {
+            throw new Error('No user returned for token');
+          }
 
-      return { userId: data.user.id };
-    } catch (error) {
-      loggingService.error(
-        'SupabaseService.getUserIdFromToken failed',
-        error,
-      );
-      throw new SupabaseServiceError(
-        'Get user ID from token failed in SupabaseService',
-        error,
-      );
-    }
+          return { userId: data.user.id };
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.getUserIdFromToken failed',
+            error,
+          );
+          throw new SupabaseServiceError(
+            'Get user ID from token failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
   // Auth — Admin Update Auth User Password
   // ---------------------------------------------------------------------------
 
-  async adminUpdateAuthUserPassword(userId: string, password: string): Promise<void> {
-    try {
-      loggingService.info('SupabaseService.adminUpdateAuthUserPassword called', {
-        userId,
-      });
+  async adminUpdateAuthUserPassword(
+    userId: string,
+    password: string,
+  ): Promise<void> {
+    return this.withSpan(
+      'auth.update_user',
+      'SupabaseService.adminUpdateAuthUserPassword',
+      {
+        'auth.system': 'supabase',
+        'auth.operation': 'update_user_password',
+      },
+      async () => {
+        try {
+          loggingService.info(
+            'SupabaseService.adminUpdateAuthUserPassword called',
+            {
+              userId,
+            },
+          );
 
-      const { error } = await this.adminClient.auth.admin.updateUserById(
-        userId,
-        { password },
-      );
+          const { error } = await this.adminClient.auth.admin.updateUserById(
+            userId,
+            { password },
+          );
 
-      if (error) {
-        loggingService.error(
-          'SupabaseService.adminUpdateAuthUserPassword error',
-          error,
-          { userId },
-        );
-        throw new Error(error.message);
-      }
-    } catch (error) {
-      loggingService.error(
-        'SupabaseService.adminUpdateAuthUserPassword failed',
-        error,
-        { userId },
-      );
-      throw new SupabaseServiceError(
-        'Admin update auth user password failed in SupabaseService',
-        error,
-      );
-    }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.adminUpdateAuthUserPassword error',
+              error,
+              { userId },
+            );
+            throw new Error(error.message);
+          }
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminUpdateAuthUserPassword failed',
+            error,
+            { userId },
+          );
+          throw new SupabaseServiceError(
+            'Admin update auth user password failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -718,45 +947,57 @@ class SupabaseService {
     columns = '*',
     filters?: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.userSelect called', {
-        table,
-        columns,
-      });
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.userSelect',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userSelect called', {
+            table,
+            columns,
+          });
 
-      const userClient = this.getUserClient(userToken);
-      let query = userClient.from(table).select(columns);
+          const userClient = this.getUserClient(userToken);
+          let query = userClient.from(table).select(columns);
 
-      if (filters) {
-        for (const column of Object.keys(filters) as (string &
-          keyof typeof filters)[]) {
-          const value = filters[column];
-          if (value !== undefined) {
-            query = query.eq(column, value as never);
+          if (filters) {
+            for (const column of Object.keys(filters) as (string &
+              keyof typeof filters)[]) {
+              const value = filters[column];
+              if (value !== undefined) {
+                query = query.eq(column, value as never);
+              }
+            }
           }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userSelect query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userSelect failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User select operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.userSelect query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userSelect failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'User select operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -777,33 +1018,45 @@ class SupabaseService {
       | Database['public']['Tables'][T]['Insert']
       | Database['public']['Tables'][T]['Insert'][],
   ) {
-    try {
-      loggingService.info('SupabaseService.userInsert called', { table });
+    return this.withSpan(
+      'db.insert',
+      'SupabaseService.userInsert',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'insert',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userInsert called', { table });
 
-      const userClient = this.getUserClient(userToken);
-      const response = await userClient
-        .from(table)
-        .insert(values as never)
-        .select();
+          const userClient = this.getUserClient(userToken);
+          const response = await userClient
+            .from(table)
+            .insert(values as never)
+            .select();
 
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.userInsert query error',
-          response.error,
-          { table },
-        );
-      }
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userInsert query error',
+              response.error,
+              { table },
+            );
+          }
 
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userInsert failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'User insert operation failed in SupabaseService',
-        error,
-      );
-    }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userInsert failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User insert operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -825,46 +1078,61 @@ class SupabaseService {
     values: Database['public']['Tables'][T]['Update'],
     filters: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.userUpdate called', { table });
+    return this.withSpan(
+      'db.update',
+      'SupabaseService.userUpdate',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'update',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userUpdate called', { table });
 
-      if (Object.keys(filters).length === 0) {
-        throw new SupabaseServiceError(
-          'User update operation rejected: filters must not be empty. Refusing to update all rows.',
-        );
-      }
+          if (Object.keys(filters).length === 0) {
+            throw new SupabaseServiceError(
+              'User update operation rejected: filters must not be empty. Refusing to update all rows.',
+            );
+          }
 
-      const userClient = this.getUserClient(userToken);
-      let query = userClient.from(table).update(values as never).select();
+          const userClient = this.getUserClient(userToken);
+          let query = userClient
+            .from(table)
+            .update(values as never)
+            .select();
 
-      for (const column of Object.keys(filters) as (string &
-        keyof typeof filters)[]) {
-        const value = filters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userUpdate query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userUpdate failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User update operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.userUpdate query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userUpdate failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'User update operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -888,37 +1156,49 @@ class SupabaseService {
     column: string & keyof Database['public']['Tables'][T]['Row'],
     values: unknown[],
   ) {
-    try {
-      loggingService.info('SupabaseService.userSelectIn called', {
-        table,
-        columns,
-        column,
-      });
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.userSelectIn',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userSelectIn called', {
+            table,
+            columns,
+            column,
+          });
 
-      const userClient = this.getUserClient(userToken);
-      const response = await userClient
-        .from(table)
-        .select(columns)
-        .in(column, values as never[]);
+          const userClient = this.getUserClient(userToken);
+          const response = await userClient
+            .from(table)
+            .select(columns)
+            .in(column, values as never[]);
 
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.userSelectIn query error',
-          response.error,
-          { table },
-        );
-      }
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userSelectIn query error',
+              response.error,
+              { table },
+            );
+          }
 
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userSelectIn failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'User select in operation failed in SupabaseService',
-        error,
-      );
-    }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userSelectIn failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User select in operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -942,43 +1222,55 @@ class SupabaseService {
     column: string & keyof Database['public']['Tables'][T]['Row'],
     ids: unknown[],
   ) {
-    try {
-      loggingService.info('SupabaseService.userUpdateIn called', {
-        table,
-        column,
-      });
+    return this.withSpan(
+      'db.update',
+      'SupabaseService.userUpdateIn',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'update',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userUpdateIn called', {
+            table,
+            column,
+          });
 
-      if (ids.length === 0) {
-        throw new SupabaseServiceError(
-          'User update-in operation rejected: ids must not be empty. Refusing to update all rows.',
-        );
-      }
+          if (ids.length === 0) {
+            throw new SupabaseServiceError(
+              'User update-in operation rejected: ids must not be empty. Refusing to update all rows.',
+            );
+          }
 
-      const userClient = this.getUserClient(userToken);
-      const response = await userClient
-        .from(table)
-        .update(values as never)
-        .in(column, ids as never[])
-        .select();
+          const userClient = this.getUserClient(userToken);
+          const response = await userClient
+            .from(table)
+            .update(values as never)
+            .in(column, ids as never[])
+            .select();
 
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.userUpdateIn query error',
-          response.error,
-          { table },
-        );
-      }
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userUpdateIn query error',
+              response.error,
+              { table },
+            );
+          }
 
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userUpdateIn failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'User update in operation failed in SupabaseService',
-        error,
-      );
-    }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userUpdateIn failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User update in operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -998,44 +1290,58 @@ class SupabaseService {
     table: T,
     filters: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.userDelete called', { table });
+    return this.withSpan(
+      'db.delete',
+      'SupabaseService.userDelete',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'delete',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userDelete called', { table });
 
-      if (Object.keys(filters).length === 0) {
-        throw new SupabaseServiceError(
-          'User delete operation rejected: filters must not be empty. Refusing to delete all rows.',
-        );
-      }
+          if (Object.keys(filters).length === 0) {
+            throw new SupabaseServiceError(
+              'User delete operation rejected: filters must not be empty. Refusing to delete all rows.',
+            );
+          }
 
-      const userClient = this.getUserClient(userToken);
-      let query = userClient.from(table).delete().select();
+          const userClient = this.getUserClient(userToken);
+          let query = userClient.from(table).delete().select();
 
-      for (const column of Object.keys(filters) as (string &
-        keyof typeof filters)[]) {
-        const value = filters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userDelete query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userDelete failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User delete operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.userDelete query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userDelete failed', error, { table });
-      throw new SupabaseServiceError(
-        'User delete operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1049,23 +1355,56 @@ class SupabaseService {
    * @param functionName - The name of the Postgres function to call.
    * @param params       - Optional parameters to pass to the function.
    */
-  async userRpc(userToken: string, functionName: string, params?: Record<string, unknown>) {
-    try {
-      loggingService.info('SupabaseService.userRpc called', { functionName });
+  async userRpc(
+    userToken: string,
+    functionName: string,
+    params?: Record<string, unknown>,
+  ) {
+    return this.withSpan(
+      'db.rpc',
+      'SupabaseService.userRpc',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'rpc',
+        'db.collection.name': functionName as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userRpc called', {
+            functionName,
+          });
 
-      const userClient = this.getUserClient(userToken);
-      const response = await userClient.rpc(functionName as never, params as never);
+          const userClient = this.getUserClient(userToken);
+          const response = await userClient.rpc(
+            functionName as never,
+            params as never,
+          );
 
-      if (response.error) {
-        loggingService.error('SupabaseService.userRpc query error', response.error, { functionName });
-        throw new SupabaseServiceError('RPC query returned an error', response.error);
-      }
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userRpc query error',
+              response.error,
+              { functionName },
+            );
+            throw new SupabaseServiceError(
+              'RPC query returned an error',
+              response.error,
+            );
+          }
 
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.userRpc failed', error, { functionName });
-      throw new SupabaseServiceError('RPC operation failed in SupabaseService', error);
-    }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userRpc failed', error, {
+            functionName,
+          });
+          throw new SupabaseServiceError(
+            'RPC operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1087,25 +1426,52 @@ class SupabaseService {
     column: string & keyof Database['public']['Tables'][T]['Row'],
     values: unknown[],
   ): Promise<number> {
-    try {
-      loggingService.info('SupabaseService.userCount called', { table, column });
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.userCount',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userCount called', {
+            table,
+            column,
+          });
 
-      const userClient = this.getUserClient(userToken);
-      const { count, error } = await userClient
-        .from(table)
-        .select('*', { count: 'exact', head: true })
-        .in(column, values as never[]);
+          const userClient = this.getUserClient(userToken);
+          const { count, error } = await userClient
+            .from(table)
+            .select('*', { count: 'exact', head: true })
+            .in(column, values as never[]);
 
-      if (error) {
-        loggingService.error('SupabaseService.userCount query error', error, { table });
-        throw new SupabaseServiceError('Count query returned an error', error);
-      }
+          if (error) {
+            loggingService.error(
+              'SupabaseService.userCount query error',
+              error,
+              { table },
+            );
+            throw new SupabaseServiceError(
+              'Count query returned an error',
+              error,
+            );
+          }
 
-      return count ?? 0;
-    } catch (error) {
-      loggingService.error('SupabaseService.userCount failed', error, { table });
-      throw new SupabaseServiceError('Count operation failed in SupabaseService', error);
-    }
+          return count ?? 0;
+        } catch (error) {
+          loggingService.error('SupabaseService.userCount failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Count operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1129,35 +1495,65 @@ class SupabaseService {
     inColumn: string & keyof Database['public']['Tables'][T]['Row'],
     inValues: unknown[],
   ): Promise<number> {
-    try {
-      loggingService.info('SupabaseService.userCountWithEq called', { table, inColumn });
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.userCountWithEq',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userCountWithEq called', {
+            table,
+            inColumn,
+          });
 
-      const userClient = this.getUserClient(userToken);
-      let query = userClient
-        .from(table)
-        .select('*', { count: 'exact', head: true });
+          const userClient = this.getUserClient(userToken);
+          let query = userClient
+            .from(table)
+            .select('*', { count: 'exact', head: true });
 
-      for (const column of Object.keys(eqFilters) as (string & keyof typeof eqFilters)[]) {
-        const value = eqFilters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(eqFilters) as (string &
+            keyof typeof eqFilters)[]) {
+            const value = eqFilters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          query = query.in(inColumn, inValues as never[]);
+
+          const { count, error } = await query;
+
+          if (error) {
+            loggingService.error(
+              'SupabaseService.userCountWithEq query error',
+              error,
+              { table },
+            );
+            throw new SupabaseServiceError(
+              'Count with eq query returned an error',
+              error,
+            );
+          }
+
+          return count ?? 0;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.userCountWithEq failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Count with eq operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      query = query.in(inColumn, inValues as never[]);
-
-      const { count, error } = await query;
-
-      if (error) {
-        loggingService.error('SupabaseService.userCountWithEq query error', error, { table });
-        throw new SupabaseServiceError('Count with eq query returned an error', error);
-      }
-
-      return count ?? 0;
-    } catch (error) {
-      loggingService.error('SupabaseService.userCountWithEq failed', error, { table });
-      throw new SupabaseServiceError('Count with eq operation failed in SupabaseService', error);
-    }
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1175,45 +1571,57 @@ class SupabaseService {
     table: T,
     filters: Partial<Database['public']['Tables'][T]['Row']>,
   ) {
-    try {
-      loggingService.info('SupabaseService.adminDelete called', { table });
+    return this.withSpan(
+      'db.delete',
+      'SupabaseService.adminDelete',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'delete',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminDelete called', { table });
 
-      if (Object.keys(filters).length === 0) {
-        throw new SupabaseServiceError(
-          'Admin delete operation rejected: filters must not be empty. Refusing to delete all rows.',
-        );
-      }
+          if (Object.keys(filters).length === 0) {
+            throw new SupabaseServiceError(
+              'Admin delete operation rejected: filters must not be empty. Refusing to delete all rows.',
+            );
+          }
 
-      let query = this.adminClient.from(table).delete().select();
+          let query = this.adminClient.from(table).delete().select();
 
-      for (const column of Object.keys(filters) as (string &
-        keyof typeof filters)[]) {
-        const value = filters[column];
-        if (value !== undefined) {
-          query = query.eq(column, value as never);
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminDelete query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminDelete failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Admin delete operation failed in SupabaseService',
+            error,
+          );
         }
-      }
-
-      const response = await query;
-
-      if (response.error) {
-        loggingService.error(
-          'SupabaseService.adminDelete query error',
-          response.error,
-          { table },
-        );
-      }
-
-      return response;
-    } catch (error) {
-      loggingService.error('SupabaseService.adminDelete failed', error, {
-        table,
-      });
-      throw new SupabaseServiceError(
-        'Admin delete operation failed in SupabaseService',
-        error,
-      );
-    }
+      },
+    );
   }
 }
 
