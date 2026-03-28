@@ -2,6 +2,7 @@ import express from 'express';
 
 import authRoutes from '@src/routes/auth.routes';
 import dashboardRoutes from '@src/routes/dashboard.routes';
+import leaderboardRoutes from '@src/routes/leaderboard.routes';
 import eventRoutes from '@src/routes/event.routes';
 import groupRoutes from '@src/routes/group.routes';
 import pointConfigRoutes from '@src/routes/pointConfig.routes';
@@ -23,5 +24,6 @@ router.use('/prospects', prospectRoutes);
 router.use('/events', eventRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/point-configs', pointConfigRoutes);
+router.use('/leaderboard', leaderboardRoutes);
 
 export default router;
