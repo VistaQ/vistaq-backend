@@ -26,6 +26,8 @@ tags:
     description: Dashboard statistics endpoints
   - name: Point Configs
     description: Gamification point configuration endpoints
+  - name: Leaderboard
+    description: Gamification leaderboard endpoints
 
 ################################################################################
 # Paths
@@ -2598,6 +2600,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # LEADERBOARD
+  ##############################################################################
+
+  /leaderboard:
+    get:
+      tags: [Leaderboard]
+      summary: Get leaderboard
+      description: >
+        Returns a ranked list of agents sorted by total points in descending
+        order. Results are scoped to the authenticated user's tenant. Returns
+        an empty array if no agents have accumulated points. All authenticated
+        roles may access this endpoint.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Leaderboard retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LeaderboardEntryObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -3218,6 +3266,42 @@ components:
           type: string
           format: date-time
           example: '2026-03-29T08:00:00.000Z'
+
+    LeaderboardEntryObject:
+      type: object
+      required:
+        - agent_id
+        - agent_name
+        - agent_code
+        - group_id
+        - group_name
+        - total_points
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          example: d4e5f6a7-b8c9-0123-def0-234567890123
+        agent_name:
+          type: string
+          example: John Doe
+        agent_code:
+          type: string
+          example: AGT001
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the group the agent belongs to. Null if not in a group.
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        group_name:
+          type: string
+          nullable: true
+          description: Name of the group the agent belongs to. Null if not in a group.
+          example: Alpha Team
+        total_points:
+          type: integer
+          description: Cumulative points earned by the agent.
+          example: 150
 
     ErrorResponse:
       type: object
