@@ -24,6 +24,8 @@ tags:
     description: Event management endpoints
   - name: Dashboard
     description: Dashboard statistics endpoints
+  - name: Point Configs
+    description: Gamification point configuration endpoints
 
 ################################################################################
 # Paths
@@ -2368,6 +2370,234 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # POINT CONFIGS
+  ##############################################################################
+
+  /point-configs:
+    post:
+      tags: [Point Configs]
+      summary: Create a point config
+      description: >
+        Creates a new gamification point configuration for the authenticated
+        user's tenant. Each activity type may have at most one configuration
+        per tenant — attempting to create a duplicate returns HTTP 400.
+        Restricted to the `admin` role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - activity
+                - points
+              properties:
+                activity:
+                  type: string
+                  enum:
+                    - prospect_created
+                    - appointment_set
+                    - sales_meeting
+                    - sale_closed
+                  description: The activity type to configure points for.
+                  example: prospect_created
+                points:
+                  type: integer
+                  minimum: 1
+                  description: Points awarded for the activity. Must be a positive integer.
+                  example: 10
+      responses:
+        '201':
+          description: Point config created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PointConfigObject'
+        '400':
+          description: >
+            Bad request. Returned when request body fails validation or a config
+            already exists for the given activity within this tenant.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+              examples:
+                duplicate:
+                  summary: Config already exists for this activity
+                  value:
+                    message: Config already exists for this activity.
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: invalid_enum_value
+                        path: [activity]
+                        message: >-
+                          Invalid enum value. Expected 'prospect_created' |
+                          'appointment_set' | 'sales_meeting' | 'sale_closed'
+        '403':
+          description: Forbidden. The authenticated user does not have the `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Point Configs]
+      summary: List all point configs
+      description: >
+        Returns all gamification point configurations for the authenticated
+        user's tenant. Returns an empty array if no configurations have been
+        set up yet. Restricted to the `admin` role.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Point configs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PointConfigObject'
+        '403':
+          description: Forbidden. The authenticated user does not have the `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /point-configs/{activity}:
+    put:
+      tags: [Point Configs]
+      summary: Update a point config by activity
+      description: >
+        Updates the points value for an existing gamification point
+        configuration identified by its `activity` path parameter. Returns
+        HTTP 404 if no configuration exists for the given activity within the
+        tenant. Restricted to the `admin` role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: activity
+          in: path
+          required: true
+          description: >
+            The activity type whose point config should be updated. Must be one
+            of the four valid activity values.
+          schema:
+            type: string
+            enum:
+              - prospect_created
+              - appointment_set
+              - sales_meeting
+              - sale_closed
+            example: prospect_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - points
+              properties:
+                points:
+                  type: integer
+                  minimum: 1
+                  description: New points value for the activity. Must be a positive integer.
+                  example: 20
+      responses:
+        '200':
+          description: Point config updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PointConfigObject'
+        '400':
+          description: Bad request. Returned when request body fails validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: number
+                    inclusive: true
+                    exact: false
+                    message: Points must be greater than 0
+                    path: [points]
+        '403':
+          description: Forbidden. The authenticated user does not have the `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. No point configuration exists for the given activity
+            within the authenticated user's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Point config not found.
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -2950,6 +3180,44 @@ components:
             Current total count of users with the `agent` or `group_leader`
             role. This value is the same for both YTD and MTD periods.
           example: 24
+
+    PointConfigObject:
+      type: object
+      required:
+        - id
+        - activity
+        - points
+        - tenant_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        activity:
+          type: string
+          enum:
+            - prospect_created
+            - appointment_set
+            - sales_meeting
+            - sale_closed
+          example: prospect_created
+        points:
+          type: integer
+          example: 10
+        tenant_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-29T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-29T08:00:00.000Z'
 
     ErrorResponse:
       type: object
