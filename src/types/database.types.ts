@@ -543,6 +543,7 @@ export type Database = {
     }
     Functions: {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      get_agent_leaderboard: { Args: { p_tenant_id: string }; Returns: Json }
       get_agent_stats: {
         Args: { p_group_id: string; period_start: string }
         Returns: Json

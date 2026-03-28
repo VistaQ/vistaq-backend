@@ -1408,6 +1408,63 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // Admin RPC (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Invokes a Postgres function via RPC using the service role client, bypassing RLS.
+   *
+   * @param functionName - The name of the Postgres function to call.
+   * @param params       - Optional parameters to pass to the function.
+   */
+  async adminRpc(functionName: string, params?: Record<string, unknown>) {
+    return this.withSpan(
+      'db.rpc',
+      'SupabaseService.adminRpc',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'rpc',
+        'db.collection.name': functionName as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminRpc called', {
+            functionName,
+          });
+
+          const response = await this.adminClient.rpc(
+            functionName as never,
+            params as never,
+          );
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminRpc query error',
+              response.error,
+              { functionName },
+            );
+            throw new SupabaseServiceError(
+              'RPC query returned an error',
+              response.error,
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminRpc failed', error, {
+            functionName,
+          });
+          throw new SupabaseServiceError(
+            'Admin RPC operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // User Count (RLS-enforced)
   // ---------------------------------------------------------------------------
 
