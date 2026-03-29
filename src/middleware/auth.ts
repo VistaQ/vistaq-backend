@@ -72,7 +72,7 @@ export async function authenticate(
       return;
     }
 
-    req.user = { id: userId, tenant_id: tenantId, role, group_id: groupId as string | null };
+    req.user = { id: userId, tenant_id: tenantId, role, group_id: groupId };
 
     // Set Sentry user context so every event in this request is tagged
     Sentry.setUser({ id: userId, tenant_id: tenantId, role });

@@ -22,8 +22,8 @@ const EnvVars = {
   SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   FrontendResetPasswordUrl: process.env.FRONTEND_RESET_PASSWORD_URL || '',
   SentryDsn: process.env.SENTRY_DSN || '',
-  // eslint-disable-next-line no-process-env
   VercelEnv: process.env.VERCEL_ENV || '',
+  DisableHelmet: process.env.DISABLE_HELMET === 'true',
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {

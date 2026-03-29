@@ -1366,7 +1366,7 @@ class SupabaseService {
       {
         'db.system': 'supabase',
         'db.operation': 'rpc',
-        'db.collection.name': functionName as string,
+        'db.collection.name': functionName,
         'db.client_type': 'user',
       },
       async () => {
@@ -1424,7 +1424,7 @@ class SupabaseService {
       {
         'db.system': 'supabase',
         'db.operation': 'rpc',
-        'db.collection.name': functionName as string,
+        'db.collection.name': functionName,
         'db.client_type': 'admin',
       },
       async () => {
