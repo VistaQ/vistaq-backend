@@ -11,7 +11,7 @@
  * Always returns HTTP 200 so the webhook does not retry on failure.
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "@supabase/supabase-js";
 
 // ---------- Types ----------
 
