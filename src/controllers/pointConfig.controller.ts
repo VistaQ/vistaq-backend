@@ -14,6 +14,7 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 export interface ICreatePointConfigReq extends IBaseReq {
   body: {
     activity: string;
+    category: string;
     points: number;
   };
 }
@@ -33,6 +34,7 @@ export interface IUpdatePointConfigReq extends IBaseReq {
     activity: string;
   };
   body: {
+    category?: string;
     points: number;
   };
 }
@@ -59,10 +61,11 @@ class PointConfigController {
       }
 
       const token = req.headers['authorization']!.slice(7);
-      const { activity, points } = req.body;
+      const { activity, category, points } = req.body;
 
       const pointConfig = await pointConfigService.createPointConfig({
         activity,
+        category,
         points,
         tenantId: req.user!.tenant_id,
         token,
@@ -129,10 +132,11 @@ class PointConfigController {
 
       const token = req.headers['authorization']!.slice(7);
       const { activity } = req.params;
-      const { points } = req.body;
+      const { category, points } = req.body;
 
       const updatedConfig = await pointConfigService.updatePointConfig({
         activity,
+        category,
         points,
         tenantId: req.user!.tenant_id,
         token,

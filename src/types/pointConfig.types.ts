@@ -4,5 +4,5 @@ type PointConfigsRow = Database['public']['Tables']['point_configs']['Row'];
 
 export type IPointConfig = Pick<
   PointConfigsRow,
-  'id' | 'activity' | 'points' | 'tenant_id' | 'created_at' | 'updated_at'
+  'id' | 'activity' | 'category' | 'points' | 'tenant_id' | 'created_at' | 'updated_at'
 >;

@@ -16,6 +16,7 @@ class PointConfigRepository {
     return {
       id: row.id,
       activity: row.activity,
+      category: row.category,
       points: row.points,
       tenant_id: row.tenant_id,
       created_at: row.created_at,

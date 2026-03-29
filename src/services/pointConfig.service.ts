@@ -10,6 +10,7 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 interface ICreatePointConfigParams {
   activity: string;
+  category: string;
   points: number;
   tenantId: string;
   token: string;
@@ -17,6 +18,7 @@ interface ICreatePointConfigParams {
 
 interface IUpdatePointConfigParams {
   activity: string;
+  category?: string;
   points: number;
   tenantId: string;
   token: string;
@@ -46,6 +48,7 @@ class PointConfigService {
         {
           tenant_id: params.tenantId,
           activity: params.activity,
+          category: params.category,
           points: params.points,
         },
         params.token,
@@ -82,10 +85,16 @@ class PointConfigService {
         );
       }
 
+      const updateData: { points: number; updated_at: string; category?: string } = {
+        points: params.points,
+        updated_at: new Date().toISOString(),
+      };
+      if (params.category !== undefined) updateData.category = params.category;
+
       const updated = await pointConfigRepository.updatePointConfig(
         params.tenantId,
         params.activity,
-        { points: params.points, updated_at: new Date().toISOString() },
+        updateData,
         params.token,
       );
 

@@ -286,6 +286,7 @@ export type Database = {
       point_configs: {
         Row: {
           activity: string
+          category: string
           created_at: string
           id: string
           points: number
@@ -294,6 +295,7 @@ export type Database = {
         }
         Insert: {
           activity: string
+          category: string
           created_at?: string
           id?: string
           points: number
@@ -302,6 +304,7 @@ export type Database = {
         }
         Update: {
           activity?: string
+          category?: string
           created_at?: string
           id?: string
           points?: number
@@ -324,6 +327,8 @@ export type Database = {
           created_at: string
           id: string
           points: number
+          subject_id: string | null
+          subject_type: string | null
           tenant_id: string
           user_id: string
         }
@@ -332,6 +337,8 @@ export type Database = {
           created_at?: string
           id?: string
           points: number
+          subject_id?: string | null
+          subject_type?: string | null
           tenant_id: string
           user_id: string
         }
@@ -340,6 +347,8 @@ export type Database = {
           created_at?: string
           id?: string
           points?: number
+          subject_id?: string | null
+          subject_type?: string | null
           tenant_id?: string
           user_id?: string
         }
@@ -692,3 +701,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

@@ -23,12 +23,14 @@ const VALID_ACTIVITIES = [
 export const createPointConfigSchema = z
   .object({
     activity: z.enum(VALID_ACTIVITIES),
+    category: z.enum(['prospect', 'coaching']),
     points: z.number().int().gt(0),
   })
   .strict();
 
 export const updatePointConfigSchema = z
   .object({
+    category: z.enum(['prospect', 'coaching']).optional(),
     points: z.number().int().gt(0),
   })
   .strict();
