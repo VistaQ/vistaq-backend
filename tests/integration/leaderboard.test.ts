@@ -9,7 +9,6 @@ import app from '@src/app';
 
 // Credentials are sourced from the seed manifest written by scripts/bootstrap.js.
 // Run `npx supabase db reset && node scripts/bootstrap.js` to regenerate.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json')) as {
   tenantSlug: string;
   adminPassword: string;

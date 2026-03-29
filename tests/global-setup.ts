@@ -7,7 +7,7 @@ import * as path from 'path';
  * Loads .env from the project root, then sets NODE_ENV to "test" so the app
  * suppresses helmet and skips pino-pretty transport configuration during tests.
  */
-export default async function globalSetup(): Promise<void> {
+export default function globalSetup(): void {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
   process.env.NODE_ENV = 'test';
 }
