@@ -39,6 +39,16 @@ type Activity =
   | "sales_meeting"
   | "sale_closed";
 
+// ---------- Subject mapping ----------
+
+const ACTIVITY_SUBJECT_MAP: Record<string, string> = {
+  prospect_created: "prospect",
+  appointment_set: "prospect",
+  sales_meeting: "prospect",
+  sale_closed: "prospect",
+  coaching_session_attended: "event",
+};
+
 // ---------- Activity detection ----------
 
 function detectActivity(payload: WebhookPayload): Activity | null {
@@ -112,7 +122,15 @@ Deno.serve(async (req) => {
       return ok;
     }
 
-    // Step 4: Insert point transaction
+    // Step 4: Resolve subject
+    const subjectType = ACTIVITY_SUBJECT_MAP[activity];
+    if (!subjectType) {
+      console.warn(`[award-points] Unrecognised activity "${activity}" — skipping insert`);
+      return ok;
+    }
+    const subjectId = payload.record.id;
+
+    // Step 5: Insert point transaction
     const { error: insertError } = await supabase
       .from("point_transactions")
       .insert({
@@ -120,6 +138,8 @@ Deno.serve(async (req) => {
         user_id: userId,
         activity,
         points: config.points,
+        subject_id: subjectId,
+        subject_type: subjectType,
       });
 
     if (insertError) {
