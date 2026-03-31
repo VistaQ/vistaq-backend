@@ -3493,6 +3493,7 @@ components:
         - appointments_completed
         - sales_meetings
         - sales_successful
+        - total_points
       properties:
         user_id:
           type: string
@@ -3531,6 +3532,10 @@ components:
           type: integer
           description: Number of successful sales closed in the period.
           example: 2
+        total_points:
+          type: integer
+          description: Pre-computed total points for this agent in the period, calculated server-side using the tenant's current point config.
+          example: 26
 
     LeaderboardStatsGroupObject:
       type: object
@@ -3543,6 +3548,7 @@ components:
         - appointments_completed
         - sales_meetings
         - sales_successful
+        - total_points
       properties:
         group_id:
           type: string
@@ -3576,6 +3582,10 @@ components:
           type: integer
           description: Aggregated number of successful sales closed by all group members in the period.
           example: 8
+        total_points:
+          type: integer
+          description: Aggregated total points for all members of this group in the period, calculated server-side using the tenant's current point config.
+          example: 52
 
     AgentPointsObject:
       type: object
