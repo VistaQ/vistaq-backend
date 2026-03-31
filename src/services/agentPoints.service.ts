@@ -12,7 +12,7 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 
 const ACTION_DISPLAY_NAMES: Record<string, string> = {
   prospect_created: 'Added Prospect',
-  appointment_set: 'Appointment Completed',
+  appointment_set: 'Appointment Set',
   sales_meeting: 'Sales Meeting Completed',
   sale_closed: 'Sale: Successful',
 };
@@ -54,7 +54,9 @@ class AgentPointsService {
       };
 
       const totalCount = breakdownRaw.total_count ?? 0;
-      const breakdown: IAgentPointsBreakdownItem[] = (breakdownRaw.rows ?? []).map((row) => ({
+      const breakdown: IAgentPointsBreakdownItem[] = (
+        breakdownRaw.rows ?? []
+      ).map((row) => ({
         id: row.id,
         date: row.date,
         category: row.category,
@@ -65,7 +67,11 @@ class AgentPointsService {
 
       return {
         total: summary.total ?? 0,
-        categories: summary.categories ?? { prospect: 0, sales: 0, coaching: 0 },
+        categories: summary.categories ?? {
+          prospect: 0,
+          sales: 0,
+          coaching: 0,
+        },
         breakdown,
         pagination: {
           page,

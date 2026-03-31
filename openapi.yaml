@@ -3638,7 +3638,7 @@ components:
         action:
           type: string
           description: Human-readable label for the action that triggered the award.
-          example: Appointment Completed
+          example: Appointment Set
         subject:
           type: string
           description: Name of the subject (e.g. prospect) associated with the action.
