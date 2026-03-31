@@ -59,7 +59,10 @@ function detectActivity(payload: WebhookPayload): Activity | null {
   if (payload.type === "UPDATE" && payload.old_record) {
     const { record, old_record } = payload;
 
-    if (!old_record.appointment_date && record.appointment_date) {
+    if (
+      old_record.appointment_status !== "scheduled" &&
+      record.appointment_status === "scheduled"
+    ) {
       return "appointment_set";
     }
 
@@ -130,7 +133,25 @@ Deno.serve(async (req) => {
     }
     const subjectId = payload.record.id;
 
-    // Step 5: Insert point transaction
+    // Step 5: Idempotency — skip if points already awarded for this subject + activity
+    const { data: existing, error: existingError } = await supabase
+      .from("point_transactions")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("subject_id", subjectId)
+      .eq("activity", activity)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error("[award-points] Error checking existing transaction:", existingError);
+      return ok;
+    }
+
+    if (existing) {
+      return ok;
+    }
+
+    // Step 6: Insert point transaction
     const { error: insertError } = await supabase
       .from("point_transactions")
       .insert({
