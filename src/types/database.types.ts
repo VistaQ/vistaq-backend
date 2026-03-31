@@ -553,6 +553,15 @@ export type Database = {
     Functions: {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_agent_leaderboard: { Args: { p_tenant_id: string }; Returns: Json }
+      get_agent_points_breakdown: {
+        Args: { p_tenant_id: string; p_user_id: string; p_limit: number; p_offset: number }
+        Returns: Json
+      }
+      get_agent_points_summary: {
+        Args: { p_tenant_id: string; p_user_id: string }
+        Returns: Json
+      }
+      get_leaderboard_stats: { Args: { p_tenant_id: string; p_period_start: string }; Returns: Json }
       get_agent_stats: {
         Args: { p_group_id: string; period_start: string }
         Returns: Json
