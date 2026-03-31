@@ -23,6 +23,7 @@ export type ILeaderboardStatsIndividual = {
   appointments_completed: number;
   sales_meetings: number;
   sales_successful: number;
+  total_points: number;
 };
 
 export type ILeaderboardStatsGroup = {
@@ -34,6 +35,7 @@ export type ILeaderboardStatsGroup = {
   appointments_completed: number;
   sales_meetings: number;
   sales_successful: number;
+  total_points: number;
 };
 
 export type ILeaderboardStats = {
