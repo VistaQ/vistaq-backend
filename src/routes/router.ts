@@ -1,5 +1,6 @@
 import express from 'express';
 
+import agentPointsRoutes from '@src/routes/agentPoints.routes';
 import authRoutes from '@src/routes/auth.routes';
 import dashboardRoutes from '@src/routes/dashboard.routes';
 import leaderboardRoutes from '@src/routes/leaderboard.routes';
@@ -25,5 +26,6 @@ router.use('/events', eventRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/point-configs', pointConfigRoutes);
 router.use('/leaderboard', leaderboardRoutes);
+router.use('/agent-points', agentPointsRoutes);
 
 export default router;
