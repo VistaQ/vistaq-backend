@@ -11,6 +11,13 @@ const router = express.Router();
 ******************************************************************************/
 
 router.get(
+  '/stats',
+  authenticate,
+  (req, res, next) =>
+    leaderboardController.getStats(req as unknown as IBaseReq, res, next),
+);
+
+router.get(
   '/',
   authenticate,
   (req, res, next) =>

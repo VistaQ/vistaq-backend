@@ -15,6 +15,17 @@ class LeaderboardRepository {
       handleRepositoryError('LeaderboardRepository.getLeaderboard', error);
     }
   }
+
+  async getStats(tenantId: string, periodStart: string) {
+    try {
+      return await supabaseService.adminRpc('get_leaderboard_stats', {
+        p_tenant_id: tenantId,
+        p_period_start: periodStart,
+      });
+    } catch (error) {
+      handleRepositoryError('LeaderboardRepository.getStats', error);
+    }
+  }
 }
 
 /******************************************************************************
