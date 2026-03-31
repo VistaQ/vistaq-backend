@@ -24,6 +24,12 @@ tags:
     description: Event management endpoints
   - name: Dashboard
     description: Dashboard statistics endpoints
+  - name: Point Configs
+    description: Gamification point configuration endpoints
+  - name: Leaderboard
+    description: Gamification leaderboard endpoints
+  - name: Agent Points
+    description: Gamification agent points endpoints
 
 ################################################################################
 # Paths
@@ -2368,6 +2374,456 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # POINT CONFIGS
+  ##############################################################################
+
+  /point-configs:
+    post:
+      tags: [Point Configs]
+      summary: Create a point config
+      description: >
+        Creates a new gamification point configuration for the authenticated
+        user's tenant. Each activity type may have at most one configuration
+        per tenant — attempting to create a duplicate returns HTTP 400.
+        Restricted to the `admin` role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - activity
+                - points
+              properties:
+                activity:
+                  type: string
+                  enum:
+                    - prospect_created
+                    - appointment_set
+                    - sales_meeting
+                    - sale_closed
+                  description: The activity type to configure points for.
+                  example: prospect_created
+                points:
+                  type: integer
+                  minimum: 1
+                  description: Points awarded for the activity. Must be a positive integer.
+                  example: 10
+      responses:
+        '201':
+          description: Point config created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PointConfigObject'
+        '400':
+          description: >
+            Bad request. Returned when request body fails validation or a config
+            already exists for the given activity within this tenant.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+              examples:
+                duplicate:
+                  summary: Config already exists for this activity
+                  value:
+                    message: Config already exists for this activity.
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors:
+                      - code: invalid_enum_value
+                        path: [activity]
+                        message: >-
+                          Invalid enum value. Expected 'prospect_created' |
+                          'appointment_set' | 'sales_meeting' | 'sale_closed'
+        '403':
+          description: Forbidden. The authenticated user does not have the `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Point Configs]
+      summary: List all point configs
+      description: >
+        Returns all gamification point configurations for the authenticated
+        user's tenant. Returns an empty array if no configurations have been
+        set up yet. Restricted to the `admin` role.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Point configs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PointConfigObject'
+        '403':
+          description: Forbidden. The authenticated user does not have the `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /point-configs/{activity}:
+    put:
+      tags: [Point Configs]
+      summary: Update a point config by activity
+      description: >
+        Updates the points value for an existing gamification point
+        configuration identified by its `activity` path parameter. Returns
+        HTTP 404 if no configuration exists for the given activity within the
+        tenant. Restricted to the `admin` role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: activity
+          in: path
+          required: true
+          description: >
+            The activity type whose point config should be updated. Must be one
+            of the four valid activity values.
+          schema:
+            type: string
+            enum:
+              - prospect_created
+              - appointment_set
+              - sales_meeting
+              - sale_closed
+            example: prospect_created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - points
+              properties:
+                points:
+                  type: integer
+                  minimum: 1
+                  description: New points value for the activity. Must be a positive integer.
+                  example: 20
+      responses:
+        '200':
+          description: Point config updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PointConfigObject'
+        '400':
+          description: Bad request. Returned when request body fails validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: number
+                    inclusive: true
+                    exact: false
+                    message: Points must be greater than 0
+                    path: [points]
+        '403':
+          description: Forbidden. The authenticated user does not have the `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. No point configuration exists for the given activity
+            within the authenticated user's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Point config not found.
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # LEADERBOARD
+  ##############################################################################
+
+  /leaderboard:
+    get:
+      tags: [Leaderboard]
+      summary: Get leaderboard
+      description: >
+        Returns a ranked list of agents sorted by total points in descending
+        order. Results are scoped to the authenticated user's tenant. Returns
+        an empty array if no agents have accumulated points. All authenticated
+        roles may access this endpoint.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Leaderboard retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LeaderboardEntryObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /leaderboard/stats:
+    get:
+      tags: [Leaderboard]
+      summary: Get leaderboard stats
+      description: >
+        Returns raw activity counts for all agents and groups scoped to the
+        authenticated user's tenant, for the specified time period. Results
+        include individual agent counts and aggregated group counts. All
+        authenticated roles may access this endpoint. The frontend is
+        responsible for applying point multipliers to the raw counts.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          required: true
+          description: >
+            The time period to aggregate stats over. `mtd` covers the current
+            calendar month to date; `ytd` covers the current year to date.
+          schema:
+            type: string
+            enum:
+              - mtd
+              - ytd
+            example: mtd
+      responses:
+        '200':
+          description: Leaderboard stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    required: [period, generated_at, individual, groups]
+                    properties:
+                      period:
+                        type: string
+                        enum: [mtd, ytd]
+                        example: mtd
+                      generated_at:
+                        type: string
+                        format: date-time
+                        example: '2026-03-30T08:00:00Z'
+                      individual:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/LeaderboardStatsIndividualObject'
+                      groups:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/LeaderboardStatsGroupObject'
+        '400':
+          description: Validation failed. The `period` query parameter is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors: []
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # AGENT POINTS
+  ##############################################################################
+
+  /agent-points:
+    get:
+      tags: [Agent Points]
+      summary: Get agent points
+      description: >
+        Returns the total points, a per-category breakdown, and a paginated
+        transaction history for a given agent. When `userId` is omitted the
+        endpoint returns data for the authenticated user. Passing a `userId`
+        that belongs to a different user is restricted to manager roles
+        (admin, master_trainer, trainer, group_leader) — agents who supply a
+        different user's ID receive HTTP 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: >
+            Target user ID (UUID). Defaults to the authenticated user's own ID.
+            Manager roles only; agents may not pass a different user's ID.
+          schema:
+            type: string
+            format: uuid
+            example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        - name: page
+          in: query
+          required: false
+          description: Page number for breakdown pagination. Defaults to 1.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: limit
+          in: query
+          required: false
+          description: Number of breakdown items per page. Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: Agent points retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/AgentPointsObject'
+        '400':
+          description: Validation failed. One or more query parameters are invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors: []
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. An agent supplied a `userId` belonging to a different
+            user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -2950,6 +3406,258 @@ components:
             Current total count of users with the `agent` or `group_leader`
             role. This value is the same for both YTD and MTD periods.
           example: 24
+
+    PointConfigObject:
+      type: object
+      required:
+        - id
+        - activity
+        - points
+        - tenant_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        activity:
+          type: string
+          enum:
+            - prospect_created
+            - appointment_set
+            - sales_meeting
+            - sale_closed
+          example: prospect_created
+        points:
+          type: integer
+          example: 10
+        tenant_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-29T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-29T08:00:00.000Z'
+
+    LeaderboardEntryObject:
+      type: object
+      required:
+        - agent_id
+        - agent_name
+        - agent_code
+        - group_id
+        - group_name
+        - total_points
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+          example: d4e5f6a7-b8c9-0123-def0-234567890123
+        agent_name:
+          type: string
+          example: John Doe
+        agent_code:
+          type: string
+          example: AGT001
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the group the agent belongs to. Null if not in a group.
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        group_name:
+          type: string
+          nullable: true
+          description: Name of the group the agent belongs to. Null if not in a group.
+          example: Alpha Team
+        total_points:
+          type: integer
+          description: Cumulative points earned by the agent.
+          example: 150
+
+    LeaderboardStatsIndividualObject:
+      type: object
+      required:
+        - user_id
+        - name
+        - agent_code
+        - group_id
+        - group_name
+        - prospects_added
+        - appointments_completed
+        - sales_meetings
+        - sales_successful
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          example: d4e5f6a7-b8c9-0123-def0-234567890123
+        name:
+          type: string
+          example: Jane Doe
+        agent_code:
+          type: string
+          example: AGT-001
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the group the agent belongs to. Null if the agent is not in a group.
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        group_name:
+          type: string
+          nullable: true
+          description: Name of the group the agent belongs to. Null if the agent is not in a group.
+          example: Team Alpha
+        prospects_added:
+          type: integer
+          description: Number of prospects added in the period.
+          example: 8
+        appointments_completed:
+          type: integer
+          description: Number of appointments completed in the period.
+          example: 5
+        sales_meetings:
+          type: integer
+          description: Number of sales meetings held in the period.
+          example: 4
+        sales_successful:
+          type: integer
+          description: Number of successful sales closed in the period.
+          example: 2
+
+    LeaderboardStatsGroupObject:
+      type: object
+      required:
+        - group_id
+        - group_name
+        - leader_name
+        - member_count
+        - prospects_added
+        - appointments_completed
+        - sales_meetings
+        - sales_successful
+      properties:
+        group_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        group_name:
+          type: string
+          example: Team Alpha
+        leader_name:
+          type: string
+          nullable: true
+          description: Name of the group leader. Null if no leader is assigned.
+          example: John Leader
+        member_count:
+          type: integer
+          description: Number of members in the group.
+          example: 5
+        prospects_added:
+          type: integer
+          description: Aggregated number of prospects added by all group members in the period.
+          example: 32
+        appointments_completed:
+          type: integer
+          description: Aggregated number of appointments completed by all group members in the period.
+          example: 21
+        sales_meetings:
+          type: integer
+          description: Aggregated number of sales meetings held by all group members in the period.
+          example: 15
+        sales_successful:
+          type: integer
+          description: Aggregated number of successful sales closed by all group members in the period.
+          example: 8
+
+    AgentPointsObject:
+      type: object
+      required: [total, categories, breakdown, pagination]
+      properties:
+        total:
+          type: integer
+          description: Total points accumulated by the agent across all categories.
+          example: 142
+        categories:
+          type: object
+          description: Points breakdown by category.
+          required: [prospect, sales, coaching]
+          properties:
+            prospect:
+              type: integer
+              example: 142
+            sales:
+              type: integer
+              example: 0
+            coaching:
+              type: integer
+              example: 0
+        breakdown:
+          type: array
+          description: Paginated list of individual point transactions.
+          items:
+            $ref: '#/components/schemas/AgentPointsBreakdownItem'
+        pagination:
+          $ref: '#/components/schemas/PaginationObject'
+
+    AgentPointsBreakdownItem:
+      type: object
+      required: [id, date, category, action, subject, points]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the point transaction.
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        date:
+          type: string
+          format: date-time
+          description: Timestamp at which the points were awarded.
+          example: '2026-03-30T10:00:00.000Z'
+        category:
+          type: string
+          description: Category the points belong to.
+          example: prospect
+        action:
+          type: string
+          description: Human-readable label for the action that triggered the award.
+          example: Appointment Completed
+        subject:
+          type: string
+          description: Name of the subject (e.g. prospect) associated with the action.
+          example: John Tan
+        points:
+          type: integer
+          description: Number of points awarded for this transaction.
+          example: 3
+
+    PaginationObject:
+      type: object
+      required: [page, limit, total_count, total_pages]
+      properties:
+        page:
+          type: integer
+          description: Current page number.
+          example: 1
+        limit:
+          type: integer
+          description: Number of items per page.
+          example: 20
+        total_count:
+          type: integer
+          description: Total number of items across all pages.
+          example: 47
+        total_pages:
+          type: integer
+          description: Total number of pages.
+          example: 3
 
     ErrorResponse:
       type: object

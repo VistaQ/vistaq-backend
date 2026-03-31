@@ -22,4 +22,4 @@ with Supabase to leverage the provisioned Postgres database, Authentication, and
    - Re-run tests after fix
    - Maximum 3 retries
 4. Once tests pass, automatically invoke **documenter**
-5. **commit-organiser** is ONLY invoked by the user. Never invoke automatically.
+5. **`/commit-organiser`** (skill) is ONLY invoked by the user. Never invoke automatically.

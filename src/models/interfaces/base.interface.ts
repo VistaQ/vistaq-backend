@@ -5,10 +5,10 @@ import { Request } from 'express';
 ******************************************************************************/
 
 /**
- * Base interface for all controller request objects.
- * Extends Express Request so controller request interfaces can add typed body/params.
+ * Base type for all controller request objects.
+ * Controller request interfaces extend this to add typed body/params.
  */
-export interface IBaseReq extends Request {}
+export type IBaseReq = Request;
 
 /**
  * Base interface for all controller response objects.

@@ -47,14 +47,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
           'password', 'newPassword', 'confirmPassword',
           'token', 'refreshToken', 'accessToken',
         ];
-        let requestBody = req.body;
+        let requestBody: unknown = req.body as unknown;
         if (requestBody && typeof requestBody === 'object') {
-          requestBody = { ...requestBody };
+          const redacted: Record<string, unknown> = { ...(requestBody as Record<string, unknown>) };
           for (const field of SENSITIVE_BODY_FIELDS) {
-            if (field in requestBody) {
-              (requestBody as Record<string, unknown>)[field] = '[REDACTED]';
+            if (field in redacted) {
+              redacted[field] = '[REDACTED]';
             }
           }
+          requestBody = redacted;
         }
 
         loggingService.info('Incoming request', {
@@ -92,7 +93,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
               body: capturedResponseBody,
             });
           } catch (err) {
-            // eslint-disable-next-line no-console
             console.error('Failed to log outgoing response', err);
           }
         });
@@ -109,8 +109,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Security headers (production only)
 if (EnvVars.NodeEnv === NodeEnvs.PRODUCTION) {
-  // eslint-disable-next-line no-process-env
-  if (!process.env.DISABLE_HELMET) {
+  if (!EnvVars.DisableHelmet) {
     app.use(helmet());
   }
 }
