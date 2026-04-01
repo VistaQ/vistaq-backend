@@ -79,6 +79,195 @@ export type Database = {
           },
         ]
       }
+      coaching_session_agents: {
+        Row: {
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coaching_session_agents_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "coaching_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coaching_session_agents_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coaching_session_attendance: {
+        Row: {
+          agent_email: string
+          agent_id: string | null
+          agent_name: string
+          created_at: string
+          group_id: string | null
+          group_name: string | null
+          id: string
+          joined_at: string | null
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_email: string
+          agent_id?: string | null
+          agent_name: string
+          created_at?: string
+          group_id?: string | null
+          group_name?: string | null
+          id?: string
+          joined_at?: string | null
+          session_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_email?: string
+          agent_id?: string | null
+          agent_name?: string
+          created_at?: string
+          group_id?: string | null
+          group_name?: string | null
+          id?: string
+          joined_at?: string | null
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coaching_session_attendance_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coaching_session_attendance_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "coaching_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coaching_session_groups: {
+        Row: {
+          group_id: string
+          session_id: string
+        }
+        Insert: {
+          group_id: string
+          session_id: string
+        }
+        Update: {
+          group_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coaching_session_groups_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coaching_session_groups_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "coaching_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coaching_sessions: {
+        Row: {
+          coaching_type: string
+          created_at: string
+          created_by: string | null
+          created_by_name: string | null
+          created_by_role: string | null
+          date: string
+          description: string | null
+          end_time: string
+          id: string
+          link: string | null
+          start_time: string
+          status: string
+          tenant_id: string
+          title: string
+          training_mode: string
+          updated_at: string
+        }
+        Insert: {
+          coaching_type: string
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          created_by_role?: string | null
+          date: string
+          description?: string | null
+          end_time: string
+          id?: string
+          link?: string | null
+          start_time: string
+          status?: string
+          tenant_id: string
+          title: string
+          training_mode: string
+          updated_at?: string
+        }
+        Update: {
+          coaching_type?: string
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          created_by_role?: string | null
+          date?: string
+          description?: string | null
+          end_time?: string
+          id?: string
+          link?: string | null
+          start_time?: string
+          status?: string
+          tenant_id?: string
+          title?: string
+          training_mode?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coaching_sessions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coaching_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_agents: {
         Row: {
           event_id: string
@@ -554,14 +743,18 @@ export type Database = {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_agent_leaderboard: { Args: { p_tenant_id: string }; Returns: Json }
       get_agent_points_breakdown: {
-        Args: { p_tenant_id: string; p_user_id: string; p_limit: number; p_offset: number }
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_tenant_id: string
+          p_user_id: string
+        }
         Returns: Json
       }
       get_agent_points_summary: {
         Args: { p_tenant_id: string; p_user_id: string }
         Returns: Json
       }
-      get_leaderboard_stats: { Args: { p_tenant_id: string; p_period_start: string }; Returns: Json }
       get_agent_stats: {
         Args: { p_group_id: string; period_start: string }
         Returns: Json
@@ -575,6 +768,10 @@ export type Database = {
         Returns: Json
       }
       get_group_stats: { Args: never; Returns: Json }
+      get_leaderboard_stats: {
+        Args: { p_period_start: string; p_tenant_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
@@ -710,4 +907,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
