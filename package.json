@@ -7,7 +7,7 @@
     "clean-install": "rm -rf ./node_modules && rm -r package-lock.json && npm i",
     "dev": "node -r dotenv/config ./node_modules/.bin/ts-node ./src/main",
     "dev:watch": "nodemon --exec \"npm run dev\" --watch ./src --ext .ts",
-    "supabase:start": "supabase start",
+    "supabase:start": "supabase start && supabase functions serve --no-verify-jwt",
     "supabase:stop": "supabase stop",
     "bootstrap": "supabase db reset && node scripts/bootstrap.js",
     "lint": "eslint .",
