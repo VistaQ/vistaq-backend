@@ -30,6 +30,8 @@ tags:
     description: Gamification leaderboard endpoints
   - name: Agent Points
     description: Gamification agent points endpoints
+  - name: Coaching Sessions
+    description: Coaching session management and attendance endpoints
 
 ################################################################################
 # Paths
@@ -2824,6 +2826,516 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # COACHING SESSIONS
+  ##############################################################################
+
+  /coaching-sessions:
+    post:
+      tags: [Coaching Sessions]
+      summary: Create a coaching session
+      description: >
+        Creates a new coaching session under the authenticated user's tenant.
+        Restricted to admin, master_trainer, trainer, and group_leader roles.
+        Optionally targets specific groups and/or agents via `groupIds` and
+        `agentIds`. Omitting both means the session targets all agents.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [coachingType, title, date, startTime, endTime, trainingMode]
+              properties:
+                coachingType:
+                  $ref: '#/components/schemas/CoachingTypeEnum'
+                title:
+                  type: string
+                  minLength: 1
+                  example: Weekly Group Coaching
+                description:
+                  type: string
+                  example: Focus on objection handling techniques
+                date:
+                  type: string
+                  pattern: '^\d{4}-\d{2}-\d{2}$'
+                  description: Session date in YYYY-MM-DD format. Cannot be in the past.
+                  example: '2026-04-15'
+                startTime:
+                  type: string
+                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+                  description: Start time in HH:MM 24-hour format.
+                  example: '10:00'
+                endTime:
+                  type: string
+                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+                  description: End time in HH:MM 24-hour format.
+                  example: '12:00'
+                trainingMode:
+                  $ref: '#/components/schemas/TrainingModeEnum'
+                link:
+                  type: string
+                  description: Meeting link (e.g. Zoom, Google Meet).
+                  example: https://zoom.us/j/123456789
+                status:
+                  $ref: '#/components/schemas/SessionStatusEnum'
+                groupIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Target group UUIDs. Must not contain duplicates.
+                  example:
+                    - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                agentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Target agent UUIDs. Must not contain duplicates.
+                  example:
+                    - 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+      responses:
+        '201':
+          description: Coaching session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CoachingSessionObject'
+        '400':
+          description: >
+            Validation failed, invalid group IDs, invalid agent IDs, or
+            unauthorized group access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors: []
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. The user's role does not permit this action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Coaching Sessions]
+      summary: List coaching sessions
+      description: >
+        Returns all coaching sessions visible to the authenticated user, scoped
+        by row-level security. The response includes target group IDs, target
+        agent IDs, and attendance records for each session.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coaching sessions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CoachingSessionObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /coaching-sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        description: UUID of the coaching session.
+        schema:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+
+    get:
+      tags: [Coaching Sessions]
+      summary: Get coaching session by ID
+      description: >
+        Returns a single coaching session including its target groups, target
+        agents, and attendance records.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coaching session retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CoachingSessionObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Coaching Sessions]
+      summary: Update coaching session
+      description: >
+        Updates an existing coaching session. At least one field must be
+        provided. Restricted to admin, master_trainer, trainer, and
+        group_leader roles. Non-admin users can only update sessions they
+        created.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                coachingType:
+                  $ref: '#/components/schemas/CoachingTypeEnum'
+                title:
+                  type: string
+                  minLength: 1
+                  example: Updated Session Title
+                description:
+                  type: string
+                  example: Updated description
+                date:
+                  type: string
+                  pattern: '^\d{4}-\d{2}-\d{2}$'
+                  description: Session date in YYYY-MM-DD format. Cannot be in the past.
+                  example: '2026-04-20'
+                startTime:
+                  type: string
+                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+                  example: '14:00'
+                endTime:
+                  type: string
+                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+                  example: '16:00'
+                trainingMode:
+                  $ref: '#/components/schemas/TrainingModeEnum'
+                link:
+                  type: string
+                  example: https://zoom.us/j/987654321
+                status:
+                  $ref: '#/components/schemas/SessionStatusEnum'
+                groupIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Updated target group UUIDs.
+                agentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Updated target agent UUIDs.
+      responses:
+        '200':
+          description: Coaching session updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CoachingSessionObject'
+        '400':
+          description: >
+            Validation failed, invalid group IDs, invalid agent IDs, or
+            unauthorized group access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors: []
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. The user's role does not permit this action or the user
+            is not the session creator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Coaching Sessions]
+      summary: Delete coaching session
+      description: >
+        Deletes a coaching session. Restricted to admin, master_trainer,
+        trainer, and group_leader roles. Non-admin users can only delete
+        sessions they created.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coaching session deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. The user's role does not permit this action or the user
+            is not the session creator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /coaching-sessions/{sessionId}/join:
+    post:
+      tags: [Coaching Sessions]
+      summary: Join a coaching session
+      description: >
+        Records the authenticated user's attendance for the given coaching
+        session. Any authenticated user can join. If the user has already
+        joined, the existing attendance record is returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: UUID of the coaching session to join.
+          schema:
+            type: string
+            format: uuid
+            example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '200':
+          description: Successfully joined (or already joined) the session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/AttendanceRecordObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /coaching-sessions/{sessionId}/mark-non-attendees:
+    post:
+      tags: [Coaching Sessions]
+      summary: Bulk-mark non-attendees
+      description: >
+        Marks all targeted agents who have not joined the session as
+        "did_not_attend". Only the session creator or users with admin /
+        master_trainer roles can perform this action.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: UUID of the coaching session.
+          schema:
+            type: string
+            format: uuid
+            example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '200':
+          description: Non-attendees marked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. The user is not the session creator and does not have
+            an admin or master_trainer role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -3676,6 +4188,202 @@ components:
         message:
           type: string
           example: Server Error
+
+    CoachingTypeEnum:
+      type: string
+      enum:
+        - individual_coaching
+        - group_coaching
+        - peer_circles
+        - 2_full_days_seminar
+        - 2_hours_online_seminar
+      example: group_coaching
+
+    TrainingModeEnum:
+      type: string
+      enum:
+        - online
+        - face_to_face
+      example: online
+
+    SessionStatusEnum:
+      type: string
+      enum:
+        - upcoming
+        - ongoing
+        - completed
+        - cancelled
+      example: upcoming
+
+    AttendanceStatusEnum:
+      type: string
+      enum:
+        - pending
+        - joined
+        - did_not_attend
+      example: joined
+
+    CoachingSessionObject:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - coaching_type
+        - title
+        - date
+        - start_time
+        - end_time
+        - training_mode
+        - status
+        - created_by
+        - created_by_name
+        - created_by_role
+        - created_at
+        - updated_at
+        - targetGroupIds
+        - targetAgentIds
+        - attendance
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        tenant_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        coaching_type:
+          $ref: '#/components/schemas/CoachingTypeEnum'
+        title:
+          type: string
+          example: Weekly Group Coaching
+        description:
+          type: string
+          nullable: true
+          example: Focus on objection handling techniques
+        date:
+          type: string
+          description: Session date in YYYY-MM-DD format.
+          example: '2026-04-15'
+        start_time:
+          type: string
+          description: Start time in HH:MM 24-hour format.
+          example: '10:00'
+        end_time:
+          type: string
+          description: End time in HH:MM 24-hour format.
+          example: '12:00'
+        training_mode:
+          $ref: '#/components/schemas/TrainingModeEnum'
+        link:
+          type: string
+          nullable: true
+          description: Meeting link (e.g. Zoom, Google Meet).
+          example: https://zoom.us/j/123456789
+        status:
+          $ref: '#/components/schemas/SessionStatusEnum'
+        created_by:
+          type: string
+          format: uuid
+          description: UUID of the user who created the session.
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        created_by_name:
+          type: string
+          description: Display name of the session creator.
+          example: Jane Trainer
+        created_by_role:
+          type: string
+          description: Application role of the session creator.
+          example: trainer
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-04-01T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-04-01T08:00:00.000Z'
+        targetGroupIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: UUIDs of groups targeted by this session. Empty array if all audiences.
+          example:
+            - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        targetAgentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: UUIDs of agents individually targeted by this session. Empty array if none.
+          example: []
+        attendance:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttendanceRecordObject'
+          description: Attendance records for this session.
+
+    AttendanceRecordObject:
+      type: object
+      required:
+        - id
+        - session_id
+        - agent_id
+        - agent_name
+        - agent_email
+        - group_id
+        - group_name
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        session_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        agent_id:
+          type: string
+          format: uuid
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        agent_name:
+          type: string
+          example: John Agent
+        agent_email:
+          type: string
+          format: email
+          example: john.agent@example.com
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the agent's group. Null if the agent is not in a group.
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        group_name:
+          type: string
+          nullable: true
+          description: Name of the agent's group. Null if the agent is not in a group.
+          example: Team Alpha
+        status:
+          $ref: '#/components/schemas/AttendanceStatusEnum'
+        joined_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the agent joined the session. Null if not yet joined.
+          example: '2026-04-15T10:05:00.000Z'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-04-15T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-04-15T10:05:00.000Z'
 
     ValidationErrorResponse:
       type: object
