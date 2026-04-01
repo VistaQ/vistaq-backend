@@ -203,12 +203,11 @@ export type Database = {
           created_by: string | null
           created_by_name: string | null
           created_by_role: string | null
-          date: string
           description: string | null
-          end_time: string
+          end_date: string | null
           id: string
           link: string | null
-          start_time: string
+          start_date: string
           status: string
           tenant_id: string
           title: string
@@ -221,12 +220,11 @@ export type Database = {
           created_by?: string | null
           created_by_name?: string | null
           created_by_role?: string | null
-          date: string
           description?: string | null
-          end_time: string
+          end_date?: string | null
           id?: string
           link?: string | null
-          start_time: string
+          start_date: string
           status?: string
           tenant_id: string
           title: string
@@ -239,12 +237,11 @@ export type Database = {
           created_by?: string | null
           created_by_name?: string | null
           created_by_role?: string | null
-          date?: string
           description?: string | null
-          end_time?: string
+          end_date?: string | null
           id?: string
           link?: string | null
-          start_time?: string
+          start_date?: string
           status?: string
           tenant_id?: string
           title?: string
