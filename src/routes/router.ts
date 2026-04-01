@@ -2,6 +2,7 @@ import express from 'express';
 
 import agentPointsRoutes from '@src/routes/agentPoints.routes';
 import authRoutes from '@src/routes/auth.routes';
+import coachingSessionRoutes from '@src/routes/coachingSession.routes';
 import dashboardRoutes from '@src/routes/dashboard.routes';
 import leaderboardRoutes from '@src/routes/leaderboard.routes';
 import eventRoutes from '@src/routes/event.routes';
@@ -23,6 +24,7 @@ router.use('/users', userRoutes);
 router.use('/groups', groupRoutes);
 router.use('/prospects', prospectRoutes);
 router.use('/events', eventRoutes);
+router.use('/coaching-sessions', coachingSessionRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/point-configs', pointConfigRoutes);
 router.use('/leaderboard', leaderboardRoutes);
