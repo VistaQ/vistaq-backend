@@ -1624,6 +1624,73 @@ class SupabaseService {
    * @param table   - The table to delete from.
    * @param filters - Key/value pairs used to identify rows to delete.
    */
+  async adminSelectIn<T extends keyof Database['public']['Tables']>(
+    table: T,
+    columns = '*',
+    column: string & keyof Database['public']['Tables'][T]['Row'],
+    values: unknown[],
+    filters?: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectIn',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectIn called', {
+            table,
+            columns,
+            column,
+          });
+
+          let query = this.adminClient
+            .from(table)
+            .select(columns)
+            .in(column, values as never[]);
+
+          if (filters) {
+            for (const filterColumn of Object.keys(filters) as (string &
+              keyof typeof filters)[]) {
+              const value = filters[filterColumn];
+              if (value !== undefined) {
+                query = query.eq(filterColumn, value as never);
+              }
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectIn query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminSelectIn failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'Admin select in operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Delete (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
   async adminDelete<T extends keyof Database['public']['Tables']>(
     table: T,
     filters: Partial<Database['public']['Tables'][T]['Row']>,
