@@ -199,6 +199,14 @@ describe('POST /api/coaching-sessions — happy path', () => {
     expect(session.created_by_role).toBeTruthy();
     expect(session).toHaveProperty('created_at');
     expect(session).toHaveProperty('updated_at');
+    // Schema uses start_date / end_date (TIMESTAMPTZ) — old date/start_time/end_time columns removed
+    expect(session).toHaveProperty('start_date');
+    expect(session).toHaveProperty('end_date');
+    expect(session.start_date).toEqual(expect.stringContaining('T09:00'));
+    expect(session.end_date).toEqual(expect.stringContaining('T11:00'));
+    expect(session).not.toHaveProperty('date');
+    expect(session).not.toHaveProperty('start_time');
+    expect(session).not.toHaveProperty('end_time');
     expect(Array.isArray(session.targetGroupIds)).toBe(true);
     expect(Array.isArray(session.targetAgentIds)).toBe(true);
     expect(Array.isArray(session.attendance)).toBe(true);

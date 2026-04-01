@@ -4230,14 +4230,10 @@ components:
         - tenant_id
         - coaching_type
         - title
-        - date
-        - start_time
-        - end_time
+        - start_date
         - training_mode
         - status
         - created_by
-        - created_by_name
-        - created_by_role
         - created_at
         - updated_at
         - targetGroupIds
@@ -4261,18 +4257,23 @@ components:
           type: string
           nullable: true
           example: Focus on objection handling techniques
-        date:
+        start_date:
           type: string
-          description: Session date in YYYY-MM-DD format.
-          example: '2026-04-15'
-        start_time:
+          format: date-time
+          description: >
+            Start date and time of the session stored as a TIMESTAMPTZ value.
+            Formed by combining the `date` and `startTime` fields supplied on
+            create/update into a single ISO 8601 timestamp.
+          example: '2026-04-15T10:00:00.000Z'
+        end_date:
           type: string
-          description: Start time in HH:MM 24-hour format.
-          example: '10:00'
-        end_time:
-          type: string
-          description: End time in HH:MM 24-hour format.
-          example: '12:00'
+          format: date-time
+          nullable: true
+          description: >
+            End date and time of the session stored as a TIMESTAMPTZ value.
+            Formed by combining the `date` and `endTime` fields supplied on
+            create/update into a single ISO 8601 timestamp.
+          example: '2026-04-15T12:00:00.000Z'
         training_mode:
           $ref: '#/components/schemas/TrainingModeEnum'
         link:
