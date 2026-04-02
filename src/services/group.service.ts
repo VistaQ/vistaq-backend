@@ -1,4 +1,4 @@
-import { UserNotFoundError } from '@src/models/errors/auth.errors';
+import { TenantNotFoundError, UserNotFoundError } from '@src/models/errors/auth.errors';
 import {
   GroupNotFoundError,
   InvalidLeaderError,
@@ -8,6 +8,7 @@ import {
   MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
+import authRepository from '@src/repositories/auth.repository';
 import groupRepository from '@src/repositories/group.repository';
 import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
@@ -186,6 +187,23 @@ class GroupService {
       return await groupRepository.findById(groupId, token);
     } catch (error) {
       return handleServiceError('GroupService.getGroupById', error);
+    }
+  }
+
+  async getActiveGroupsByTenantSlug(tenantSlug: string): Promise<Pick<IGroup, 'id' | 'name'>[]> {
+    try {
+      const tenant = await authRepository.findTenantBySlug(tenantSlug);
+      if (!tenant) {
+        throw new TenantNotFoundError();
+      }
+
+      const rows = await groupRepository.findActiveByTenantId(tenant.id);
+      return rows.map((row) => ({ id: row.id, name: row.name }));
+    } catch (error) {
+      if (error instanceof TenantNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('GroupService.getActiveGroupsByTenantSlug', error);
     }
   }
 

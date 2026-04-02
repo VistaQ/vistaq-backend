@@ -266,6 +266,28 @@ class GroupRepository {
       return handleRepositoryError('GroupRepository.deleteGroupTrainersByGroupId', error);
     }
   }
+
+  async findActiveByTenantId(tenantId: string): Promise<Pick<GroupsRow, 'id' | 'name'>[]> {
+    try {
+      const response = await supabaseService.adminSelect(
+        'groups',
+        'id,name',
+        { tenant_id: tenantId, status: 'active' } as Partial<GroupsRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as Pick<GroupsRow, 'id' | 'name'>[];
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+      }));
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.findActiveByTenantId', error);
+    }
+  }
 }
 
 /******************************************************************************

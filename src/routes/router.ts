@@ -2,6 +2,7 @@ import express from 'express';
 
 import agentPointsRoutes from '@src/routes/agentPoints.routes';
 import authRoutes from '@src/routes/auth.routes';
+import publicRoutes from '@src/routes/public.routes';
 import coachingSessionRoutes from '@src/routes/coachingSession.routes';
 import dashboardRoutes from '@src/routes/dashboard.routes';
 import leaderboardRoutes from '@src/routes/leaderboard.routes';
@@ -20,6 +21,7 @@ const router = express.Router();
 // NOTE: GET /health is registered directly in app.ts at root level (not under /api).
 
 router.use('/auth', authRoutes);
+router.use('/public', publicRoutes);
 router.use('/users', userRoutes);
 router.use('/groups', groupRoutes);
 router.use('/prospects', prospectRoutes);
