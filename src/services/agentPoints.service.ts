@@ -1,21 +1,11 @@
 import agentPointsRepository from '@src/repositories/agentPoints.repository';
+import pointActivityTypeService from '@src/services/pointActivityType.service';
 import {
   IAgentPointsBreakdownItem,
   IAgentPointsResponse,
   PointCategory,
 } from '@src/types/agentPoints.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-
-/******************************************************************************
-                            Constants
-******************************************************************************/
-
-const ACTION_DISPLAY_NAMES: Record<string, string> = {
-  prospect_created: 'Added Prospect',
-  appointment_set: 'Appointment Set',
-  sales_meeting: 'Sales Meeting Completed',
-  sale_closed: 'Sale: Successful',
-};
 
 /******************************************************************************
                             AgentPointsService
@@ -31,10 +21,13 @@ class AgentPointsService {
     try {
       const offset = (page - 1) * limit;
 
-      const [summaryResponse, breakdownResponse] = await Promise.all([
+      const [summaryResponse, breakdownResponse, activityTypes] = await Promise.all([
         agentPointsRepository.getSummary(tenantId, userId),
         agentPointsRepository.getBreakdown(tenantId, userId, limit, offset),
+        pointActivityTypeService.getAllActivityTypes(),
       ]);
+
+      const labelMap = Object.fromEntries(activityTypes.map((t) => [t.name, t.label]));
 
       const summary = (summaryResponse?.data ?? {}) as {
         total?: number;
@@ -60,7 +53,7 @@ class AgentPointsService {
         id: row.id,
         date: row.date,
         category: row.category,
-        action: ACTION_DISPLAY_NAMES[row.action] ?? row.action,
+        action: labelMap[row.action] ?? row.action,
         subject: row.subject,
         points: row.points,
       }));
