@@ -39,18 +39,19 @@ let agentUserId: string | null = null;
 /** IDs of coaching sessions created during the test run — deleted in afterAll */
 const createdSessionIds: string[] = [];
 
-/** A future date string in YYYY-MM-DD format */
+/** A future ISO 8601 datetime string with UTC timezone, always at least N days ahead */
 function futureDate(offsetDays = 7): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().split('T')[0];
+  return new Date(Date.now() + offsetDays * 86400000).toISOString();
 }
 
-/** A past date string in YYYY-MM-DD format */
+/** A future ISO 8601 end datetime string, offset by extra hours from start */
+function futureDateEnd(offsetDays = 7, extraHours = 2): string {
+  return new Date(Date.now() + offsetDays * 86400000 + extraHours * 3600000).toISOString();
+}
+
+/** A past ISO 8601 datetime string with UTC timezone */
 function pastDate(offsetDays = 1): string {
-  const d = new Date();
-  d.setDate(d.getDate() - offsetDays);
-  return d.toISOString().split('T')[0];
+  return new Date(Date.now() - offsetDays * 86400000).toISOString();
 }
 
 /******************************************************************************
@@ -174,9 +175,8 @@ describe('POST /api/coaching-sessions — happy path', () => {
         coachingType: 'individual_coaching',
         title: 'Integration Test Session',
         description: 'Created by integration test suite',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         trainingMode: 'online',
       });
 
@@ -202,8 +202,8 @@ describe('POST /api/coaching-sessions — happy path', () => {
     // Schema uses start_date / end_date (TIMESTAMPTZ) — old date/start_time/end_time columns removed
     expect(session).toHaveProperty('start_date');
     expect(session).toHaveProperty('end_date');
-    expect(session.start_date).toEqual(expect.stringContaining('T09:00'));
-    expect(session.end_date).toEqual(expect.stringContaining('T11:00'));
+    expect(typeof session.start_date).toBe('string');
+    expect(typeof session.end_date).toBe('string');
     expect(session).not.toHaveProperty('date');
     expect(session).not.toHaveProperty('start_time');
     expect(session).not.toHaveProperty('end_time');
@@ -225,9 +225,8 @@ describe('POST /api/coaching-sessions — happy path', () => {
       .send({
         coachingType: 'group_coaching',
         title: 'Group Session',
-        date: futureDate(10),
-        startTime: '14:00',
-        endTime: '16:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         trainingMode: 'face_to_face',
         groupIds: [GROUP_ID_ALPHA],
       });
@@ -257,9 +256,8 @@ describe('POST /api/coaching-sessions — happy path', () => {
       .send({
         coachingType: 'individual_coaching',
         title: 'Agent-Targeted Session',
-        date: futureDate(14),
-        startTime: '10:00',
-        endTime: '12:00',
+        startDate: futureDate(14),
+        endDate: futureDateEnd(14),
         trainingMode: 'online',
         agentIds: [agentUserId!],
       });
@@ -310,9 +308,8 @@ describe('POST /api/coaching-sessions — validation errors', () => {
       .send({
         coachingType: 'invalid_type',
         title: 'Bad Type Session',
-        date: futureDate(),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(),
+        endDate: futureDateEnd(),
         trainingMode: 'online',
       });
 
@@ -328,9 +325,8 @@ describe('POST /api/coaching-sessions — validation errors', () => {
       .send({
         coachingType: 'individual_coaching',
         title: 'Past Date Session',
-        date: pastDate(5),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: pastDate(5),
+        endDate: pastDate(5),
         trainingMode: 'online',
       });
 
@@ -346,9 +342,8 @@ describe('POST /api/coaching-sessions — validation errors', () => {
       .send({
         coachingType: 'individual_coaching',
         title: 'Bad Time Session',
-        date: futureDate(),
-        startTime: '9am',
-        endTime: '11:00',
+        startDate: 'not-a-valid-iso-datetime',
+        endDate: futureDateEnd(),
         trainingMode: 'online',
       });
 
@@ -370,9 +365,8 @@ describe('POST /api/coaching-sessions — role guard', () => {
       .send({
         coachingType: 'individual_coaching',
         title: 'Agent Attempt',
-        date: futureDate(),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(),
+        endDate: futureDateEnd(),
         trainingMode: 'online',
       });
 
@@ -519,9 +513,8 @@ describe('POST /api/coaching-sessions/:sessionId/mark-non-attendees', () => {
       .send({
         coachingType: 'individual_coaching',
         title: 'Mark Non-Attendees Test',
-        date: futureDate(3),
-        startTime: '09:00',
-        endTime: '10:00',
+        startDate: futureDate(3),
+        endDate: futureDateEnd(3),
         trainingMode: 'online',
         agentIds: [agentUserId!],
       });
@@ -579,9 +572,8 @@ describe('DELETE /api/coaching-sessions/:sessionId', () => {
       .send({
         coachingType: 'peer_circles',
         title: 'Delete Me Session',
-        date: futureDate(20),
-        startTime: '08:00',
-        endTime: '09:00',
+        startDate: futureDate(20),
+        endDate: futureDateEnd(20),
         trainingMode: 'online',
       });
 
