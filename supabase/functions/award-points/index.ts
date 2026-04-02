@@ -111,24 +111,8 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Step 2: Look up activity type for subject_type
-    const { data: activityType, error: activityTypeError } = await supabase
-      .from("point_activity_types")
-      .select("subject_type")
-      .eq("name", activity)
-      .maybeSingle();
-
-    if (activityTypeError) {
-      console.error("[award-points] Error fetching activity type:", activityTypeError);
-      return ok;
-    }
-
-    if (!activityType) {
-      console.warn(`[award-points] No activity type found for "${activity}" — skipping`);
-      return ok;
-    }
-
-    // Step 3: Resolve tenantId, userId, subjectId per source table
+    // Step 2: Resolve tenantId, userId, subjectId per source table
+    // (coaching_session_attendance also remaps the sentinel activity here)
     let tenantId: string;
     let userId: string;
     let subjectId: string;
@@ -168,6 +152,23 @@ Deno.serve(async (req) => {
       }
       activity = mappedActivity;
     } else {
+      return ok;
+    }
+
+    // Step 3: Look up activity type for subject_type (after remap so final activity name is used)
+    const { data: activityType, error: activityTypeError } = await supabase
+      .from("point_activity_types")
+      .select("subject_type")
+      .eq("name", activity)
+      .maybeSingle();
+
+    if (activityTypeError) {
+      console.error("[award-points] Error fetching activity type:", activityTypeError);
+      return ok;
+    }
+
+    if (!activityType) {
+      console.warn(`[award-points] No activity type found for "${activity}" — skipping`);
       return ok;
     }
 
