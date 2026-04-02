@@ -36,3 +36,10 @@ export class UnauthorizedSessionAccessError extends Error {
     this.name = 'UnauthorizedSessionAccessError';
   }
 }
+
+export class InvalidDateRangeError extends Error {
+  public constructor(message = 'endDate must be after startDate') {
+    super(message);
+    this.name = 'InvalidDateRangeError';
+  }
+}

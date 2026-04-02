@@ -29,3 +29,10 @@ export class InvalidAgentIdsError extends Error {
     this.name = 'InvalidAgentIdsError';
   }
 }
+
+export class InvalidDateRangeError extends Error {
+  public constructor(message = 'endDate must be after startDate') {
+    super(message);
+    this.name = 'InvalidDateRangeError';
+  }
+}
