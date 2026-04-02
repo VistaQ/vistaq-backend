@@ -2380,6 +2380,43 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   ##############################################################################
+  # POINT ACTIVITY TYPES
+  ##############################################################################
+
+  /point-activity-types:
+    get:
+      tags: [Point Configs]
+      summary: List all point activity types
+      description: >
+        Returns all available point activity types from the system. These values
+        are used when creating point configurations via `POST /point-configs`.
+        Restricted to authenticated users.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Point activity types retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PointActivityTypeObject'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
   # POINT CONFIGS
   ##############################################################################
 
@@ -2406,13 +2443,10 @@ paths:
               properties:
                 activity:
                   type: string
-                  enum:
-                    - prospect_created
-                    - appointment_set
-                    - sales_meeting
-                    - sale_closed
-                  description: The activity type to configure points for.
-                  example: prospect_created
+                  description: >
+                    The activity type to configure points for. Must match a value
+                    returned by `GET /point-activity-types`.
+                  example: coaching_session_attended
                 points:
                   type: integer
                   minimum: 1
@@ -2447,16 +2481,18 @@ paths:
                   summary: Config already exists for this activity
                   value:
                     message: Config already exists for this activity.
+                invalidActivityType:
+                  summary: Activity type does not exist
+                  value:
+                    message: Invalid activity type
                 validationFailure:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
                     errors:
-                      - code: invalid_enum_value
+                      - code: invalid_type
                         path: [activity]
-                        message: >-
-                          Invalid enum value. Expected 'prospect_created' |
-                          'appointment_set' | 'sales_meeting' | 'sale_closed'
+                        message: Required
         '403':
           description: Forbidden. The authenticated user does not have the `admin` role.
           content:
@@ -2528,16 +2564,11 @@ paths:
           in: path
           required: true
           description: >
-            The activity type whose point config should be updated. Must be one
-            of the four valid activity values.
+            The activity type whose point config should be updated. Must match
+            an existing point config's activity for the authenticated tenant.
           schema:
             type: string
-            enum:
-              - prospect_created
-              - appointment_set
-              - sales_meeting
-              - sale_closed
-            example: prospect_created
+            example: coaching_session_attended
       requestBody:
         required: true
         content:
@@ -4003,11 +4034,33 @@ components:
             role. This value is the same for both YTD and MTD periods.
           example: 24
 
+    PointActivityTypeObject:
+      type: object
+      required: [name, category, label, subject_type]
+      properties:
+        name:
+          type: string
+          description: Unique activity key used as the identifier in point configs and transactions.
+          example: coaching_session_attended
+        category:
+          type: string
+          description: Category the activity belongs to (e.g. prospect, coaching).
+          example: coaching
+        label:
+          type: string
+          description: Human-readable display name for the activity.
+          example: Session Attended
+        subject_type:
+          type: string
+          description: Subject entity type associated with the activity (used internally by the points engine).
+          example: coaching_session
+
     PointConfigObject:
       type: object
       required:
         - id
         - activity
+        - category
         - points
         - tenant_id
         - created_at
@@ -4019,12 +4072,11 @@ components:
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
         activity:
           type: string
-          enum:
-            - prospect_created
-            - appointment_set
-            - sales_meeting
-            - sale_closed
-          example: prospect_created
+          example: coaching_session_attended
+        category:
+          type: string
+          description: Category derived from the activity type (e.g. prospect, coaching).
+          example: coaching
         points:
           type: integer
           example: 10
