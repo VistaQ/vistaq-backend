@@ -32,6 +32,8 @@ tags:
     description: Gamification agent points endpoints
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
+  - name: Public
+    description: Public endpoints that do not require authentication
 
 ################################################################################
 # Paths
@@ -3329,6 +3331,81 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # PUBLIC
+  ##############################################################################
+
+  /public/groups:
+    get:
+      tags: [Public]
+      summary: List groups for a tenant
+      description: >
+        Returns a minimal list of groups (id and name) for the tenant identified
+        by the `X-Tenant-Slug` header. No authentication is required. Intended
+        for use on public-facing flows such as agent registration, where the
+        caller needs to present a group selector before a session token exists.
+      security: []
+      parameters:
+        - name: X-Tenant-Slug
+          in: header
+          required: true
+          description: >
+            Slug that identifies the tenant whose groups should be returned.
+            Returns 400 if the header is absent or not a string value, and 404
+            if no tenant matches the supplied slug.
+          schema:
+            type: string
+            example: acme-insurance
+      responses:
+        '200':
+          description: Groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        name:
+                          type: string
+                          example: MDRT Stars
+        '400':
+          description: >
+            Bad request. Returned when the `X-Tenant-Slug` header is missing or
+            not a valid string value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: X-Tenant-Slug header is required
+        '404':
+          description: Tenant not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Tenant not found
         '500':
           description: Internal server error
           content:
