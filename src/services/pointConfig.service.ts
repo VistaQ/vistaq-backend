@@ -1,5 +1,6 @@
 import { RouteError } from '@src/models/errors/route.error';
 import pointConfigRepository from '@src/repositories/pointConfig.repository';
+import pointActivityTypeService from '@src/services/pointActivityType.service';
 import { IPointConfig } from '@src/types/pointConfig.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -10,7 +11,6 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 interface ICreatePointConfigParams {
   activity: string;
-  category: string;
   points: number;
   tenantId: string;
   token: string;
@@ -18,7 +18,6 @@ interface ICreatePointConfigParams {
 
 interface IUpdatePointConfigParams {
   activity: string;
-  category?: string;
   points: number;
   tenantId: string;
   token: string;
@@ -31,6 +30,14 @@ interface IUpdatePointConfigParams {
 class PointConfigService {
   async createPointConfig(params: ICreatePointConfigParams): Promise<IPointConfig> {
     try {
+      const activityType = await pointActivityTypeService.getActivityType(params.activity);
+      if (!activityType) {
+        throw new RouteError(
+          HttpStatusCodes.BAD_REQUEST,
+          'Invalid activity type.',
+        );
+      }
+
       const existing = await pointConfigRepository.findByTenantAndActivity(
         params.tenantId,
         params.activity,
@@ -48,7 +55,7 @@ class PointConfigService {
         {
           tenant_id: params.tenantId,
           activity: params.activity,
-          category: params.category,
+          category: activityType.category,
           points: params.points,
         },
         params.token,
@@ -85,11 +92,10 @@ class PointConfigService {
         );
       }
 
-      const updateData: { points: number; updated_at: string; category?: string } = {
+      const updateData = {
         points: params.points,
         updated_at: new Date().toISOString(),
       };
-      if (params.category !== undefined) updateData.category = params.category;
 
       const updated = await pointConfigRepository.updatePointConfig(
         params.tenantId,
