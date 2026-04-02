@@ -20,15 +20,16 @@ import { IBaseReq } from '@src/models/interfaces/base.interface';
                             Zod Schemas
 ******************************************************************************/
 
-const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)$/;
 
-function isNotPastDate(dateStr: string): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const inputDate = new Date(dateStr);
-  return inputDate >= today;
+function isNotPastDateTime(dateStr: string): boolean {
+  const input = new Date(dateStr);
+  return !isNaN(input.getTime()) && input >= new Date();
 }
+
+const isoDateTimeField = z
+  .string()
+  .regex(ISO_DATETIME_REGEX, 'Must be ISO 8601 with timezone (e.g. 2026-04-03T09:00:00+08:00)');
 
 const COACHING_TYPES = [
   'individual_coaching',
@@ -45,16 +46,8 @@ export const createCoachingSessionSchema = z
     coachingType: z.enum(COACHING_TYPES),
     title: z.string().min(1),
     description: z.string().optional(),
-    date: z
-      .string()
-      .regex(DATE_REGEX, 'Date must be in YYYY-MM-DD format')
-      .refine(isNotPastDate, { message: 'Date cannot be in the past' }),
-    startTime: z
-      .string()
-      .regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format'),
-    endTime: z
-      .string()
-      .regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format'),
+    startDate: isoDateTimeField.refine(isNotPastDateTime, { message: 'startDate cannot be in the past' }),
+    endDate: isoDateTimeField,
     trainingMode: z.enum(TRAINING_MODES),
     link: z.string().optional(),
     status: z.enum(STATUSES).optional(),
@@ -71,27 +64,20 @@ export const createCoachingSessionSchema = z
       })
       .optional(),
   })
-  .strict();
-// NOTE: No cross-field refinement — both groupIds and agentIds being absent means all-audience
+  .strict()
+  .refine(
+    (data) => new Date(data.endDate) > new Date(data.startDate),
+    { message: 'endDate must be after startDate', path: ['endDate'] },
+  );
+// NOTE: No cross-field refinement for groupIds/agentIds — both being absent means all-audience
 
 export const updateCoachingSessionSchema = z
   .object({
     coachingType: z.enum(COACHING_TYPES).optional(),
     title: z.string().min(1).optional(),
     description: z.string().optional(),
-    date: z
-      .string()
-      .regex(DATE_REGEX, 'Date must be in YYYY-MM-DD format')
-      .refine(isNotPastDate, { message: 'Date cannot be in the past' })
-      .optional(),
-    startTime: z
-      .string()
-      .regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format')
-      .optional(),
-    endTime: z
-      .string()
-      .regex(TIME_REGEX, 'Time must be in HH:MM 24-hour format')
-      .optional(),
+    startDate: isoDateTimeField.refine(isNotPastDateTime, { message: 'startDate cannot be in the past' }).optional(),
+    endDate: isoDateTimeField.optional(),
     trainingMode: z.enum(TRAINING_MODES).optional(),
     link: z.string().optional(),
     status: z.enum(STATUSES).optional(),
@@ -111,7 +97,16 @@ export const updateCoachingSessionSchema = z
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided',
-  });
+  })
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        return new Date(data.endDate) > new Date(data.startDate);
+      }
+      return true;
+    },
+    { message: 'endDate must be after startDate', path: ['endDate'] },
+  );
 
 /******************************************************************************
                             Router
