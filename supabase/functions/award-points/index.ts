@@ -1,12 +1,15 @@
 /**
  * award-points Edge Function
  *
- * Triggered by a Supabase Database Webhook on the `prospects` table (INSERT + UPDATE events).
+ * Triggered by Supabase Database Webhooks on:
+ *   - prospects table (INSERT + UPDATE)
+ *   - coaching_session_attendance table (INSERT + UPDATE)
  *
  * Webhook setup (Supabase Dashboard → Database → Webhooks):
- *   - Table:  prospects
- *   - Events: INSERT, UPDATE
- *   - Target: Edge Function → award-points
+ *   prospects:
+ *     - Table: prospects, Events: INSERT, UPDATE, Target: award-points
+ *   coaching_session_attendance:
+ *     - Table: coaching_session_attendance, Events: INSERT, UPDATE, Target: award-points
  *
  * Always returns HTTP 200 so the webhook does not retry on failure.
  */
@@ -19,59 +22,27 @@ interface WebhookPayload {
   type: "INSERT" | "UPDATE";
   table: string;
   schema: string;
-  record: ProspectRecord;
-  old_record: ProspectRecord | null;
+  record: Record<string, unknown>;
+  old_record: Record<string, unknown> | null;
 }
-
-interface ProspectRecord {
-  id: string;
-  tenant_id: string;
-  agent_id: string;
-  appointment_date: string | null;
-  appointment_status: string | null;
-  sales_completed_at: string | null;
-  [key: string]: unknown;
-}
-
-type Activity =
-  | "prospect_created"
-  | "appointment_set"
-  | "sales_meeting"
-  | "sale_closed";
-
-// ---------- Subject mapping ----------
-
-const ACTIVITY_SUBJECT_MAP: Record<string, string> = {
-  prospect_created: "prospect",
-  appointment_set: "prospect",
-  sales_meeting: "prospect",
-  sale_closed: "prospect",
-  coaching_session_attended: "event",
-};
 
 // ---------- Activity detection ----------
 
-function detectActivity(payload: WebhookPayload): Activity | null {
-  if (payload.type === "INSERT") {
-    return "prospect_created";
-  }
+function detectProspectActivity(payload: WebhookPayload): string | null {
+  const { record, old_record, type } = payload;
 
-  if (payload.type === "UPDATE" && payload.old_record) {
-    const { record, old_record } = payload;
+  if (type === "INSERT") return "prospect_created";
 
+  if (type === "UPDATE" && old_record) {
     if (
       old_record.appointment_status !== "scheduled" &&
       record.appointment_status === "scheduled"
-    ) {
-      return "appointment_set";
-    }
+    ) return "appointment_set";
 
     if (
       old_record.appointment_status !== "done" &&
       record.appointment_status === "done"
-    ) {
-      return "sales_meeting";
-    }
+    ) return "sales_meeting";
 
     if (!old_record.sales_completed_at && record.sales_completed_at) {
       return "sale_closed";
@@ -80,6 +51,42 @@ function detectActivity(payload: WebhookPayload): Activity | null {
 
   return null;
 }
+
+function detectAttendanceActivity(payload: WebhookPayload): string | null {
+  const { record, old_record, type } = payload;
+
+  if (type === "INSERT" && record.status === "joined") {
+    return "coaching_session_attended";
+  }
+
+  if (
+    type === "UPDATE" &&
+    old_record &&
+    old_record.status !== "joined" &&
+    record.status === "joined"
+  ) {
+    return "coaching_session_attended";
+  }
+
+  return null;
+}
+
+// ---------- Coaching type → activity mapping ----------
+
+const COACHING_TYPE_ACTIVITY_MAP: Record<string, string> = {
+  individual_coaching: "coaching_individual_attended",
+  group_coaching: "coaching_group_attended",
+  peer_circles: "coaching_peer_circles_attended",
+  "2_full_days_seminar": "coaching_2_full_days_attended",
+  "2_hours_online_seminar": "coaching_2_hours_online_attended",
+};
+
+// ---------- Dispatcher ----------
+
+const detectors: Record<string, (p: WebhookPayload) => string | null> = {
+  prospects: detectProspectActivity,
+  coaching_session_attendance: detectAttendanceActivity,
+};
 
 // ---------- Handler ----------
 
@@ -92,22 +99,79 @@ Deno.serve(async (req) => {
   try {
     const payload: WebhookPayload = await req.json();
 
-    // Step 1: Determine activity from transition
-    const activity = detectActivity(payload);
-    if (!activity) {
-      return ok;
-    }
+    // Step 1: Route to appropriate detector
+    const detect = detectors[payload.table];
+    if (!detect) return ok;
 
-    // Step 2: Extract tenant + user from the record
-    const tenantId = payload.record.tenant_id;
-    const userId = payload.record.agent_id;
+    let activity = detect(payload);
+    if (!activity) return ok;
 
-    // Step 3: Look up point config (service-role client bypasses RLS)
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Step 2: Look up activity type for subject_type
+    const { data: activityType, error: activityTypeError } = await supabase
+      .from("point_activity_types")
+      .select("subject_type")
+      .eq("name", activity)
+      .maybeSingle();
+
+    if (activityTypeError) {
+      console.error("[award-points] Error fetching activity type:", activityTypeError);
+      return ok;
+    }
+
+    if (!activityType) {
+      console.warn(`[award-points] No activity type found for "${activity}" — skipping`);
+      return ok;
+    }
+
+    // Step 3: Resolve tenantId, userId, subjectId per source table
+    let tenantId: string;
+    let userId: string;
+    let subjectId: string;
+
+    if (payload.table === "prospects") {
+      if (!payload.record.agent_id) {
+        return ok; // Cannot award points without a user
+      }
+      tenantId = payload.record.tenant_id as string;
+      userId = payload.record.agent_id as string;
+      subjectId = payload.record.id as string;
+    } else if (payload.table === "coaching_session_attendance") {
+      if (!payload.record.agent_id) {
+        return ok; // Cannot award points without a user
+      }
+      userId = payload.record.agent_id as string;
+      subjectId = payload.record.id as string;
+
+      // Resolve tenant_id and coaching_type from coaching_sessions
+      const { data: session, error: sessionError } = await supabase
+        .from("coaching_sessions")
+        .select("tenant_id, coaching_type")
+        .eq("id", payload.record.session_id as string)
+        .single();
+
+      if (sessionError || !session) {
+        console.error("[award-points] Error resolving tenant from session:", sessionError);
+        return ok;
+      }
+      tenantId = session.tenant_id as string;
+
+      // Remap generic sentinel to the per-coaching-type activity
+      const mappedActivity = COACHING_TYPE_ACTIVITY_MAP[session.coaching_type as string];
+      if (!mappedActivity) {
+        console.warn(`[award-points] Unknown coaching_type "${session.coaching_type}" — skipping`);
+        return ok;
+      }
+      activity = mappedActivity;
+    } else {
+      return ok;
+    }
+
+    // Step 4: Look up point config
     const { data: config, error: configError } = await supabase
       .from("point_configs")
       .select("points")
@@ -120,20 +184,9 @@ Deno.serve(async (req) => {
       return ok;
     }
 
-    if (!config) {
-      // No config for this activity — skip silently
-      return ok;
-    }
+    if (!config) return ok; // No config for this activity — skip silently
 
-    // Step 4: Resolve subject
-    const subjectType = ACTIVITY_SUBJECT_MAP[activity];
-    if (!subjectType) {
-      console.warn(`[award-points] Unrecognised activity "${activity}" — skipping insert`);
-      return ok;
-    }
-    const subjectId = payload.record.id;
-
-    // Step 5: Idempotency — skip if points already awarded for this subject + activity
+    // Step 5: Idempotency check
     const { data: existing, error: existingError } = await supabase
       .from("point_transactions")
       .select("id")
@@ -147,9 +200,7 @@ Deno.serve(async (req) => {
       return ok;
     }
 
-    if (existing) {
-      return ok;
-    }
+    if (existing) return ok;
 
     // Step 6: Insert point transaction
     const { error: insertError } = await supabase
@@ -160,14 +211,11 @@ Deno.serve(async (req) => {
         activity,
         points: config.points,
         subject_id: subjectId,
-        subject_type: subjectType,
+        subject_type: activityType.subject_type,
       });
 
     if (insertError) {
-      console.error(
-        "[award-points] Error inserting point transaction:",
-        insertError,
-      );
+      console.error("[award-points] Error inserting point transaction:", insertError);
     }
 
     return ok;
