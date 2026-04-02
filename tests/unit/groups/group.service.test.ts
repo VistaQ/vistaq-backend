@@ -49,6 +49,7 @@ jest.mock('@src/services/supabase.service', () => ({
 
 import { groupService } from '@src/services/group.service';
 import { groupRepository } from '@src/repositories/group.repository';
+import { authRepository } from '@src/repositories/auth.repository';
 import { userService } from '@src/services/user.service';
 import {
   GroupNotFoundError,
@@ -59,9 +60,9 @@ import {
   MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
-import { UserNotFoundError } from '@src/models/errors/auth.errors';
+import { TenantNotFoundError, UserNotFoundError } from '@src/models/errors/auth.errors';
 import { ServiceError } from '@src/models/errors/layer.errors';
-import type { IGroup, IGroupTrainer, IUserWithManagedGroups } from '@src/types/auth.types';
+import type { IGroup, IGroupTrainer, IUserWithManagedGroups, ITenant } from '@src/types/auth.types';
 
 /******************************************************************************
   Fixtures
@@ -635,5 +636,75 @@ describe('GroupService.updateGroup', () => {
     });
 
     expect(result).toEqual(mockUpdatedGroup);
+  });
+});
+
+/******************************************************************************
+  Fixtures — getActiveGroupsByTenantSlug
+******************************************************************************/
+
+const TENANT_SLUG = 'acme';
+
+const mockTenant: ITenant = {
+  id: TENANT_ID,
+  slug: TENANT_SLUG,
+  name: 'ACME Corp',
+  status: 'active',
+  created_at: '2024-01-01T00:00:00.000Z',
+};
+
+const mockActiveGroups = [
+  { id: GROUP_ID, name: 'Alpha Squad' },
+];
+
+/******************************************************************************
+  Test suite — GroupService.getActiveGroupsByTenantSlug
+******************************************************************************/
+
+describe('GroupService.getActiveGroupsByTenantSlug', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns mapped { id, name } array when tenant is found and groups exist', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+    jest.spyOn(groupRepository, 'findActiveByTenantId').mockResolvedValue(mockActiveGroups);
+
+    const result = await groupService.getActiveGroupsByTenantSlug(TENANT_SLUG);
+
+    expect(result).toEqual([{ id: GROUP_ID, name: 'Alpha Squad' }]);
+  });
+
+  it('returns empty array when tenant is found but no active groups exist', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+    jest.spyOn(groupRepository, 'findActiveByTenantId').mockResolvedValue([]);
+
+    const result = await groupService.getActiveGroupsByTenantSlug(TENANT_SLUG);
+
+    expect(result).toEqual([]);
+  });
+
+  it('throws TenantNotFoundError when authRepository.findTenantBySlug returns null', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(null);
+
+    await expect(
+      groupService.getActiveGroupsByTenantSlug(TENANT_SLUG),
+    ).rejects.toBeInstanceOf(TenantNotFoundError);
+  });
+
+  it('calls groupRepository.findActiveByTenantId with the correct tenant ID', async () => {
+    const spy = jest.spyOn(groupRepository, 'findActiveByTenantId').mockResolvedValue([]);
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+
+    await groupService.getActiveGroupsByTenantSlug(TENANT_SLUG);
+
+    expect(spy).toHaveBeenCalledWith(TENANT_ID);
+  });
+
+  it('throws ServiceError when groupRepository.findActiveByTenantId throws unexpectedly', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+    jest.spyOn(groupRepository, 'findActiveByTenantId').mockRejectedValue(new Error('db failure'));
+
+    await expect(
+      groupService.getActiveGroupsByTenantSlug(TENANT_SLUG),
+    ).rejects.toBeInstanceOf(ServiceError);
   });
 });

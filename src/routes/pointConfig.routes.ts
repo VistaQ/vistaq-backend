@@ -13,24 +13,15 @@ import { IBaseReq } from '@src/models/interfaces/base.interface';
                             Zod Schemas
 ******************************************************************************/
 
-const VALID_ACTIVITIES = [
-  'prospect_created',
-  'appointment_set',
-  'sales_meeting',
-  'sale_closed',
-] as const;
-
 export const createPointConfigSchema = z
   .object({
-    activity: z.enum(VALID_ACTIVITIES),
-    category: z.enum(['prospect', 'coaching']),
+    activity: z.string().min(1),
     points: z.number().int().gt(0),
   })
   .strict();
 
 export const updatePointConfigSchema = z
   .object({
-    category: z.enum(['prospect', 'coaching']).optional(),
     points: z.number().int().gt(0),
   })
   .strict();

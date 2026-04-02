@@ -30,6 +30,10 @@ tags:
     description: Gamification leaderboard endpoints
   - name: Agent Points
     description: Gamification agent points endpoints
+  - name: Coaching Sessions
+    description: Coaching session management and attendance endpoints
+  - name: Public
+    description: Public endpoints that do not require authentication
 
 ################################################################################
 # Paths
@@ -1891,9 +1895,8 @@ paths:
               type: object
               required:
                 - title
-                - date
-                - startTime
-                - endTime
+                - startDate
+                - endDate
                 - type
                 - description
               additionalProperties: false
@@ -1903,21 +1906,20 @@ paths:
                   minLength: 1
                   description: Title of the event.
                   example: Q2 Training Kickoff
-                date:
+                startDate:
                   type: string
-                  format: date
+                  format: date-time
                   description: >
-                    Date of the event in YYYY-MM-DD format. Cannot be a past
-                    date.
-                  example: '2026-04-15'
-                startTime:
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Cannot be in the past.
+                  example: '2026-04-15T09:00:00+08:00'
+                endDate:
                   type: string
-                  description: Start time of the event in HH:MM 24-hour format.
-                  example: '09:00'
-                endTime:
-                  type: string
-                  description: End time of the event in HH:MM 24-hour format.
-                  example: '11:00'
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-15T11:00:00+08:00'
                 status:
                   type: string
                   enum: [upcoming, completed, cancelled]
@@ -2186,21 +2188,19 @@ paths:
                   minLength: 1
                   description: Updated title of the event.
                   example: Q2 Training Kickoff (Revised)
-                date:
+                startDate:
                   type: string
-                  format: date
+                  format: date-time
                   description: >
-                    Updated date of the event in YYYY-MM-DD format. Cannot be a
-                    past date.
-                  example: '2026-04-20'
-                startTime:
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                  example: '2026-04-20T10:00:00+08:00'
+                endDate:
                   type: string
-                  description: Updated start time of the event in HH:MM 24-hour format.
-                  example: '10:00'
-                endTime:
-                  type: string
-                  description: Updated end time of the event in HH:MM 24-hour format.
-                  example: '12:00'
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-20T12:00:00+08:00'
                 status:
                   type: string
                   enum: [upcoming, completed, cancelled]
@@ -2267,8 +2267,9 @@ paths:
         '400':
           description: >
             Bad request. Returned when the request body fails validation (e.g.
-            no fields provided, `date` is in the past, a supplied group UUID
-            does not exist, or a trainer supplies a group they do not manage).
+            no fields provided, `startDate` is in the past, `endDate` is not
+            after `startDate`, a supplied group UUID does not exist, or a
+            trainer supplies a group they do not manage).
           content:
             application/json:
               schema:
@@ -2284,6 +2285,10 @@ paths:
                       - code: custom
                         message: At least one field must be provided
                         path: []
+                invalidDateRange:
+                  summary: endDate is not after startDate
+                  value:
+                    message: endDate must be after startDate
                 invalidGroupIds:
                   summary: One or more group IDs do not exist
                   value:
@@ -2375,6 +2380,43 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   ##############################################################################
+  # POINT ACTIVITY TYPES
+  ##############################################################################
+
+  /point-activity-types:
+    get:
+      tags: [Point Configs]
+      summary: List all point activity types
+      description: >
+        Returns all available point activity types from the system. These values
+        are used when creating point configurations via `POST /point-configs`.
+        Restricted to authenticated users.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Point activity types retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PointActivityTypeObject'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
   # POINT CONFIGS
   ##############################################################################
 
@@ -2401,13 +2443,10 @@ paths:
               properties:
                 activity:
                   type: string
-                  enum:
-                    - prospect_created
-                    - appointment_set
-                    - sales_meeting
-                    - sale_closed
-                  description: The activity type to configure points for.
-                  example: prospect_created
+                  description: >
+                    The activity type to configure points for. Must match a value
+                    returned by `GET /point-activity-types`.
+                  example: coaching_session_attended
                 points:
                   type: integer
                   minimum: 1
@@ -2442,16 +2481,18 @@ paths:
                   summary: Config already exists for this activity
                   value:
                     message: Config already exists for this activity.
+                invalidActivityType:
+                  summary: Activity type does not exist
+                  value:
+                    message: Invalid activity type
                 validationFailure:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
                     errors:
-                      - code: invalid_enum_value
+                      - code: invalid_type
                         path: [activity]
-                        message: >-
-                          Invalid enum value. Expected 'prospect_created' |
-                          'appointment_set' | 'sales_meeting' | 'sale_closed'
+                        message: Required
         '403':
           description: Forbidden. The authenticated user does not have the `admin` role.
           content:
@@ -2523,16 +2564,11 @@ paths:
           in: path
           required: true
           description: >
-            The activity type whose point config should be updated. Must be one
-            of the four valid activity values.
+            The activity type whose point config should be updated. Must match
+            an existing point config's activity for the authenticated tenant.
           schema:
             type: string
-            enum:
-              - prospect_created
-              - appointment_set
-              - sales_meeting
-              - sale_closed
-            example: prospect_created
+            example: coaching_session_attended
       requestBody:
         required: true
         content:
@@ -2817,6 +2853,599 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # COACHING SESSIONS
+  ##############################################################################
+
+  /coaching-sessions:
+    post:
+      tags: [Coaching Sessions]
+      summary: Create a coaching session
+      description: >
+        Creates a new coaching session under the authenticated user's tenant.
+        Restricted to admin, master_trainer, trainer, and group_leader roles.
+        Optionally targets specific groups and/or agents via `groupIds` and
+        `agentIds`. Omitting both means the session targets all agents.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [coachingType, title, startDate, endDate, trainingMode]
+              properties:
+                coachingType:
+                  $ref: '#/components/schemas/CoachingTypeEnum'
+                title:
+                  type: string
+                  minLength: 1
+                  example: Weekly Group Coaching
+                description:
+                  type: string
+                  example: Focus on objection handling techniques
+                startDate:
+                  type: string
+                  format: date-time
+                  description: >
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Cannot be in the past.
+                  example: '2026-04-15T10:00:00+08:00'
+                endDate:
+                  type: string
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-15T12:00:00+08:00'
+                trainingMode:
+                  $ref: '#/components/schemas/TrainingModeEnum'
+                link:
+                  type: string
+                  description: Meeting link (e.g. Zoom, Google Meet).
+                  example: https://zoom.us/j/123456789
+                status:
+                  $ref: '#/components/schemas/SessionStatusEnum'
+                groupIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Target group UUIDs. Must not contain duplicates.
+                  example:
+                    - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                agentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Target agent UUIDs. Must not contain duplicates.
+                  example:
+                    - 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+      responses:
+        '201':
+          description: Coaching session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CoachingSessionObject'
+        '400':
+          description: >
+            Validation failed, invalid group IDs, invalid agent IDs, or
+            unauthorized group access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors: []
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. The user's role does not permit this action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Coaching Sessions]
+      summary: List coaching sessions
+      description: >
+        Returns all coaching sessions visible to the authenticated user, scoped
+        by row-level security. The response includes target group IDs, target
+        agent IDs, and attendance records for each session.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coaching sessions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CoachingSessionObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /coaching-sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        description: UUID of the coaching session.
+        schema:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+
+    get:
+      tags: [Coaching Sessions]
+      summary: Get coaching session by ID
+      description: >
+        Returns a single coaching session including its target groups, target
+        agents, and attendance records.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coaching session retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CoachingSessionObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Coaching Sessions]
+      summary: Update coaching session
+      description: >
+        Updates an existing coaching session. At least one field must be
+        provided. Restricted to admin, master_trainer, trainer, and
+        group_leader roles. Non-admin users can only update sessions they
+        created.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                coachingType:
+                  $ref: '#/components/schemas/CoachingTypeEnum'
+                title:
+                  type: string
+                  minLength: 1
+                  example: Updated Session Title
+                description:
+                  type: string
+                  example: Updated description
+                startDate:
+                  type: string
+                  format: date-time
+                  description: >
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                  example: '2026-04-20T14:00:00+08:00'
+                endDate:
+                  type: string
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-20T16:00:00+08:00'
+                trainingMode:
+                  $ref: '#/components/schemas/TrainingModeEnum'
+                link:
+                  type: string
+                  example: https://zoom.us/j/987654321
+                status:
+                  $ref: '#/components/schemas/SessionStatusEnum'
+                groupIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Updated target group UUIDs.
+                agentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Updated target agent UUIDs.
+      responses:
+        '200':
+          description: Coaching session updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CoachingSessionObject'
+        '400':
+          description: >
+            Validation failed, invalid group IDs, invalid agent IDs,
+            unauthorized group access, or `endDate` is not after `startDate`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors: []
+                invalidDateRange:
+                  summary: endDate is not after startDate
+                  value:
+                    message: endDate must be after startDate
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. The user's role does not permit this action or the user
+            is not the session creator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Coaching Sessions]
+      summary: Delete coaching session
+      description: >
+        Deletes a coaching session. Restricted to admin, master_trainer,
+        trainer, and group_leader roles. Non-admin users can only delete
+        sessions they created.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coaching session deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. The user's role does not permit this action or the user
+            is not the session creator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /coaching-sessions/{sessionId}/join:
+    post:
+      tags: [Coaching Sessions]
+      summary: Join a coaching session
+      description: >
+        Records the authenticated user's attendance for the given coaching
+        session. Any authenticated user can join. If the user has already
+        joined, the existing attendance record is returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: UUID of the coaching session to join.
+          schema:
+            type: string
+            format: uuid
+            example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '200':
+          description: Successfully joined (or already joined) the session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/AttendanceRecordObject'
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /coaching-sessions/{sessionId}/mark-non-attendees:
+    post:
+      tags: [Coaching Sessions]
+      summary: Bulk-mark non-attendees
+      description: >
+        Marks all targeted agents who have not joined the session as
+        "did_not_attend". Only the session creator or users with admin /
+        master_trainer roles can perform this action.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: UUID of the coaching session.
+          schema:
+            type: string
+            format: uuid
+            example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '200':
+          description: Non-attendees marked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: Unauthorized. No token or invalid token supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. The user is not the session creator and does not have
+            an admin or master_trainer role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Coaching session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Coaching session not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # PUBLIC
+  ##############################################################################
+
+  /public/groups:
+    get:
+      tags: [Public]
+      summary: List groups for a tenant
+      description: >
+        Returns a minimal list of groups (id and name) for the tenant identified
+        by the `X-Tenant-Slug` header. No authentication is required. Intended
+        for use on public-facing flows such as agent registration, where the
+        caller needs to present a group selector before a session token exists.
+      security: []
+      parameters:
+        - name: X-Tenant-Slug
+          in: header
+          required: true
+          description: >
+            Slug that identifies the tenant whose groups should be returned.
+            Returns 400 if the header is absent or not a string value, and 404
+            if no tenant matches the supplied slug.
+          schema:
+            type: string
+            example: acme-insurance
+      responses:
+        '200':
+          description: Groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        name:
+                          type: string
+                          example: MDRT Stars
+        '400':
+          description: >
+            Bad request. Returned when the `X-Tenant-Slug` header is missing or
+            not a valid string value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: X-Tenant-Slug header is required
+        '404':
+          description: Tenant not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Tenant not found
         '500':
           description: Internal server error
           content:
@@ -3282,8 +3911,7 @@ components:
           format: date-time
           description: >
             Start date and time of the event stored as a TIMESTAMPTZ value.
-            Formed by combining the `date` and `startTime` fields supplied on
-            create/update into a single ISO 8601 timestamp.
+            Value of the `startDate` field supplied in the request.
           example: '2026-04-15T09:00:00.000Z'
         end_date:
           type: string
@@ -3291,8 +3919,7 @@ components:
           nullable: true
           description: >
             End date and time of the event stored as a TIMESTAMPTZ value.
-            Formed by combining the `date` and `endTime` fields supplied on
-            create/update into a single ISO 8601 timestamp.
+            Value of the `endDate` field supplied in the request.
           example: '2026-04-15T11:00:00.000Z'
         status:
           type: string
@@ -3407,11 +4034,33 @@ components:
             role. This value is the same for both YTD and MTD periods.
           example: 24
 
+    PointActivityTypeObject:
+      type: object
+      required: [name, category, label, subject_type]
+      properties:
+        name:
+          type: string
+          description: Unique activity key used as the identifier in point configs and transactions.
+          example: coaching_session_attended
+        category:
+          type: string
+          description: Category the activity belongs to (e.g. prospect, coaching).
+          example: coaching
+        label:
+          type: string
+          description: Human-readable display name for the activity.
+          example: Session Attended
+        subject_type:
+          type: string
+          description: Subject entity type associated with the activity (used internally by the points engine).
+          example: coaching_session
+
     PointConfigObject:
       type: object
       required:
         - id
         - activity
+        - category
         - points
         - tenant_id
         - created_at
@@ -3423,12 +4072,11 @@ components:
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
         activity:
           type: string
-          enum:
-            - prospect_created
-            - appointment_set
-            - sales_meeting
-            - sale_closed
-          example: prospect_created
+          example: coaching_session_attended
+        category:
+          type: string
+          description: Category derived from the activity type (e.g. prospect, coaching).
+          example: coaching
         points:
           type: integer
           example: 10
@@ -3676,6 +4324,201 @@ components:
         message:
           type: string
           example: Server Error
+
+    CoachingTypeEnum:
+      type: string
+      enum:
+        - individual_coaching
+        - group_coaching
+        - peer_circles
+        - 2_full_days_seminar
+        - 2_hours_online_seminar
+      example: group_coaching
+
+    TrainingModeEnum:
+      type: string
+      enum:
+        - online
+        - face_to_face
+      example: online
+
+    SessionStatusEnum:
+      type: string
+      enum:
+        - upcoming
+        - ongoing
+        - completed
+        - cancelled
+      example: upcoming
+
+    AttendanceStatusEnum:
+      type: string
+      enum:
+        - pending
+        - joined
+        - did_not_attend
+      example: joined
+
+    CoachingSessionObject:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - coaching_type
+        - title
+        - start_date
+        - training_mode
+        - status
+        - created_by
+        - created_at
+        - updated_at
+        - targetGroupIds
+        - targetAgentIds
+        - attendance
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        tenant_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        coaching_type:
+          $ref: '#/components/schemas/CoachingTypeEnum'
+        title:
+          type: string
+          example: Weekly Group Coaching
+        description:
+          type: string
+          nullable: true
+          example: Focus on objection handling techniques
+        start_date:
+          type: string
+          format: date-time
+          description: >
+            Start date and time of the session stored as a TIMESTAMPTZ value.
+            Value of the `startDate` field supplied in the request.
+          example: '2026-04-15T10:00:00.000Z'
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            End date and time of the session stored as a TIMESTAMPTZ value.
+            Value of the `endDate` field supplied in the request.
+          example: '2026-04-15T12:00:00.000Z'
+        training_mode:
+          $ref: '#/components/schemas/TrainingModeEnum'
+        link:
+          type: string
+          nullable: true
+          description: Meeting link (e.g. Zoom, Google Meet).
+          example: https://zoom.us/j/123456789
+        status:
+          $ref: '#/components/schemas/SessionStatusEnum'
+        created_by:
+          type: string
+          format: uuid
+          description: UUID of the user who created the session.
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        created_by_name:
+          type: string
+          description: Display name of the session creator.
+          example: Jane Trainer
+        created_by_role:
+          type: string
+          description: Application role of the session creator.
+          example: trainer
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-04-01T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-04-01T08:00:00.000Z'
+        targetGroupIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: UUIDs of groups targeted by this session. Empty array if all audiences.
+          example:
+            - a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        targetAgentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: UUIDs of agents individually targeted by this session. Empty array if none.
+          example: []
+        attendance:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttendanceRecordObject'
+          description: Attendance records for this session.
+
+    AttendanceRecordObject:
+      type: object
+      required:
+        - id
+        - session_id
+        - agent_id
+        - agent_name
+        - agent_email
+        - group_id
+        - group_name
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        session_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        agent_id:
+          type: string
+          format: uuid
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        agent_name:
+          type: string
+          example: John Agent
+        agent_email:
+          type: string
+          format: email
+          example: john.agent@example.com
+        group_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the agent's group. Null if the agent is not in a group.
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        group_name:
+          type: string
+          nullable: true
+          description: Name of the agent's group. Null if the agent is not in a group.
+          example: Team Alpha
+        status:
+          $ref: '#/components/schemas/AttendanceStatusEnum'
+        joined_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the agent joined the session. Null if not yet joined.
+          example: '2026-04-15T10:05:00.000Z'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-04-15T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-04-15T10:05:00.000Z'
 
     ValidationErrorResponse:
       type: object

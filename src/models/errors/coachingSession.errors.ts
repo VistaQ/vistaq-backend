@@ -1,11 +1,11 @@
 /******************************************************************************
-                            Event Domain Errors
+                            Coaching Session Domain Errors
 ******************************************************************************/
 
-export class EventNotFoundError extends Error {
-  public constructor(message = 'Event not found') {
+export class CoachingSessionNotFoundError extends Error {
+  public constructor(message = 'Coaching session not found') {
     super(message);
-    this.name = 'EventNotFoundError';
+    this.name = 'CoachingSessionNotFoundError';
   }
 }
 
@@ -27,6 +27,13 @@ export class InvalidAgentIdsError extends Error {
   public constructor(message = 'One or more agent IDs are invalid, not within your tenant, or do not have the required role') {
     super(message);
     this.name = 'InvalidAgentIdsError';
+  }
+}
+
+export class UnauthorizedSessionAccessError extends Error {
+  public constructor(message = 'You do not have permission to modify this coaching session') {
+    super(message);
+    this.name = 'UnauthorizedSessionAccessError';
   }
 }
 

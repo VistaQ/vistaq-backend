@@ -1,6 +1,7 @@
 import {
   EventNotFoundError,
   InvalidAgentIdsError,
+  InvalidDateRangeError,
   InvalidGroupIdsError,
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
@@ -14,9 +15,8 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 
 interface ICreateEventParams {
   title: string;
-  date: string;
-  startTime: string;
-  endTime: string;
+  startDate: string;
+  endDate: string;
   status?: string;
   type: string;
   link?: string;
@@ -34,9 +34,8 @@ interface ICreateEventParams {
 interface IUpdateEventParams {
   eventId: string;
   title?: string;
-  date?: string;
-  startTime?: string;
-  endTime?: string;
+  startDate?: string;
+  endDate?: string;
   status?: string;
   type?: string;
   link?: string;
@@ -99,14 +98,11 @@ class EventService {
         }
       }
 
-      const startDate = `${params.date}T${params.startTime}`;
-      const endDate = `${params.date}T${params.endTime}`;
-
       const event = await eventRepository.insertEvent(
         {
           event_title: params.title,
-          start_date: startDate,
-          end_date: endDate,
+          start_date: params.startDate,
+          end_date: params.endDate,
           status: params.status,
           type: params.type,
           description: params.description,
@@ -219,28 +215,13 @@ class EventService {
       if (params.status !== undefined) updateData.status = params.status;
       if (params.type !== undefined) updateData.type = params.type;
 
-      if (params.date !== undefined && params.startTime !== undefined) {
-        updateData.start_date = `${params.date}T${params.startTime}`;
-      } else if (params.date !== undefined) {
-        // Only date provided — preserve existing time from start_date
-        const existingTimePart = existing.start_date.split('T')[1] ?? '00:00';
-        updateData.start_date = `${params.date}T${existingTimePart}`;
-      } else if (params.startTime !== undefined) {
-        const existingDatePart = existing.start_date.split('T')[0];
-        updateData.start_date = `${existingDatePart}T${params.startTime}`;
-      }
+      if (params.startDate !== undefined) updateData.start_date = params.startDate;
+      if (params.endDate !== undefined) updateData.end_date = params.endDate;
 
-      if (params.date !== undefined && params.endTime !== undefined) {
-        updateData.end_date = `${params.date}T${params.endTime}`;
-      } else if (params.date !== undefined) {
-        // Only date provided — preserve existing time from end_date (fallback to start_date if end_date null)
-        const existingEnd = existing.end_date ?? existing.start_date;
-        const existingTimePart = existingEnd.split('T')[1] ?? '00:00';
-        updateData.end_date = `${params.date}T${existingTimePart}`;
-      } else if (params.endTime !== undefined) {
-        const existingEnd = existing.end_date ?? existing.start_date;
-        const existingDatePart = existingEnd.split('T')[0];
-        updateData.end_date = `${existingDatePart}T${params.endTime}`;
+      const effectiveStart = updateData.start_date ?? existing.start_date;
+      const effectiveEnd = updateData.end_date ?? existing.end_date ?? existing.start_date;
+      if (new Date(effectiveEnd as string) <= new Date(effectiveStart as string)) {
+        throw new InvalidDateRangeError();
       }
 
       const updatedEvent = await eventRepository.updateEvent(
@@ -292,7 +273,8 @@ class EventService {
         error instanceof EventNotFoundError ||
         error instanceof InvalidGroupIdsError ||
         error instanceof UnauthorizedGroupAccessError ||
-        error instanceof InvalidAgentIdsError
+        error instanceof InvalidAgentIdsError ||
+        error instanceof InvalidDateRangeError
       ) {
         throw error;
       }

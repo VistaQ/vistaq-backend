@@ -19,7 +19,7 @@ const GROUP_ID_ALPHA = '00000000-0000-4000-8000-000000000001'; // Alpha Team
 const GROUP_ID_BETA = '00000000-0000-4000-8000-000000000002';  // Beta Team
 
 /** Admin account — must exist in the running local Supabase instance */
-const ADMIN_EMAIL = 'jeremy.nathan1@gmail.com';
+const ADMIN_EMAIL = 'admin@demo-agency.com';
 const ADMIN_PASSWORD = 'password';
 
 /**
@@ -56,18 +56,19 @@ let trainerUserId: string | null = null;
 /** IDs of events created during the test run — deleted in afterAll */
 const createdEventIds: string[] = [];
 
-/** A future date string in YYYY-MM-DD format, always at least one day ahead */
+/** A future ISO 8601 datetime string with UTC timezone, always at least N days ahead */
 function futureDate(offsetDays = 1): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().split('T')[0];
+  return new Date(Date.now() + offsetDays * 86400000).toISOString();
 }
 
-/** A past date string in YYYY-MM-DD format */
+/** A future ISO 8601 end datetime string, offset by extra hours from start */
+function futureDateEnd(offsetDays = 1, extraHours = 2): string {
+  return new Date(Date.now() + offsetDays * 86400000 + extraHours * 3600000).toISOString();
+}
+
+/** A past ISO 8601 datetime string with UTC timezone */
 function pastDate(offsetDays = 1): string {
-  const d = new Date();
-  d.setDate(d.getDate() - offsetDays);
-  return d.toISOString().split('T')[0];
+  return new Date(Date.now() - offsetDays * 86400000).toISOString();
 }
 
 /******************************************************************************
@@ -278,9 +279,8 @@ describe('POST /api/events — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Integration Test Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Created by integration test suite',
         groupIds: [GROUP_ID_ALPHA],
@@ -322,9 +322,8 @@ describe('POST /api/events — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'AgentIds Only Event',
-        date: futureDate(7),
-        startTime: '10:00',
-        endTime: '12:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Event targeting agents directly',
         agentIds: [agentUserId!],
@@ -358,9 +357,8 @@ describe('POST /api/events — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Groups And Agents Event',
-        date: futureDate(7),
-        startTime: '14:00',
-        endTime: '16:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Online',
         description: 'Event targeting both groups and agents',
         groupIds: [GROUP_ID_ALPHA],
@@ -394,9 +392,8 @@ describe('POST /api/events — role guard', () => {
       .set('Authorization', `Bearer ${agentToken}`)
       .send({
         title: 'Agent Event Attempt',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should be rejected',
         groupIds: [GROUP_ID_ALPHA],
@@ -410,9 +407,8 @@ describe('POST /api/events — role guard', () => {
       .post('/api/events')
       .send({
         title: 'No Auth Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should be rejected',
         groupIds: [GROUP_ID_ALPHA],
@@ -431,9 +427,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Past Event',
-        date: pastDate(1),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: pastDate(1),
+        endDate: pastDate(1),
         type: 'Face to Face',
         description: 'Should fail validation',
         groupIds: [GROUP_ID_ALPHA],
@@ -451,9 +446,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Invalid Groups Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail group validation',
         groupIds: ['00000000-0000-0000-0000-000000000099'],
@@ -471,9 +465,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${trainerToken}`)
       .send({
         title: 'Trainer Unmanaged Group Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail group ownership check',
         groupIds: [GROUP_ID_ALPHA],
@@ -490,9 +483,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Missing Fields Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         // type and description omitted, no groupIds/agentIds
       });
 
@@ -508,9 +500,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'No Audience Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail — at least one of groupIds or agentIds required',
       });
@@ -527,9 +518,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'No Groups Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail validation',
         groupIds: [],
@@ -547,9 +537,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Bad Type Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Virtual',
         description: 'Should fail type validation',
         groupIds: [GROUP_ID_ALPHA],
@@ -568,9 +557,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Duplicate Agent IDs Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail — duplicate agentIds',
         agentIds: [agentUserId!, agentUserId!],
@@ -590,9 +578,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Invalid Role Agent Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail — admin user is not agent/group_leader',
         agentIds: [adminUserId!],
@@ -609,9 +596,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Non-existent Agent Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail — non-existent agentId',
         agentIds: ['00000000-0000-0000-0000-000000000099'],
@@ -628,9 +614,8 @@ describe('POST /api/events — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Extra Field Event',
-        date: futureDate(7),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(7),
+        endDate: futureDateEnd(7),
         type: 'Face to Face',
         description: 'Should fail strict validation',
         groupIds: [GROUP_ID_ALPHA],
@@ -656,9 +641,8 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event To Update',
-        date: futureDate(10),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         type: 'Face to Face',
         description: 'Original description',
         groupIds: [GROUP_ID_ALPHA],
@@ -701,9 +685,8 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event For Group Update',
-        date: futureDate(10),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         type: 'Face to Face',
         description: 'Will have groups replaced',
         groupIds: [GROUP_ID_ALPHA],
@@ -742,9 +725,8 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event For AgentIds Update',
-        date: futureDate(10),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         type: 'Online',
         description: 'Will have agentIds added via PUT',
         groupIds: [GROUP_ID_ALPHA],
@@ -780,9 +762,8 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event To Complete',
-        date: futureDate(10),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         type: 'Face to Face',
         description: 'Will be marked completed',
         groupIds: [GROUP_ID_ALPHA],
@@ -816,9 +797,8 @@ describe('PUT /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event To Change Type',
-        date: futureDate(10),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         type: 'Face to Face',
         description: 'Type will be changed to Online',
         groupIds: [GROUP_ID_ALPHA],
@@ -888,9 +868,8 @@ describe('PUT /api/events/:eventId — validation', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event For Past Date Update',
-        date: futureDate(10),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(10),
+        endDate: futureDateEnd(10),
         type: 'Face to Face',
         description: 'Will attempt a past-date update',
         groupIds: [GROUP_ID_ALPHA],
@@ -903,7 +882,7 @@ describe('PUT /api/events/:eventId — validation', () => {
     const res = await request(app)
       .put(`/api/events/${eventId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ date: pastDate(1) });
+      .send({ startDate: pastDate(1) });
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty('message', 'Validation failed');
@@ -1000,9 +979,8 @@ describe('GET /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event For Get By ID',
-        date: futureDate(5),
-        startTime: '09:00',
-        endTime: '11:00',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
         type: 'Online',
         description: 'Fetched in GET by ID test',
         groupIds: [GROUP_ID_ALPHA],
@@ -1045,9 +1023,8 @@ describe('GET /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event With GroupIds Only',
-        date: futureDate(5),
-        startTime: '10:00',
-        endTime: '12:00',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
         type: 'Online',
         description: 'Testing groupIds returned on GET by ID',
         groupIds: [GROUP_ID_ALPHA, GROUP_ID_BETA],
@@ -1079,9 +1056,8 @@ describe('GET /api/events/:eventId — happy path', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         title: 'Event With AgentIds Only',
-        date: futureDate(5),
-        startTime: '13:00',
-        endTime: '15:00',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
         type: 'Face to Face',
         description: 'Testing agentIds returned on GET by ID',
         agentIds: [agentUserId!],

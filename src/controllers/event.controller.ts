@@ -3,6 +3,7 @@ import { NextFunction, Response } from 'express';
 import {
   EventNotFoundError,
   InvalidAgentIdsError,
+  InvalidDateRangeError,
   InvalidGroupIdsError,
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
@@ -20,9 +21,8 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 export interface ICreateEventReq extends IBaseReq {
   body: {
     title: string;
-    date: string;
-    startTime: string;
-    endTime: string;
+    startDate: string;
+    endDate: string;
     status?: string;
     type: string;
     link?: string;
@@ -42,9 +42,8 @@ export interface IUpdateEventReq extends IBaseReq {
   params: { eventId: string };
   body: {
     title?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
+    startDate?: string;
+    endDate?: string;
     status?: string;
     type?: string;
     link?: string;
@@ -93,14 +92,13 @@ class EventController {
       }
 
       const token = req.headers['authorization']!.slice(7);
-      const { title, date, startTime, endTime, status, type, link, venue, description, groupIds, agentIds } =
+      const { title, startDate, endDate, status, type, link, venue, description, groupIds, agentIds } =
         req.body;
 
       const event = await eventService.createEvent({
         title,
-        date,
-        startTime,
-        endTime,
+        startDate,
+        endDate,
         status,
         type,
         link,
@@ -147,15 +145,14 @@ class EventController {
 
       const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
-      const { title, date, startTime, endTime, status, type, link, venue, description, groupIds, agentIds } =
+      const { title, startDate, endDate, status, type, link, venue, description, groupIds, agentIds } =
         req.body;
 
       const event = await eventService.updateEvent({
         eventId,
         title,
-        date,
-        startTime,
-        endTime,
+        startDate,
+        endDate,
         status,
         type,
         link,
@@ -185,6 +182,10 @@ class EventController {
         return;
       }
       if (error instanceof InvalidAgentIdsError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+      if (error instanceof InvalidDateRangeError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
         return;
       }
