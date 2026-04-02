@@ -1895,9 +1895,8 @@ paths:
               type: object
               required:
                 - title
-                - date
-                - startTime
-                - endTime
+                - startDate
+                - endDate
                 - type
                 - description
               additionalProperties: false
@@ -1907,21 +1906,20 @@ paths:
                   minLength: 1
                   description: Title of the event.
                   example: Q2 Training Kickoff
-                date:
+                startDate:
                   type: string
-                  format: date
+                  format: date-time
                   description: >
-                    Date of the event in YYYY-MM-DD format. Cannot be a past
-                    date.
-                  example: '2026-04-15'
-                startTime:
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Cannot be in the past.
+                  example: '2026-04-15T09:00:00+08:00'
+                endDate:
                   type: string
-                  description: Start time of the event in HH:MM 24-hour format.
-                  example: '09:00'
-                endTime:
-                  type: string
-                  description: End time of the event in HH:MM 24-hour format.
-                  example: '11:00'
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-15T11:00:00+08:00'
                 status:
                   type: string
                   enum: [upcoming, completed, cancelled]
@@ -2190,21 +2188,19 @@ paths:
                   minLength: 1
                   description: Updated title of the event.
                   example: Q2 Training Kickoff (Revised)
-                date:
+                startDate:
                   type: string
-                  format: date
+                  format: date-time
                   description: >
-                    Updated date of the event in YYYY-MM-DD format. Cannot be a
-                    past date.
-                  example: '2026-04-20'
-                startTime:
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                  example: '2026-04-20T10:00:00+08:00'
+                endDate:
                   type: string
-                  description: Updated start time of the event in HH:MM 24-hour format.
-                  example: '10:00'
-                endTime:
-                  type: string
-                  description: Updated end time of the event in HH:MM 24-hour format.
-                  example: '12:00'
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-20T12:00:00+08:00'
                 status:
                   type: string
                   enum: [upcoming, completed, cancelled]
@@ -2271,8 +2267,9 @@ paths:
         '400':
           description: >
             Bad request. Returned when the request body fails validation (e.g.
-            no fields provided, `date` is in the past, a supplied group UUID
-            does not exist, or a trainer supplies a group they do not manage).
+            no fields provided, `startDate` is in the past, `endDate` is not
+            after `startDate`, a supplied group UUID does not exist, or a
+            trainer supplies a group they do not manage).
           content:
             application/json:
               schema:
@@ -2288,6 +2285,10 @@ paths:
                       - code: custom
                         message: At least one field must be provided
                         path: []
+                invalidDateRange:
+                  summary: endDate is not after startDate
+                  value:
+                    message: endDate must be after startDate
                 invalidGroupIds:
                   summary: One or more group IDs do not exist
                   value:
@@ -2849,7 +2850,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [coachingType, title, date, startTime, endTime, trainingMode]
+              required: [coachingType, title, startDate, endDate, trainingMode]
               properties:
                 coachingType:
                   $ref: '#/components/schemas/CoachingTypeEnum'
@@ -2860,21 +2861,20 @@ paths:
                 description:
                   type: string
                   example: Focus on objection handling techniques
-                date:
+                startDate:
                   type: string
-                  pattern: '^\d{4}-\d{2}-\d{2}$'
-                  description: Session date in YYYY-MM-DD format. Cannot be in the past.
-                  example: '2026-04-15'
-                startTime:
+                  format: date-time
+                  description: >
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Cannot be in the past.
+                  example: '2026-04-15T10:00:00+08:00'
+                endDate:
                   type: string
-                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
-                  description: Start time in HH:MM 24-hour format.
-                  example: '10:00'
-                endTime:
-                  type: string
-                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
-                  description: End time in HH:MM 24-hour format.
-                  example: '12:00'
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-15T12:00:00+08:00'
                 trainingMode:
                   $ref: '#/components/schemas/TrainingModeEnum'
                 link:
@@ -3072,19 +3072,19 @@ paths:
                 description:
                   type: string
                   example: Updated description
-                date:
+                startDate:
                   type: string
-                  pattern: '^\d{4}-\d{2}-\d{2}$'
-                  description: Session date in YYYY-MM-DD format. Cannot be in the past.
-                  example: '2026-04-20'
-                startTime:
+                  format: date-time
+                  description: >
+                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                  example: '2026-04-20T14:00:00+08:00'
+                endDate:
                   type: string
-                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
-                  example: '14:00'
-                endTime:
-                  type: string
-                  pattern: '^([01]\d|2[0-3]):[0-5]\d$'
-                  example: '16:00'
+                  format: date-time
+                  description: >
+                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    Must be after startDate.
+                  example: '2026-04-20T16:00:00+08:00'
                 trainingMode:
                   $ref: '#/components/schemas/TrainingModeEnum'
                 link:
@@ -3122,15 +3122,24 @@ paths:
                     $ref: '#/components/schemas/CoachingSessionObject'
         '400':
           description: >
-            Validation failed, invalid group IDs, invalid agent IDs, or
-            unauthorized group access.
+            Validation failed, invalid group IDs, invalid agent IDs,
+            unauthorized group access, or `endDate` is not after `startDate`.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ValidationErrorResponse'
-              example:
-                message: Validation failed
-                errors: []
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationFailure:
+                  summary: Request body validation failure
+                  value:
+                    message: Validation failed
+                    errors: []
+                invalidDateRange:
+                  summary: endDate is not after startDate
+                  value:
+                    message: endDate must be after startDate
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -3871,8 +3880,7 @@ components:
           format: date-time
           description: >
             Start date and time of the event stored as a TIMESTAMPTZ value.
-            Formed by combining the `date` and `startTime` fields supplied on
-            create/update into a single ISO 8601 timestamp.
+            Value of the `startDate` field supplied in the request.
           example: '2026-04-15T09:00:00.000Z'
         end_date:
           type: string
@@ -3880,8 +3888,7 @@ components:
           nullable: true
           description: >
             End date and time of the event stored as a TIMESTAMPTZ value.
-            Formed by combining the `date` and `endTime` fields supplied on
-            create/update into a single ISO 8601 timestamp.
+            Value of the `endDate` field supplied in the request.
           example: '2026-04-15T11:00:00.000Z'
         status:
           type: string
@@ -4339,8 +4346,7 @@ components:
           format: date-time
           description: >
             Start date and time of the session stored as a TIMESTAMPTZ value.
-            Formed by combining the `date` and `startTime` fields supplied on
-            create/update into a single ISO 8601 timestamp.
+            Value of the `startDate` field supplied in the request.
           example: '2026-04-15T10:00:00.000Z'
         end_date:
           type: string
@@ -4348,8 +4354,7 @@ components:
           nullable: true
           description: >
             End date and time of the session stored as a TIMESTAMPTZ value.
-            Formed by combining the `date` and `endTime` fields supplied on
-            create/update into a single ISO 8601 timestamp.
+            Value of the `endDate` field supplied in the request.
           example: '2026-04-15T12:00:00.000Z'
         training_mode:
           $ref: '#/components/schemas/TrainingModeEnum'
