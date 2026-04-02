@@ -469,6 +469,27 @@ export type Database = {
           },
         ]
       }
+      point_activity_types: {
+        Row: {
+          category: string
+          label: string
+          name: string
+          subject_type: string
+        }
+        Insert: {
+          category: string
+          label: string
+          name: string
+          subject_type: string
+        }
+        Update: {
+          category?: string
+          label?: string
+          name?: string
+          subject_type?: string
+        }
+        Relationships: []
+      }
       point_configs: {
         Row: {
           activity: string
