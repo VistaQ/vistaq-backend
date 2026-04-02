@@ -3,6 +3,7 @@ import { NextFunction, Response } from 'express';
 import {
   CoachingSessionNotFoundError,
   InvalidAgentIdsError,
+  InvalidDateRangeError,
   InvalidGroupIdsError,
   UnauthorizedGroupAccessError,
   UnauthorizedSessionAccessError,
@@ -23,9 +24,8 @@ export interface ICreateCoachingSessionReq extends IBaseReq {
     coachingType: string;
     title: string;
     description?: string;
-    date: string;
-    startTime: string;
-    endTime: string;
+    startDate: string;
+    endDate: string;
     trainingMode: string;
     link?: string;
     status?: string;
@@ -45,9 +45,8 @@ export interface IUpdateCoachingSessionReq extends IBaseReq {
     coachingType?: string;
     title?: string;
     description?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
+    startDate?: string;
+    endDate?: string;
     trainingMode?: string;
     link?: string;
     status?: string;
@@ -116,7 +115,7 @@ class CoachingSessionController {
 
       const token = req.headers['authorization']!.slice(7);
       const {
-        coachingType, title, description, date, startTime, endTime,
+        coachingType, title, description, startDate, endDate,
         trainingMode, link, status, groupIds, agentIds,
       } = req.body;
 
@@ -124,9 +123,8 @@ class CoachingSessionController {
         coachingType,
         title,
         description,
-        date,
-        startTime,
-        endTime,
+        startDate,
+        endDate,
         trainingMode,
         link,
         status,
@@ -171,7 +169,7 @@ class CoachingSessionController {
       const token = req.headers['authorization']!.slice(7);
       const { sessionId } = req.params;
       const {
-        coachingType, title, description, date, startTime, endTime,
+        coachingType, title, description, startDate, endDate,
         trainingMode, link, status, groupIds, agentIds,
       } = req.body;
 
@@ -180,9 +178,8 @@ class CoachingSessionController {
         coachingType,
         title,
         description,
-        date,
-        startTime,
-        endTime,
+        startDate,
+        endDate,
         trainingMode,
         link,
         status,
@@ -210,6 +207,10 @@ class CoachingSessionController {
         return;
       }
       if (error instanceof InvalidAgentIdsError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+      if (error instanceof InvalidDateRangeError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
         return;
       }
