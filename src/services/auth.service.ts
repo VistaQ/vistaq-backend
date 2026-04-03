@@ -8,6 +8,7 @@ import loggingService from '@src/services/logging.service';
 import EnvVars from '@src/utils/env';
 import { IUser } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { emitLogin, emitRegistration, withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             AuthService
@@ -51,6 +52,7 @@ interface IResetPasswordParams {
 
 class AuthService {
   async register(params: IRegisterParams): Promise<IRegisterResult> {
+    return withServiceSpan('AuthService', 'register', { tenant_slug: params.tenantSlug }, async () => {
     try {
       // Step 1 — Resolve tenant
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
@@ -124,6 +126,7 @@ class AuthService {
         token = null;
       }
 
+      emitRegistration(tenant.id);
       return { user, token };
     } catch (error) {
       // Re-throw domain errors directly so the controller can handle them
@@ -135,6 +138,7 @@ class AuthService {
       }
       return handleServiceError('AuthService.register', error);
     }
+    });
   }
 
   async me(userId: string): Promise<IUser | null> {
@@ -155,6 +159,7 @@ class AuthService {
   }
 
   async login(params: ILoginParams): Promise<ILoginResult> {
+    return withServiceSpan('AuthService', 'login', { tenant_slug: params.tenantSlug }, async () => {
     try {
       // Step 1 — Resolve tenant
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
@@ -168,20 +173,24 @@ class AuthService {
         params.password,
       );
       if (!signInResult) {
+        emitLogin(tenant.id, false);
         throw new InvalidCredentialsError();
       }
 
       // Step 3 — Fetch user profile
       const user = await authRepository.findUserById(signInResult.userId);
       if (!user) {
+        emitLogin(tenant.id, false);
         throw new InvalidCredentialsError();
       }
 
       // Step 4 — Verify tenant membership
       if (user.tenant_id !== tenant.id) {
+        emitLogin(tenant.id, false);
         throw new InvalidCredentialsError();
       }
 
+      emitLogin(tenant.id, true);
       return { user, token: signInResult.token };
     } catch (error) {
       // Re-throw domain errors directly so the controller can handle them
@@ -193,6 +202,7 @@ class AuthService {
       }
       return handleServiceError('AuthService.login', error);
     }
+    });
   }
 
   async forgotPassword(params: IForgotPasswordParams): Promise<void> {

@@ -8,6 +8,7 @@ import {
 import eventRepository from '@src/repositories/event.repository';
 import { IEvent } from '@src/types/event.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             Interfaces
@@ -55,6 +56,7 @@ interface IUpdateEventParams {
 
 class EventService {
   async createEvent(params: ICreateEventParams): Promise<IEvent> {
+    return withServiceSpan('EventService', 'createEvent', { tenant_id: params.tenantId, type: params.type }, async () => {
     try {
       if (params.groupIds) {
         const foundGroupIds = await eventRepository.findGroupsByIds(
@@ -148,9 +150,11 @@ class EventService {
       }
       return handleServiceError('EventService.createEvent', error);
     }
+    });
   }
 
   async updateEvent(params: IUpdateEventParams): Promise<IEvent> {
+    return withServiceSpan('EventService', 'updateEvent', { event_id: params.eventId, tenant_id: params.tenantId }, async () => {
     try {
       const existing = await eventRepository.findById(
         params.eventId,
@@ -280,6 +284,7 @@ class EventService {
       }
       return handleServiceError('EventService.updateEvent', error);
     }
+    });
   }
 
   async getEvents(token: string): Promise<IEvent[]> {

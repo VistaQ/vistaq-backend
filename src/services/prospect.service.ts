@@ -2,6 +2,7 @@ import prospectRepository from '@src/repositories/prospect.repository';
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import { IProspect } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { emitProspectStageTransition, withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             Interfaces
@@ -80,6 +81,7 @@ class ProspectService {
   }
 
   async updateProspect(params: IUpdateProspectParams): Promise<IProspect> {
+    return withServiceSpan('ProspectService', 'updateProspect', { prospect_id: params.prospectId }, async () => {
     try {
       const existing = await prospectRepository.findById(params.prospectId, params.token);
       if (!existing) {
@@ -102,6 +104,7 @@ class ProspectService {
             ...history,
             { stage: data.currentStage, enteredAt: new Date().toISOString() },
           ];
+          emitProspectStageTransition(existing.tenant_id, existing.current_stage, data.currentStage);
         }
       }
 
@@ -142,6 +145,7 @@ class ProspectService {
       if (error instanceof ProspectNotFoundError) throw error;
       return handleServiceError('ProspectService.updateProspect', error);
     }
+    });
   }
 }
 
