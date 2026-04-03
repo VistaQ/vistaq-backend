@@ -9,6 +9,7 @@ import {
 import { RouteError } from '@src/models/errors/route.error';
 import loggingService, { asyncLocalStorage } from '@src/services/logging.service';
 import { getRootCause } from '@src/utils/sentry.utils';
+import { emitErrorCount } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                         Per-Layer Error Handlers
@@ -55,6 +56,10 @@ export function handleControllerError(
 ): void {
   loggingService.error(`${context} failed`, error);
 
+  const rootCause = getRootCause(error);
+  const errorType = rootCause instanceof Error ? rootCause.constructor.name : 'UnknownError';
+  emitErrorCount(errorType, context);
+
   // Configure Sentry scope with root cause fingerprinting and severity level.
   // next() is called inside the callback so the scope is active when the error
   // propagates to Sentry's error handler.
@@ -64,7 +69,6 @@ export function handleControllerError(
       scope.setExtra('correlationId', correlationId);
     }
 
-    const rootCause = getRootCause(error);
     if (rootCause instanceof RouteError) {
       scope.setFingerprint([rootCause.constructor.name, String(rootCause.status), rootCause.message]);
       scope.setLevel(rootCause.status >= 500 ? 'error' : 'warning');

@@ -5,6 +5,7 @@ import { SupabaseServiceError } from '@src/models/errors/supabase.error';
 import loggingService from '@src/services/logging.service';
 import { Database } from '@src/types/database.types';
 import EnvVars from '@src/utils/env';
+import { emitDbMetrics } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             SupabaseService
@@ -58,7 +59,8 @@ class SupabaseService {
     attributes: Record<string, string | number | undefined>,
     fn: () => Promise<R>,
   ): Promise<R> {
-    return Sentry.startSpan(
+    const startTime = Date.now();
+    const result = await Sentry.startSpan(
       {
         op,
         name,
@@ -68,6 +70,12 @@ class SupabaseService {
       },
       fn,
     );
+    emitDbMetrics(
+      String(attributes.table ?? 'rpc'),
+      op,
+      Date.now() - startTime,
+    );
+    return result;
   }
 
   // ---------------------------------------------------------------------------

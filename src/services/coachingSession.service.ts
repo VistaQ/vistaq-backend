@@ -9,6 +9,7 @@ import {
 import coachingSessionRepository from '@src/repositories/coachingSession.repository';
 import { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { emitSessionJoin, withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             Interfaces
@@ -75,6 +76,7 @@ interface IMarkNonAttendeesParams {
 
 class CoachingSessionService {
   async createSession(params: ICreateCoachingSessionParams): Promise<ICoachingSession> {
+    return withServiceSpan('CoachingSessionService', 'createSession', { tenant_id: params.tenantId, coaching_type: params.coachingType }, async () => {
     try {
       // Validate groupIds if provided
       if (params.groupIds) {
@@ -187,9 +189,11 @@ class CoachingSessionService {
       }
       return handleServiceError('CoachingSessionService.createSession', error);
     }
+    });
   }
 
   async updateSession(params: IUpdateCoachingSessionParams): Promise<ICoachingSession> {
+    return withServiceSpan('CoachingSessionService', 'updateSession', { session_id: params.sessionId, tenant_id: params.tenantId }, async () => {
     try {
       const existing = await coachingSessionRepository.findById(
         params.sessionId,
@@ -338,6 +342,7 @@ class CoachingSessionService {
       }
       return handleServiceError('CoachingSessionService.updateSession', error);
     }
+    });
   }
 
   async deleteSession(params: IDeleteCoachingSessionParams): Promise<void> {
@@ -386,6 +391,7 @@ class CoachingSessionService {
   }
 
   async joinSession(params: IJoinSessionParams): Promise<ICoachingSessionAttendance> {
+    return withServiceSpan('CoachingSessionService', 'joinSession', { session_id: params.sessionId, user_id: params.userId }, async () => {
     try {
       // Verify session exists
       const session = await coachingSessionRepository.findById(
@@ -424,6 +430,7 @@ class CoachingSessionService {
           throw new CoachingSessionNotFoundError('Attendance record not found');
         }
 
+        emitSessionJoin(session.tenant_id);
         return updated;
       }
 
@@ -465,6 +472,7 @@ class CoachingSessionService {
         throw new CoachingSessionNotFoundError();
       }
 
+      emitSessionJoin(session.tenant_id);
       return record;
     } catch (error) {
       if (error instanceof CoachingSessionNotFoundError) {
@@ -472,6 +480,7 @@ class CoachingSessionService {
       }
       return handleServiceError('CoachingSessionService.joinSession', error);
     }
+    });
   }
 
   async markNonAttendees(params: IMarkNonAttendeesParams): Promise<void> {

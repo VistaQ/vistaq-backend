@@ -111,6 +111,14 @@ export default defineConfig([
       'no-process-env': 'off',
     },
   },
+  // Standalone scripts: console output and process.env access are intentional.
+  {
+    files: ['scripts/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+      'no-process-env': 'off',
+    },
+  },
   // MUST be last — disables ALL formatting rules
   eslintConfigPrettier,
 ]);

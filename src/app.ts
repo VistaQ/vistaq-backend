@@ -11,6 +11,7 @@ import { RouteError } from '@src/models/errors/route.error';
 import router from '@src/routes/router';
 import healthController from '@src/controllers/health.controller';
 import { asyncLocalStorage, loggingService } from '@src/services/logging.service';
+import { emitHttpMetrics, emitActiveUser } from '@src/utils/sentry.metrics';
 
 import EnvVars, { NodeEnvs } from './utils/env';
 
@@ -84,11 +85,32 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         // versions, wrap this listener in asyncLocalStorage.run({ correlationId }, ...).
         res.on('finish', () => {
           try {
+            const durationMs = Date.now() - startTime;
+
+            // Derive a stable route pattern (e.g. "GET /api/users/:userId").
+            // req.route is populated only after the route handler runs, making
+            // the finish listener the correct place to read it.
+            const routePattern = req.route?.path
+              ? `${req.method} ${req.baseUrl}${req.route.path}`
+              : `${req.method} ${req.originalUrl.split('?')[0]}`;
+
+            Sentry.setTag('route_pattern', routePattern);
+            Sentry.setTag('http.status_code', String(res.statusCode));
+            if (req.user?.role) {
+              Sentry.setTag('user_role', req.user.role);
+            }
+
+            emitHttpMetrics(req.method, routePattern, res.statusCode, durationMs);
+
+            if (req.user) {
+              emitActiveUser(req.user.tenant_id);
+            }
+
             loggingService.info('Outgoing response', {
               method: req.method,
               url: req.originalUrl,
               statusCode: res.statusCode,
-              durationMs: Date.now() - startTime,
+              durationMs,
               headers: res.getHeaders(),
               body: capturedResponseBody,
             });

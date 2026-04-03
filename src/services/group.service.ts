@@ -21,6 +21,7 @@ import {
 } from '@src/types/group-detail-stats.types';
 import { IGroupStats } from '@src/types/group-stats.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { withServiceSpan } from '@src/utils/sentry.metrics';
 
 type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
 
@@ -246,6 +247,7 @@ class GroupService {
   }
 
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
+    return withServiceSpan('GroupService', 'createGroup', { tenant_id: params.tenantId }, async () => {
     try {
       // Step 1 — Validate leader if provided
       if (params.leaderId) {
@@ -348,9 +350,11 @@ class GroupService {
       }
       return handleServiceError('GroupService.createGroup', error);
     }
+    });
   }
 
   async updateGroup(params: IUpdateGroupParams): Promise<IGroup> {
+    return withServiceSpan('GroupService', 'updateGroup', { group_id: params.groupId }, async () => {
     try {
       const { groupId, token, data } = params;
 
@@ -477,6 +481,7 @@ class GroupService {
       }
       return handleServiceError('GroupService.updateGroup', error);
     }
+    });
   }
 }
 
