@@ -204,7 +204,7 @@ export type Database = {
           created_by_name: string | null
           created_by_role: string | null
           description: string | null
-          end_date: string | null
+          end_date: string
           id: string
           link: string | null
           start_date: string
@@ -221,7 +221,7 @@ export type Database = {
           created_by_name?: string | null
           created_by_role?: string | null
           description?: string | null
-          end_date?: string | null
+          end_date: string
           id?: string
           link?: string | null
           start_date: string
@@ -238,7 +238,7 @@ export type Database = {
           created_by_name?: string | null
           created_by_role?: string | null
           description?: string | null
-          end_date?: string | null
+          end_date?: string
           id?: string
           link?: string | null
           start_date?: string
@@ -925,3 +925,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
