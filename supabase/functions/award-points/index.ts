@@ -77,8 +77,7 @@ const COACHING_TYPE_ACTIVITY_MAP: Record<string, string> = {
   individual_coaching: "coaching_individual_attended",
   group_coaching: "coaching_group_attended",
   peer_circles: "coaching_peer_circles_attended",
-  "2_full_days_seminar": "coaching_2_full_days_attended",
-  "2_hours_online_seminar": "coaching_2_hours_online_attended",
+  seminar_attended: "seminar_attended",
 };
 
 // ---------- Dispatcher ----------

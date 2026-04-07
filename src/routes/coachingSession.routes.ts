@@ -20,7 +20,8 @@ import { IBaseReq } from '@src/models/interfaces/base.interface';
                             Zod Schemas
 ******************************************************************************/
 
-const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)$/;
+const ISO_DATETIME_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)$/;
 
 function isNotPastDateTime(dateStr: string): boolean {
   const input = new Date(dateStr);
@@ -29,14 +30,16 @@ function isNotPastDateTime(dateStr: string): boolean {
 
 const isoDateTimeField = z
   .string()
-  .regex(ISO_DATETIME_REGEX, 'Must be ISO 8601 with timezone (e.g. 2026-04-03T09:00:00+08:00)');
+  .regex(
+    ISO_DATETIME_REGEX,
+    'Must be ISO 8601 with timezone (e.g. 2026-04-03T09:00:00+08:00)',
+  );
 
 const COACHING_TYPES = [
   'individual_coaching',
   'group_coaching',
   'peer_circles',
-  '2_full_days_seminar',
-  '2_hours_online_seminar',
+  'seminar',
 ] as const;
 const TRAINING_MODES = ['online', 'face_to_face'] as const;
 const STATUSES = ['upcoming', 'ongoing', 'completed', 'cancelled'] as const;
@@ -46,7 +49,9 @@ export const createCoachingSessionSchema = z
     coachingType: z.enum(COACHING_TYPES),
     title: z.string().min(1),
     description: z.string().optional(),
-    startDate: isoDateTimeField.refine(isNotPastDateTime, { message: 'startDate cannot be in the past' }),
+    startDate: isoDateTimeField.refine(isNotPastDateTime, {
+      message: 'startDate cannot be in the past',
+    }),
     endDate: isoDateTimeField,
     trainingMode: z.enum(TRAINING_MODES),
     link: z.string().optional(),
@@ -65,10 +70,10 @@ export const createCoachingSessionSchema = z
       .optional(),
   })
   .strict()
-  .refine(
-    (data) => new Date(data.endDate) > new Date(data.startDate),
-    { message: 'endDate must be after startDate', path: ['endDate'] },
-  );
+  .refine((data) => new Date(data.endDate) > new Date(data.startDate), {
+    message: 'endDate must be after startDate',
+    path: ['endDate'],
+  });
 // NOTE: No cross-field refinement for groupIds/agentIds — both being absent means all-audience
 
 export const updateCoachingSessionSchema = z
@@ -76,7 +81,9 @@ export const updateCoachingSessionSchema = z
     coachingType: z.enum(COACHING_TYPES).optional(),
     title: z.string().min(1).optional(),
     description: z.string().optional(),
-    startDate: isoDateTimeField.refine(isNotPastDateTime, { message: 'startDate cannot be in the past' }).optional(),
+    startDate: isoDateTimeField
+      .refine(isNotPastDateTime, { message: 'startDate cannot be in the past' })
+      .optional(),
     endDate: isoDateTimeField.optional(),
     trainingMode: z.enum(TRAINING_MODES).optional(),
     link: z.string().optional(),

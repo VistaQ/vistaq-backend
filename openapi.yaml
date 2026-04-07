@@ -4331,8 +4331,7 @@ components:
         - individual_coaching
         - group_coaching
         - peer_circles
-        - 2_full_days_seminar
-        - 2_hours_online_seminar
+        - seminar
       example: group_coaching
 
     TrainingModeEnum:
