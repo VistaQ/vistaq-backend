@@ -270,7 +270,7 @@ class CoachingSessionService {
       if (params.endDate !== undefined) updateData.end_date = params.endDate;
 
       const effectiveStart = updateData.start_date ?? existing.start_date;
-      const effectiveEnd = updateData.end_date ?? existing.end_date ?? existing.start_date;
+      const effectiveEnd = updateData.end_date ?? existing.end_date;
       if (new Date(effectiveEnd as string) <= new Date(effectiveStart as string)) {
         throw new InvalidDateRangeError();
       }

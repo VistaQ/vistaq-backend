@@ -116,6 +116,7 @@ Deno.serve(async (req) => {
     let tenantId: string;
     let userId: string;
     let subjectId: string;
+    let sessionDurationHours: number | null = null;
 
     if (payload.table === "prospects") {
       if (!payload.record.agent_id) {
@@ -131,10 +132,10 @@ Deno.serve(async (req) => {
       userId = payload.record.agent_id as string;
       subjectId = payload.record.id as string;
 
-      // Resolve tenant_id and coaching_type from coaching_sessions
+      // Resolve tenant_id, coaching_type, and duration from coaching_sessions
       const { data: session, error: sessionError } = await supabase
         .from("coaching_sessions")
-        .select("tenant_id, coaching_type")
+        .select("tenant_id, coaching_type, start_date, end_date")
         .eq("id", payload.record.session_id as string)
         .single();
 
@@ -151,6 +152,24 @@ Deno.serve(async (req) => {
         return ok;
       }
       activity = mappedActivity;
+
+      // Compute session duration in hours (ceiling)
+      const startMs = new Date(session.start_date as string).getTime();
+      const endMs = new Date(session.end_date as string).getTime();
+
+      if (isNaN(startMs) || isNaN(endMs)) {
+        console.warn(`[award-points] Unparseable date on session ${payload.record.session_id} — skipping`);
+        return ok;
+      }
+
+      const durationMs = endMs - startMs;
+
+      if (durationMs <= 0) {
+        console.warn(`[award-points] Invalid session duration for session ${payload.record.session_id} — skipping`);
+        return ok;
+      }
+
+      sessionDurationHours = Math.ceil(durationMs / (1000 * 60 * 60));
     } else {
       return ok;
     }
@@ -204,13 +223,17 @@ Deno.serve(async (req) => {
     if (existing) return ok;
 
     // Step 6: Insert point transaction
+    const computedPoints = sessionDurationHours !== null
+      ? config.points * sessionDurationHours
+      : config.points;
+
     const { error: insertError } = await supabase
       .from("point_transactions")
       .insert({
         tenant_id: tenantId,
         user_id: userId,
         activity,
-        points: config.points,
+        points: computedPoints,
         subject_id: subjectId,
         subject_type: activityType.subject_type,
       });
