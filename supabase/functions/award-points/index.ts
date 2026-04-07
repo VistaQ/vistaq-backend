@@ -130,6 +130,10 @@ Deno.serve(async (req) => {
         return ok; // Cannot award points without a user
       }
       userId = payload.record.agent_id as string;
+      // Use the attendance row ID (not session_id) as subjectId so that each
+      // agent's attendance record is a distinct idempotency key. Using session_id
+      // would block all subsequent agents after the first is awarded points,
+      // since the idempotency check is (tenant_id, subject_id, activity) with no user_id.
       subjectId = payload.record.id as string;
 
       // Resolve tenant_id, coaching_type, and duration from coaching_sessions
