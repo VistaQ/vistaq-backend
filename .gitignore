@@ -4,6 +4,7 @@ api/index.js
 **/**/*.log
 tsconfig.tsbuildinfo
 .env
+.env.production
 serviceAccountKey.json
 .claude/mcp.json
 docs/
