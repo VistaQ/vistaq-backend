@@ -24,6 +24,7 @@ const EnvVars = {
   SentryDsn: process.env.SENTRY_DSN || '',
   VercelEnv: process.env.VERCEL_ENV || '',
   DisableHelmet: process.env.DISABLE_HELMET === 'true',
+  MaintenanceMode: (process.env.MAINTENANCE_MODE || 'false') === 'true',
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {

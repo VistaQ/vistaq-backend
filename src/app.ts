@@ -32,6 +32,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Maintenance mode — returns 503 for all routes except /health
+if (EnvVars.MaintenanceMode) {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path === '/health') return next();
+    res.status(503).json({ message: 'System under maintenance' });
+  });
+}
+
 // Pino request-logging middleware
 // Generates a correlation ID per request, stores it in AsyncLocalStorage,
 // and logs both incoming requests and outgoing responses including headers and body.
