@@ -11,13 +11,14 @@
         "-r",
         "tsconfig-paths/register"
       ],
-      "args": ["${workspaceFolder}/api/src/main.ts"],
-      "cwd": "${workspaceFolder}/api",
-      "envFile": "${workspaceFolder}/api/config/.env.development",
+      "args": ["${workspaceFolder}/src/main.ts"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "console": "internalConsole",
       "internalConsoleOptions": "openOnSessionStart",
       "sourceMaps": true,
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": ["<node_internals>/**"],
+      "outputCapture": "std"
     },
     {
       "type": "node",
@@ -29,15 +30,16 @@
         "-r",
         "tsconfig-paths/register"
       ],
-      "args": ["${workspaceFolder}/api/src/main.ts"],
-      "cwd": "${workspaceFolder}/api",
-      "envFile": "${workspaceFolder}/api/config/.env.development",
+      "args": ["${workspaceFolder}/src/main.ts"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "console": "internalConsole",
       "internalConsoleOptions": "openOnSessionStart",
       "sourceMaps": true,
       "skipFiles": ["<node_internals>/**"],
       "stopOnEntry": false,
-      "restart": true
+      "restart": true,
+      "outputCapture": "std"
     },
     {
       "type": "node",

@@ -1,0 +1,395 @@
+import supabaseService from '@src/services/supabase.service';
+import { IAgentCode, IUser } from '@src/types/auth.types';
+import { Database } from '@src/types/database.types';
+import { handleRepositoryError } from '@src/utils/errorHandlers';
+
+type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
+type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
+type UsersRow = Database['public']['Tables']['users']['Row'];
+type UsersInsert = Database['public']['Tables']['users']['Insert'];
+type UsersUpdate = Database['public']['Tables']['users']['Update'];
+
+/******************************************************************************
+                            UserRepository
+******************************************************************************/
+
+class UserRepository {
+  async findAgentCode(
+    agentCode: string,
+    tenantId: string,
+    userToken: string,
+  ): Promise<IAgentCode | null> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'agent_codes',
+        '*',
+        {
+          agent_code: agentCode,
+          tenant_id: tenantId,
+          is_used: false,
+        } as Partial<AgentCodesRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        return null;
+      }
+
+      const row = response.data[0] as unknown as AgentCodesRow;
+      const agentCodeRecord: IAgentCode = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        agent_code: row.agent_code,
+        user_id: row.user_id,
+        is_used: row.is_used,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return agentCodeRecord;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findAgentCode', error);
+    }
+  }
+
+  async createAuthUser(
+    email: string,
+    password: string,
+  ): Promise<{ id: string }> {
+    try {
+      const authUser = await supabaseService.adminCreateAuthUser(
+        email,
+        password,
+      );
+
+      return { id: authUser.id };
+    } catch (error) {
+      return handleRepositoryError('UserRepository.createAuthUser', error);
+    }
+  }
+
+  async insertUser(userData: UsersInsert, userToken: string): Promise<IUser> {
+    try {
+      const response = await supabaseService.userInsert(
+        userToken,
+        'users',
+        userData,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error('No user returned after insert');
+      }
+
+      const row = response.data[0] as unknown as UsersRow;
+      const user: IUser = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return user;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.insertUser', error);
+    }
+  }
+
+  async findAll(userToken: string): Promise<IUser[]> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'users',
+        '*',
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as UsersRow[];
+      const users: IUser[] = rows.map((row) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+
+      return users;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findAll', error);
+    }
+  }
+
+  async findById(
+    userId: string,
+    userToken: string,
+  ): Promise<IUser | null> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'users',
+        '*',
+        { id: userId } as Partial<UsersRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        return null;
+      }
+
+      const row = response.data[0] as unknown as UsersRow;
+      const user: IUser = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return user;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findById', error);
+    }
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    try {
+      await supabaseService.adminDelete('users', { id: userId });
+    } catch (error) {
+      return handleRepositoryError('UserRepository.deleteUser', error);
+    }
+  }
+
+  async deleteAuthUser(userId: string): Promise<void> {
+    try {
+      await supabaseService.adminDeleteAuthUser(userId);
+    } catch (error) {
+      return handleRepositoryError('UserRepository.deleteAuthUser', error);
+    }
+  }
+
+  async updateUser(
+    userId: string,
+    data: UsersUpdate,
+    userToken: string,
+  ): Promise<IUser> {
+    try {
+      const response = await supabaseService.userUpdate(
+        userToken,
+        'users',
+        data,
+        { id: userId } as Partial<UsersRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error('No user returned after update');
+      }
+
+      const row = response.data[0] as unknown as UsersRow;
+      const user: IUser = {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+
+      return user;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.updateUser', error);
+    }
+  }
+
+  async findByIds(userIds: string[], userToken: string): Promise<IUser[]> {
+    try {
+      const response = await supabaseService.userSelectIn(
+        userToken,
+        'users',
+        '*',
+        'id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as UsersRow[];
+      const users: IUser[] = rows.map((row) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+
+      return users;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findByIds', error);
+    }
+  }
+
+  async updateGroupIdForUsers(
+    userIds: string[],
+    groupId: string,
+    userToken: string,
+  ): Promise<void> {
+    try {
+      const response = await supabaseService.userUpdateIn(
+        userToken,
+        'users',
+        { group_id: groupId },
+        'id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError(
+        'UserRepository.updateGroupIdForUsers',
+        error,
+      );
+    }
+  }
+
+  async updateAuthUserEmail(userId: string, email: string): Promise<void> {
+    try {
+      await supabaseService.adminUpdateAuthUserEmail(userId, email);
+    } catch (error) {
+      return handleRepositoryError(
+        'UserRepository.updateAuthUserEmail',
+        error,
+      );
+    }
+  }
+
+  async findManagedGroupIdsByUserIds(
+    userIds: string[],
+    userToken: string,
+  ): Promise<Map<string, string[]>> {
+    try {
+      if (userIds.length === 0) return new Map();
+
+      const response = await supabaseService.userSelectIn(
+        userToken,
+        'group_trainers',
+        'group_id,trainer_id',
+        'trainer_id',
+        userIds,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as GroupTrainersRow[];
+      const map = new Map<string, string[]>();
+      for (const row of rows) {
+        const existing = map.get(row.trainer_id) ?? [];
+        existing.push(row.group_id);
+        map.set(row.trainer_id, existing);
+      }
+      return map;
+    } catch (error) {
+      return handleRepositoryError(
+        'UserRepository.findManagedGroupIdsByUserIds',
+        error,
+      );
+    }
+  }
+
+  async updateAgentCode(
+    agentCodeId: string,
+    userId: string,
+    userToken: string,
+  ): Promise<void> {
+    try {
+      const response = await supabaseService.userUpdate(
+        userToken,
+        'agent_codes',
+        { is_used: true, user_id: userId },
+        { id: agentCodeId },
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError('UserRepository.updateAgentCode', error);
+    }
+  }
+
+  async updateAuthUserPassword(userId: string, password: string): Promise<void> {
+    try {
+      await supabaseService.adminUpdateAuthUserPassword(userId, password);
+    } catch (error) {
+      return handleRepositoryError('UserRepository.updateAuthUserPassword', error);
+    }
+  }
+}
+
+/******************************************************************************
+                                Export
+******************************************************************************/
+
+export const userRepository = new UserRepository();
+export default userRepository;

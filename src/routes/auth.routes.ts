@@ -1,0 +1,88 @@
+import express from 'express';
+import { z } from 'zod';
+
+import authController, {
+  IForgotPasswordReq,
+  ILoginReq,
+  ILogoutReq,
+  IMeReq,
+  IRegisterReq,
+  IResetPasswordReq,
+} from '@src/controllers/auth.controller';
+import { authenticate } from '@src/middleware/auth';
+import { validate } from '@src/middleware/validate';
+
+/******************************************************************************
+                            Zod Schema
+******************************************************************************/
+
+export const registerSchema = z.object({
+  fullName: z.string().min(1),
+  agentCode: z.string().min(1),
+  email: z.string().email(),
+  password: z
+    .string()
+    .min(6, 'Password must be at least 6 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(
+      /[^a-zA-Z0-9]/,
+      'Password must contain at least one special character',
+    )
+    .regex(/[0-9]/, 'Password must contain at least one digit'),
+  groupId: z.string().uuid(),
+  location: z.string().min(1),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(6, 'Password must be at least 6 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(
+      /[^a-zA-Z0-9]/,
+      'Password must contain at least one special character',
+    )
+    .regex(/[0-9]/, 'Password must contain at least one digit'),
+});
+
+/******************************************************************************
+                            Router
+******************************************************************************/
+
+const router = express.Router();
+
+router.post('/register', validate(registerSchema), (req, res, next) =>
+  authController.register(req as unknown as IRegisterReq, res, next),
+);
+
+router.post('/login', validate(loginSchema), (req, res, next) =>
+  authController.login(req as unknown as ILoginReq, res, next),
+);
+
+router.post('/logout', (req, res, next) =>
+  authController.logout(req as unknown as ILogoutReq, res, next),
+);
+
+router.get('/me', authenticate, (req, res, next) =>
+  authController.me(req as unknown as IMeReq, res, next),
+);
+
+router.post('/forgot-password', validate(forgotPasswordSchema), (req, res, next) =>
+  authController.forgotPassword(req as unknown as IForgotPasswordReq, res, next),
+);
+
+router.post('/reset-password', validate(resetPasswordSchema), (req, res, next) =>
+  authController.resetPassword(req as unknown as IResetPasswordReq, res, next),
+);
+
+export default router;

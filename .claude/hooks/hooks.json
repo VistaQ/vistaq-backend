@@ -1,0 +1,9 @@
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "tool": "Write",
+      "command": "npm run format -- --write $FILE && npm run lint -- --fix $FILE"
+    }
+  ]
+}
