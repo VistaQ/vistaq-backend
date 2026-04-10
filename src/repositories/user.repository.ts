@@ -377,6 +377,14 @@ class UserRepository {
       return handleRepositoryError('UserRepository.updateAgentCode', error);
     }
   }
+
+  async updateAuthUserPassword(userId: string, password: string): Promise<void> {
+    try {
+      await supabaseService.adminUpdateAuthUserPassword(userId, password);
+    } catch (error) {
+      return handleRepositoryError('UserRepository.updateAuthUserPassword', error);
+    }
+  }
 }
 
 /******************************************************************************
