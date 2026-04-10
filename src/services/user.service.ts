@@ -191,6 +191,14 @@ class UserService {
     }
   }
 
+  async changePassword(userId: string, newPassword: string): Promise<void> {
+    try {
+      await userRepository.updateAuthUserPassword(userId, newPassword);
+    } catch (error) {
+      return handleServiceError('UserService.changePassword', error);
+    }
+  }
+
   async createUser(params: ICreateUserParams): Promise<IUser> {
     try {
       // Step 1 — Validate agent code if role is agent

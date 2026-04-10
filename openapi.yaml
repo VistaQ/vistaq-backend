@@ -597,6 +597,90 @@ paths:
   # USERS
   ##############################################################################
 
+  /users/me/password:
+    patch:
+      tags: [Users]
+      summary: Change the authenticated user's password
+      description: >
+        Updates the password for the currently authenticated user. The caller
+        must supply a valid Bearer token. The new password must be at least 6
+        characters and contain at least one uppercase letter, one digit, and
+        one special character.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              additionalProperties: false
+              properties:
+                newPassword:
+                  type: string
+                  minLength: 6
+                  description: >
+                    The replacement password. Must be at least 6 characters and
+                    contain at least one uppercase letter, one digit, and one
+                    special (non-alphanumeric) character.
+                  example: '$Test1'
+            example:
+              newPassword: '$Test1'
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Password changed successfully
+              example:
+                success: true
+                message: Password changed successfully
+        '400':
+          description: >
+            Bad request. Returned when the request body fails validation —
+            for example when `newPassword` is absent, too short, or does not
+            meet the complexity requirements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 6
+                    type: string
+                    inclusive: true
+                    exact: false
+                    message: Password must be at least 6 characters
+                    path: [newPassword]
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /users:
     get:
       tags: [Users]

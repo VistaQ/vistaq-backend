@@ -76,6 +76,17 @@ export interface IDeleteUserRes extends IBaseRes {
   success: boolean;
 }
 
+export interface IChangePasswordReq extends IBaseReq {
+  body: {
+    newPassword: string;
+  };
+}
+
+export interface IChangePasswordRes extends IBaseRes {
+  success: boolean;
+  message: string;
+}
+
 /******************************************************************************
                             UserController
 ******************************************************************************/
@@ -190,6 +201,28 @@ class UserController {
       }
 
       return handleControllerError('UserController.delete', error, next);
+    }
+  }
+
+  async changePassword(
+    req: IChangePasswordReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const { newPassword } = req.body;
+
+      await userService.changePassword(userId, newPassword);
+
+      const responseBody: IChangePasswordRes = {
+        success: true,
+        message: 'Password changed successfully',
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('UserController.changePassword', error, next);
     }
   }
 
