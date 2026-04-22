@@ -111,6 +111,25 @@ class ProspectRepository {
     }
   }
 
+  async deleteProspect(
+    prospectId: string,
+    userToken: string,
+  ): Promise<void> {
+    try {
+      const response = await supabaseService.userDelete(
+        userToken,
+        'prospects',
+        { id: prospectId } as Partial<ProspectsRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError('ProspectRepository.deleteProspect', error);
+    }
+  }
+
   async updateProspect(
     prospectId: string,
     data: ProspectsUpdate,

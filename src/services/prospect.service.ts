@@ -17,6 +17,13 @@ interface ICreateProspectParams {
   token: string;
 }
 
+interface IDeleteProspectParams {
+  prospectId: string;
+  userId: string;
+  role: string;
+  token: string;
+}
+
 interface IUpdateProspectParams {
   prospectId: string;
   token: string;
@@ -77,6 +84,22 @@ class ProspectService {
       return prospect;
     } catch (error) {
       return handleServiceError('ProspectService.getProspectById', error);
+    }
+  }
+
+  async deleteProspect(params: IDeleteProspectParams): Promise<void> {
+    try {
+      const existing = await prospectRepository.findById(params.prospectId, params.token);
+      if (!existing) {
+        throw new ProspectNotFoundError();
+      }
+      if (params.role !== 'admin' && existing.agent_id !== params.userId) {
+        throw new ProspectNotFoundError();
+      }
+      await prospectRepository.deleteProspect(params.prospectId, params.token);
+    } catch (error) {
+      if (error instanceof ProspectNotFoundError) throw error;
+      return handleServiceError('ProspectService.deleteProspect', error);
     }
   }
 

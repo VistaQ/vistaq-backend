@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import prospectController, {
   ICreateProspectReq,
+  IDeleteProspectReq,
   IGetProspectByIdReq,
   IUpdateProspectReq,
 } from '@src/controllers/prospect.controller';
@@ -88,6 +89,13 @@ router.put(
   validate(updateProspectSchema),
   (req, res, next) =>
     prospectController.update(req as unknown as IUpdateProspectReq, res, next),
+);
+
+router.delete(
+  '/:prospectId',
+  authenticate,
+  (req, res, next) =>
+    prospectController.delete(req as unknown as IDeleteProspectReq, res, next),
 );
 
 export default router;
