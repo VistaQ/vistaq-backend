@@ -9,3 +9,4 @@ serviceAccountKey.json
 .claude/mcp.json
 docs/
 scripts/seed-manifest.json
+supabase/functions/**/deno.lock
