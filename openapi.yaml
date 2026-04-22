@@ -4419,7 +4419,7 @@ components:
 
     AgentPointsBreakdownItem:
       type: object
-      required: [id, date, category, action, subject, points]
+      required: [id, date, category, action, points]
       properties:
         id:
           type: string
@@ -4441,7 +4441,12 @@ components:
           example: Appointment Set
         subject:
           type: string
-          description: Name of the subject (e.g. prospect) associated with the action.
+          nullable: true
+          description: >
+            Name of the subject (e.g. prospect) associated with the action.
+            Null when the underlying subject has been deleted — e.g. a
+            `prospect_deleted` compensation row references a prospect that
+            no longer exists. Frontends should fall back to the action label.
           example: John Tan
         points:
           type: integer
