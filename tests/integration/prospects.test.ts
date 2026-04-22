@@ -5,7 +5,8 @@ import app from '@src/app';
 import { supabaseService } from '@src/services/supabase.service';
 
 /******************************************************************************
-  Integration — GET /api/prospects, GET /api/prospects/:id, PUT /api/prospects/:id
+  Integration — GET /api/prospects, GET /api/prospects/:id, PUT /api/prospects/:id,
+               DELETE /api/prospects/:id
 ******************************************************************************/
 
 // Credentials are sourced from the seed manifest written by scripts/bootstrap.js.
@@ -28,12 +29,23 @@ const ADMIN_PASSWORD = manifest.adminPassword;
 const GROUP_LEADER_EMAIL = manifest.users.mdrt_stars_leader.email;
 const GROUP_LEADER_PASSWORD = manifest.password;
 
+const TRAINER_EMAIL = manifest.users.mdrt_stars_trainer.email;
+const TRAINER_PASSWORD = manifest.password;
+
+const OTHER_AGENT_EMAIL = manifest.users.kpi_busters_agent.email;
+const OTHER_AGENT_PASSWORD = manifest.password;
+
 let agentToken: string | null = null;
 let adminToken: string | null = null;
 let groupLeaderToken: string | null = null;
+let trainerToken: string | null = null;
+let otherAgentToken: string | null = null;
 
 /** ID of the test prospect created in beforeAll, deleted in afterAll */
 let testProspectId: string | null = null;
+
+/** ID of a separately-created prospect used exclusively for DELETE tests */
+let deleteTestProspectId: string | null = null;
 
 /******************************************************************************
   beforeAll — obtain tokens and create a test prospect
@@ -70,6 +82,26 @@ beforeAll(async () => {
     groupLeaderToken = leaderRes.body.data.token as string;
   }
 
+  // Log in as trainer
+  const trainerRes = await request(app)
+    .post('/api/auth/login')
+    .set('X-Tenant-Slug', TENANT_SLUG)
+    .send({ email: TRAINER_EMAIL, password: TRAINER_PASSWORD });
+
+  if (trainerRes.status === 200 && trainerRes.body?.data?.token) {
+    trainerToken = trainerRes.body.data.token as string;
+  }
+
+  // Log in as other-tenant agent (kpi_busters_agent — different group, same tenant)
+  const otherAgentRes = await request(app)
+    .post('/api/auth/login')
+    .set('X-Tenant-Slug', TENANT_SLUG)
+    .send({ email: OTHER_AGENT_EMAIL, password: OTHER_AGENT_PASSWORD });
+
+  if (otherAgentRes.status === 200 && otherAgentRes.body?.data?.token) {
+    otherAgentToken = otherAgentRes.body.data.token as string;
+  }
+
   // Create a test prospect via the API using the agent token
   const createRes = await request(app)
     .post('/api/prospects')
@@ -78,6 +110,16 @@ beforeAll(async () => {
 
   if (createRes.status === 201 && createRes.body?.data?.id) {
     testProspectId = createRes.body.data.id as string;
+  }
+
+  // Create a dedicated prospect for DELETE tests (owned by agent)
+  const deleteCreateRes = await request(app)
+    .post('/api/prospects')
+    .set('Authorization', `Bearer ${agentToken}`)
+    .send({ fullName: 'Delete Test Prospect' });
+
+  if (deleteCreateRes.status === 201 && deleteCreateRes.body?.data?.id) {
+    deleteTestProspectId = deleteCreateRes.body.data.id as string;
   }
 }, 30000);
 
@@ -91,6 +133,14 @@ afterAll(async () => {
       await supabaseService.adminDelete('prospects', { id: testProspectId });
     } catch {
       // best-effort
+    }
+  }
+  // Clean up the delete-test prospect in case any guard tests left it in place
+  if (deleteTestProspectId) {
+    try {
+      await supabaseService.adminDelete('prospects', { id: deleteTestProspectId });
+    } catch {
+      // best-effort — may already have been deleted by the happy-path test
     }
   }
 });
@@ -381,5 +431,109 @@ describe('PUT /api/prospects/:prospectId — auth guard', () => {
       .send({ appointmentLocation: 'Test' });
 
     expect(res.status).toBe(401);
+  });
+});
+
+/******************************************************************************
+  DELETE /api/prospects/:prospectId
+******************************************************************************/
+
+describe('DELETE /api/prospects/:prospectId — role guard', () => {
+  it('returns 403 when a trainer tries to delete a prospect', async () => {
+    expect(deleteTestProspectId).not.toBeNull();
+
+    const res = await request(app)
+      .delete(`/api/prospects/${deleteTestProspectId}`)
+      .set('Authorization', `Bearer ${trainerToken}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when a group_leader tries to delete a prospect they do not own', async () => {
+    expect(deleteTestProspectId).not.toBeNull();
+
+    // groupLeaderToken belongs to mdrt_stars_leader — they can read prospects in their group
+    // but the ownership check (agent_id !== userId) fires first → 404
+    const res = await request(app)
+      .delete(`/api/prospects/${deleteTestProspectId}`)
+      .set('Authorization', `Bearer ${groupLeaderToken}`);
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/prospects/:prospectId — auth guard', () => {
+  it('returns 401 when no Authorization header is provided', async () => {
+    expect(deleteTestProspectId).not.toBeNull();
+
+    const res = await request(app)
+      .delete(`/api/prospects/${deleteTestProspectId}`);
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('DELETE /api/prospects/:prospectId — not found', () => {
+  it('returns 404 for a non-existent prospect ID', async () => {
+    const res = await request(app)
+      .delete('/api/prospects/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when another agent tries to delete a prospect they do not own (RLS hides it)', async () => {
+    expect(deleteTestProspectId).not.toBeNull();
+
+    // otherAgentToken belongs to kpi_busters_agent — a different agent in a different group.
+    // RLS on prospects restricts visibility to the owning agent, so findById returns null → 404.
+    const res = await request(app)
+      .delete(`/api/prospects/${deleteTestProspectId}`)
+      .set('Authorization', `Bearer ${otherAgentToken}`);
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/prospects/:prospectId — happy path', () => {
+  it('returns 200 with { success: true } when agent deletes their own prospect', async () => {
+    expect(deleteTestProspectId).not.toBeNull();
+
+    const res = await request(app)
+      .delete(`/api/prospects/${deleteTestProspectId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+
+    // Mark as deleted so afterAll skip is clean
+    deleteTestProspectId = null;
+  });
+});
+
+describe('DELETE /api/prospects/:prospectId — already deleted', () => {
+  it('returns 404 when the same prospect is deleted a second time', async () => {
+    // Create a fresh prospect, delete it once, then attempt a second delete
+    const createRes = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ fullName: 'Ephemeral Prospect For Double Delete' });
+
+    expect(createRes.status).toBe(201);
+    const ephemeralId = createRes.body.data.id as string;
+
+    // First delete — should succeed
+    const firstDelete = await request(app)
+      .delete(`/api/prospects/${ephemeralId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(firstDelete.status).toBe(200);
+
+    // Second delete — prospect no longer exists
+    const secondDelete = await request(app)
+      .delete(`/api/prospects/${ephemeralId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(secondDelete.status).toBe(404);
   });
 });

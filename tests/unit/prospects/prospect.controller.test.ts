@@ -6,21 +6,26 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
+jest.mock('@src/services/logging.service', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { AsyncLocalStorage } = require('async_hooks');
+  return {
+    __esModule: true,
+    default: {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    },
+    loggingService: {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    },
+    asyncLocalStorage: new AsyncLocalStorage(),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation
@@ -47,7 +52,7 @@ jest.mock('@src/services/supabase.service', () => ({
 import type { Response, NextFunction } from 'express';
 
 import { prospectController } from '@src/controllers/prospect.controller';
-import type { ICreateProspectReq, IGetProspectByIdReq, IUpdateProspectReq } from '@src/controllers/prospect.controller';
+import type { ICreateProspectReq, IDeleteProspectReq, IGetProspectByIdReq, IUpdateProspectReq } from '@src/controllers/prospect.controller';
 import { prospectService } from '@src/services/prospect.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
@@ -128,6 +133,15 @@ function makeUpdateReq(overrides: Partial<IUpdateProspectReq> = {}): IUpdatePros
     body: { appointmentStatus: 'scheduled' },
     ...overrides,
   } as unknown as IUpdateProspectReq;
+}
+
+function makeDeleteReq(overrides: Partial<IDeleteProspectReq> = {}): IDeleteProspectReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    params: { prospectId: PROSPECT_ID },
+    ...overrides,
+  } as unknown as IDeleteProspectReq;
 }
 
 function makeRes(): Response {
@@ -468,6 +482,131 @@ describe('ProspectController.update', () => {
     const next = makeNext();
 
     await prospectController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — ProspectController.delete
+******************************************************************************/
+
+describe('ProspectController.delete', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 200 with { success: true } when role is agent and service resolves', async () => {
+    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+
+    const req = makeDeleteReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with { success: true } when role is admin and service resolves', async () => {
+    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+
+    const req = makeDeleteReq({
+      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'admin', group_id: null },
+    } as Partial<IDeleteProspectReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with { success: true } when role is group_leader and service resolves', async () => {
+    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+
+    const req = makeDeleteReq({
+      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+    } as Partial<IDeleteProspectReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 403 when role is not agent, admin, or group_leader', async () => {
+    const req = makeDeleteReq({
+      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'master_trainer', group_id: null },
+    } as Partial<IDeleteProspectReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 403 when role is trainer', async () => {
+    const req = makeDeleteReq({
+      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'trainer', group_id: null },
+    } as Partial<IDeleteProspectReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 404 when service throws ProspectNotFoundError', async () => {
+    jest.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new ProspectNotFoundError());
+
+    const req = makeDeleteReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) when service throws a generic Error', async () => {
+    jest.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new Error('unexpected failure'));
+
+    const req = makeDeleteReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await prospectController.delete(req, res, next as NextFunction);
 
     expect(next).toHaveBeenCalledTimes(1);
     const err = next.mock.calls[0][0];
