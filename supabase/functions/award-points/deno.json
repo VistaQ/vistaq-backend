@@ -2,5 +2,8 @@
   "imports": {
     "@supabase/functions-js": "jsr:@supabase/functions-js@^2",
     "@supabase/supabase-js": "npm:@supabase/supabase-js@^2"
+  },
+  "tasks": {
+    "test": "deno test --allow-env --import-map=test_import_map.json --no-check index.test.ts"
   }
 }

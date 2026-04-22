@@ -217,6 +217,72 @@ describe('ProspectService.getProspectById', () => {
 });
 
 /******************************************************************************
+  Test suite — ProspectService.deleteProspect
+******************************************************************************/
+
+describe('ProspectService.deleteProspect', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const baseDeleteParams = { prospectId: PROSPECT_ID, userId: AGENT_ID, role: 'agent', token: USER_TOKEN };
+
+  it('throws ProspectNotFoundError when findById returns null', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(null);
+
+    await expect(
+      prospectService.deleteProspect(baseDeleteParams),
+    ).rejects.toThrow(ProspectNotFoundError);
+  });
+
+  it('throws ProspectNotFoundError when prospect exists but agent_id does not match userId', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(mockProspect);
+
+    await expect(
+      prospectService.deleteProspect({ ...baseDeleteParams, userId: 'different-user-id', role: 'group_leader' }),
+    ).rejects.toThrow(ProspectNotFoundError);
+  });
+
+  it('skips ownership check when role is admin', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(mockProspect);
+    const deleteSpy = jest.spyOn(prospectRepository, 'deleteProspect').mockResolvedValue(undefined);
+
+    await prospectService.deleteProspect({ ...baseDeleteParams, userId: 'different-user-id', role: 'admin' });
+
+    expect(deleteSpy).toHaveBeenCalledWith(PROSPECT_ID, USER_TOKEN);
+  });
+
+  it('calls repository deleteProspect when findById returns a prospect and userId matches', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(mockProspect);
+    const deleteSpy = jest
+      .spyOn(prospectRepository, 'deleteProspect')
+      .mockResolvedValue(undefined);
+
+    await prospectService.deleteProspect(baseDeleteParams);
+
+    expect(deleteSpy).toHaveBeenCalledWith(PROSPECT_ID, USER_TOKEN);
+  });
+
+  it('re-throws ProspectNotFoundError without wrapping it in ServiceError', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(null);
+
+    const error = await prospectService
+      .deleteProspect(baseDeleteParams)
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(ProspectNotFoundError);
+    expect(error).not.toBeInstanceOf(ServiceError);
+  });
+
+  it('throws ServiceError when repository deleteProspect throws a non-domain error', async () => {
+    jest.spyOn(prospectRepository, 'findById').mockResolvedValue(mockProspect);
+    jest.spyOn(prospectRepository, 'deleteProspect').mockRejectedValue(new Error('db failure'));
+
+    await expect(
+      prospectService.deleteProspect(baseDeleteParams),
+    ).rejects.toThrow(ServiceError);
+  });
+});
+
+/******************************************************************************
   Test suite — ProspectService.updateProspect
 ******************************************************************************/
 

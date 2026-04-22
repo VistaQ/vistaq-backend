@@ -2,12 +2,12 @@
  * award-points Edge Function
  *
  * Triggered by Supabase Database Webhooks on:
- *   - prospects table (INSERT + UPDATE)
+ *   - prospects table (INSERT, UPDATE, DELETE)
  *   - coaching_session_attendance table (INSERT + UPDATE)
  *
  * Webhook setup (Supabase Dashboard → Database → Webhooks):
  *   prospects:
- *     - Table: prospects, Events: INSERT, UPDATE, Target: award-points
+ *     - Table: prospects, Events: INSERT, UPDATE, DELETE, Target: award-points
  *   coaching_session_attendance:
  *     - Table: coaching_session_attendance, Events: INSERT, UPDATE, Target: award-points
  *
@@ -19,7 +19,7 @@ import { createClient } from "@supabase/supabase-js";
 // ---------- Types ----------
 
 interface WebhookPayload {
-  type: "INSERT" | "UPDATE";
+  type: "INSERT" | "UPDATE" | "DELETE";
   table: string;
   schema: string;
   record: Record<string, unknown>;
@@ -31,6 +31,7 @@ interface WebhookPayload {
 function detectProspectActivity(payload: WebhookPayload): string | null {
   const { record, old_record, type } = payload;
 
+  if (type === "DELETE") return "prospect_deleted";
   if (type === "INSERT") return "prospect_created";
 
   if (type === "UPDATE" && old_record) {
@@ -118,12 +119,13 @@ Deno.serve(async (req) => {
     let sessionDurationHours: number | null = null;
 
     if (payload.table === "prospects") {
-      if (!payload.record.agent_id) {
+      const row = payload.type === "DELETE" ? payload.old_record! : payload.record;
+      if (!row.agent_id) {
         return ok; // Cannot award points without a user
       }
-      tenantId = payload.record.tenant_id as string;
-      userId = payload.record.agent_id as string;
-      subjectId = payload.record.id as string;
+      tenantId = row.tenant_id as string;
+      userId = row.agent_id as string;
+      subjectId = row.id as string;
     } else if (payload.table === "coaching_session_attendance") {
       if (!payload.record.agent_id) {
         return ok; // Cannot award points without a user
@@ -226,9 +228,32 @@ Deno.serve(async (req) => {
     if (existing) return ok;
 
     // Step 6: Insert point transaction
-    const computedPoints = sessionDurationHours !== null
-      ? config.points * sessionDurationHours
-      : config.points;
+    let computedPoints: number;
+
+    if (activity === "prospect_deleted") {
+      // Compensate by negating the sum of all points awarded for this prospect.
+      // subject_id has no FK to prospects, so this query still works after the row is deleted.
+      const { data: priorRows, error: sumError } = await supabase
+        .from("point_transactions")
+        .select("points")
+        .eq("tenant_id", tenantId)
+        .eq("subject_id", subjectId)
+        .eq("subject_type", "prospect");
+
+      if (sumError) {
+        console.error("[award-points] Error summing existing points for compensation:", sumError);
+        return ok;
+      }
+
+      const totalAwarded = priorRows?.reduce((acc, row) => acc + (row.points as number), 0) ?? 0;
+      if (totalAwarded <= 0) return ok; // No positive points to compensate
+
+      computedPoints = -totalAwarded;
+    } else {
+      computedPoints = sessionDurationHours !== null
+        ? config.points * sessionDurationHours
+        : config.points;
+    }
 
     const { error: insertError } = await supabase
       .from("point_transactions")

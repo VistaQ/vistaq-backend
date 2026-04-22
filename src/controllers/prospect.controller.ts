@@ -63,6 +63,14 @@ export interface IUpdateProspectRes extends IBaseRes {
   data: IProspect;
 }
 
+export interface IDeleteProspectReq extends IBaseReq {
+  params: { prospectId: string };
+}
+
+export interface IDeleteProspectRes extends IBaseRes {
+  success: boolean;
+}
+
 /******************************************************************************
                             ProspectController
 ******************************************************************************/
@@ -146,6 +154,38 @@ class ProspectController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('ProspectController.getById', error, next);
+    }
+  }
+
+  async delete(
+    req: IDeleteProspectReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!['agent', 'admin', 'group_leader'].includes(req.user!.role)) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const { prospectId } = req.params;
+
+      await prospectService.deleteProspect({
+        prospectId,
+        userId: req.user!.id,
+        role: req.user!.role,
+        token,
+      });
+
+      const responseBody: IDeleteProspectRes = { success: true };
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof ProspectNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+      return handleControllerError('ProspectController.delete', error, next);
     }
   }
 

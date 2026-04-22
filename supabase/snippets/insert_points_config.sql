@@ -19,6 +19,10 @@ VALUES
     'prospect'
   ),
   (
+    'prospect_deleted', 'prospect', 'Prospect Deleted',
+    'prospect'
+  ),
+  (
     'coaching_individual_attended',
     'coaching', 'Individual Coaching Attended',
     'coaching_session'
