@@ -131,7 +131,7 @@ describe('POST /api/agent-codes — happy path', () => {
       '*',
       { tenant_id: TENANT_ID },
     );
-    const rows = (selectRes.data ?? []) as { agent_code: string }[];
+    const rows = (selectRes.data ?? []) as unknown as { agent_code: string }[];
     expect(rows.filter((r) => r.agent_code === c1)).toHaveLength(1);
     expect(rows.filter((r) => r.agent_code === c2)).toHaveLength(1);
   });
