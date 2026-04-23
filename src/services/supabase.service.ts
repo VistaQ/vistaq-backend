@@ -1067,6 +1067,19 @@ class SupabaseService {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // User Upsert (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Upserts one or more rows into the given table using a user-scoped client, enforcing RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to upsert into.
+   * @param values    - A single row object or an array of row objects to upsert.
+   * @param options.onConflict       - Comma-separated list of columns forming the conflict target (typically a UNIQUE constraint, e.g. 'tenant_id,agent_code').
+   * @param options.ignoreDuplicates - If true, conflicting rows are skipped instead of updated. Defaults to false.
+   */
   async userUpsert<T extends keyof Database['public']['Tables']>(
     userToken: string,
     table: T,
