@@ -1067,6 +1067,58 @@ class SupabaseService {
     );
   }
 
+  async userUpsert<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    values:
+      | Database['public']['Tables'][T]['Insert']
+      | Database['public']['Tables'][T]['Insert'][],
+    options: { onConflict: string; ignoreDuplicates?: boolean },
+  ) {
+    return this.withSpan(
+      'db.upsert',
+      'SupabaseService.userUpsert',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'upsert',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userUpsert called', { table });
+
+          const userClient = this.getUserClient(userToken);
+          const response = await userClient
+            .from(table)
+            .upsert(values as never, {
+              onConflict: options.onConflict,
+              ignoreDuplicates: options.ignoreDuplicates ?? false,
+            })
+            .select();
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userUpsert query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userUpsert failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User upsert operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // User Update (RLS-enforced)
   // ---------------------------------------------------------------------------
