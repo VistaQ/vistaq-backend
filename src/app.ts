@@ -53,12 +53,18 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         Sentry.setTag('correlationId', correlationId);
         // Redact sensitive fields from request body before logging
         const SENSITIVE_BODY_FIELDS = [
-          'password', 'newPassword', 'confirmPassword',
-          'token', 'refreshToken', 'accessToken',
+          'password',
+          'newPassword',
+          'confirmPassword',
+          'token',
+          'refreshToken',
+          'accessToken',
         ];
         let requestBody: unknown = req.body as unknown;
         if (requestBody && typeof requestBody === 'object') {
-          const redacted: Record<string, unknown> = { ...(requestBody as Record<string, unknown>) };
+          const redacted: Record<string, unknown> = {
+            ...(requestBody as Record<string, unknown>),
+          };
           for (const field of SENSITIVE_BODY_FIELDS) {
             if (field in redacted) {
               redacted[field] = '[REDACTED]';
@@ -108,7 +114,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
               Sentry.setTag('user_role', req.user.role);
             }
 
-            emitHttpMetrics(req.method, routePattern, res.statusCode, durationMs);
+            emitHttpMetrics(
+              req.method,
+              routePattern,
+              res.statusCode,
+              durationMs,
+            );
 
             if (req.user) {
               emitActiveUser(req.user.tenant_id);
