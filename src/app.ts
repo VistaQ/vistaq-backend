@@ -104,8 +104,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
             // Derive a stable route pattern (e.g. "GET /api/users/:userId").
             // req.route is populated only after the route handler runs, making
             // the finish listener the correct place to read it.
-            const routePattern = req.route?.path
-              ? `${req.method} ${req.baseUrl}${req.route.path}`
+            const routePath = (req.route as { path?: string } | undefined)
+              ?.path;
+            const routePattern = routePath
+              ? `${req.method} ${req.baseUrl}${routePath}`
               : `${req.method} ${req.originalUrl.split('?')[0]}`;
 
             Sentry.setTag('route_pattern', routePattern);
