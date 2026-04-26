@@ -51,6 +51,7 @@ import { groupService } from '@src/services/group.service';
 import { groupRepository } from '@src/repositories/group.repository';
 import { authRepository } from '@src/repositories/auth.repository';
 import { userService } from '@src/services/user.service';
+import { userRepository } from '@src/repositories/user.repository';
 import {
   GroupNotFoundError,
   InvalidLeaderError,
@@ -576,6 +577,8 @@ describe('GroupService.updateGroup', () => {
   it('calls updateUsersGroupId when member_ids are valid', async () => {
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
     jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockMember1, mockMember2]);
+    // No current members in the group — both MEMBER_ID_1 and MEMBER_ID_2 go into toLink
+    jest.spyOn(userRepository, 'findByGroupId').mockResolvedValue([]);
     jest.spyOn(userService, 'updateUsersGroupId').mockResolvedValue(undefined);
 
     await groupService.updateGroup({
@@ -589,6 +592,226 @@ describe('GroupService.updateGroup', () => {
       GROUP_ID,
       USER_TOKEN,
     );
+  });
+
+  /*****************************************************************************
+    member_ids replace semantics
+  *****************************************************************************/
+
+  describe('member_ids replace semantics', () => {
+    const AGENT_A_ID = '11111111-aaaa-bbbb-cccc-dddddddddddd';
+    const AGENT_B_ID = '22222222-aaaa-bbbb-cccc-dddddddddddd';
+    const AGENT_C_ID = '33333333-aaaa-bbbb-cccc-dddddddddddd';
+    const CURRENT_LEADER_ID = '44444444-aaaa-bbbb-cccc-dddddddddddd';
+    const NEW_LEADER_ID = '55555555-aaaa-bbbb-cccc-dddddddddddd';
+
+    const makeUser = (id: string, groupId: string | null = null): IUserWithManagedGroups => ({
+      id,
+      tenant_id: TENANT_ID,
+      email: `${id}@example.com`,
+      name: `User ${id}`,
+      role: 'agent',
+      agent_code: null,
+      location: null,
+      group_id: groupId,
+      phone: null,
+      agency: null,
+      status: 'active',
+      created_at: '2024-01-01T00:00:00.000Z',
+      updated_at: '2024-01-01T00:00:00.000Z',
+      managed_group_ids: [],
+    });
+
+    const groupWithCurrentLeader: IGroup = {
+      ...mockGroup,
+      leader_id: CURRENT_LEADER_ID,
+    };
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('does not call findByGroupId or updateUsersGroupId when member_ids is not supplied', async () => {
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
+      jest.spyOn(groupRepository, 'updateGroup').mockResolvedValue({ ...mockGroup, name: 'New Name' });
+      const findByGroupIdSpy = jest.spyOn(userRepository, 'findByGroupId');
+      const updateUsersGroupIdSpy = jest.spyOn(userService, 'updateUsersGroupId');
+
+      await groupService.updateGroup({
+        groupId: GROUP_ID,
+        token: USER_TOKEN,
+        data: { name: 'New Name' },
+      });
+
+      expect(findByGroupIdSpy).not.toHaveBeenCalled();
+      expect(updateUsersGroupIdSpy).not.toHaveBeenCalled();
+    });
+
+    it('member_ids: [] unlinks all non-leader members and does not call updateUsersGroupId to link', async () => {
+      const agentA = makeUser(AGENT_A_ID, GROUP_ID);
+      const agentB = makeUser(AGENT_B_ID, GROUP_ID);
+      const leader = makeUser(CURRENT_LEADER_ID, GROUP_ID);
+
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(groupWithCurrentLeader);
+      jest.spyOn(userRepository, 'findByGroupId').mockResolvedValue([agentA, agentB, leader]);
+      const updateUsersGroupIdSpy = jest.spyOn(userService, 'updateUsersGroupId').mockResolvedValue(undefined);
+
+      await groupService.updateGroup({
+        groupId: GROUP_ID,
+        token: USER_TOKEN,
+        data: { member_ids: [] },
+      });
+
+      // Only called once to unlink agentA and agentB — leader is protected
+      expect(updateUsersGroupIdSpy).toHaveBeenCalledTimes(1);
+      expect(updateUsersGroupIdSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([AGENT_A_ID, AGENT_B_ID]),
+        null,
+        USER_TOKEN,
+      );
+      // Confirm leader ID is absent from the unlink call
+      const [unlinkedIds] = updateUsersGroupIdSpy.mock.calls[0];
+      expect(unlinkedIds).not.toContain(CURRENT_LEADER_ID);
+    });
+
+    it('partial replace: adds new member, removes removed member, keeps leader and unchanged member untouched', async () => {
+      const agentA = makeUser(AGENT_A_ID, null);       // not in group — will be added
+      const agentB = makeUser(AGENT_B_ID, GROUP_ID);   // already in group — unchanged
+      const agentC = makeUser(AGENT_C_ID, GROUP_ID);   // in group — will be removed
+      const leader = makeUser(CURRENT_LEADER_ID, GROUP_ID); // leader — always kept
+
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(groupWithCurrentLeader);
+      // findUsersByIds is called for the non-empty member_ids validation step
+      jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([agentA, agentB]);
+      jest.spyOn(userRepository, 'findByGroupId').mockResolvedValue([agentB, agentC, leader]);
+      const updateUsersGroupIdSpy = jest.spyOn(userService, 'updateUsersGroupId').mockResolvedValue(undefined);
+
+      await groupService.updateGroup({
+        groupId: GROUP_ID,
+        token: USER_TOKEN,
+        data: { member_ids: [AGENT_A_ID, AGENT_B_ID] },
+      });
+
+      // Unlink agentC (not in new list, not the leader)
+      expect(updateUsersGroupIdSpy).toHaveBeenCalledWith([AGENT_C_ID], null, USER_TOKEN);
+      // Link agentA (in new list but not currently in group)
+      expect(updateUsersGroupIdSpy).toHaveBeenCalledWith([AGENT_A_ID], GROUP_ID, USER_TOKEN);
+      // agentB and leader must never appear in any call
+      const allCalledIds = updateUsersGroupIdSpy.mock.calls.flatMap(([ids]) => ids);
+      expect(allCalledIds).not.toContain(AGENT_B_ID);
+      expect(allCalledIds).not.toContain(CURRENT_LEADER_ID);
+    });
+
+    it('throws MissingMembersError when a supplied UUID does not exist — findByGroupId not called', async () => {
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(groupWithCurrentLeader);
+      // Return only agentA — nonExistentId is missing
+      jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([makeUser(AGENT_A_ID)]);
+      const findByGroupIdSpy = jest.spyOn(userRepository, 'findByGroupId');
+
+      const NON_EXISTENT_ID = 'ffffffff-ffff-ffff-ffff-000000000000';
+
+      await expect(
+        groupService.updateGroup({
+          groupId: GROUP_ID,
+          token: USER_TOKEN,
+          data: { member_ids: [AGENT_A_ID, NON_EXISTENT_ID] },
+        }),
+      ).rejects.toBeInstanceOf(MissingMembersError);
+
+      expect(findByGroupIdSpy).not.toHaveBeenCalled();
+    });
+
+    it('new leader is auto-protected: when leader_id changes, old leader is unlinked along with other non-new-leader members', async () => {
+      const agentA = makeUser(AGENT_A_ID, GROUP_ID);
+      const oldLeader = makeUser(CURRENT_LEADER_ID, GROUP_ID);
+      // New leader validated via getUserById in leader step
+      const newLeaderUser = { ...makeUser(NEW_LEADER_ID), role: 'agent' };
+
+      const groupWithOldLeaderFixture: IGroup = { ...mockGroup, leader_id: CURRENT_LEADER_ID };
+
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(groupWithOldLeaderFixture);
+      // Leader step — validate new leader
+      jest.spyOn(userService, 'getUserById').mockResolvedValue(newLeaderUser);
+      jest.spyOn(userService, 'updateUser').mockResolvedValue({ ...newLeaderUser, role: 'group_leader' });
+      // member_ids: [] — no members to validate via findUsersByIds
+      jest.spyOn(userRepository, 'findByGroupId').mockResolvedValue([agentA, oldLeader]);
+      const updateUsersGroupIdSpy = jest.spyOn(userService, 'updateUsersGroupId').mockResolvedValue(undefined);
+      jest.spyOn(groupRepository, 'updateGroup').mockResolvedValue({
+        ...groupWithOldLeaderFixture,
+        leader_id: NEW_LEADER_ID,
+      });
+
+      await groupService.updateGroup({
+        groupId: GROUP_ID,
+        token: USER_TOKEN,
+        data: { leader_id: NEW_LEADER_ID, member_ids: [] },
+      });
+
+      // effectiveLeaderId = NEW_LEADER_ID (the incoming leader_id)
+      // toUnlink = [agentA, oldLeader] — neither is the new leader; old leader loses protection
+      expect(updateUsersGroupIdSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([AGENT_A_ID, CURRENT_LEADER_ID]),
+        null,
+        USER_TOKEN,
+      );
+      const [unlinkedIds] = updateUsersGroupIdSpy.mock.calls[0];
+      expect(unlinkedIds).not.toContain(NEW_LEADER_ID);
+    });
+
+    it('rollback: re-links toUnlink users if the link step throws', async () => {
+      const agentA = makeUser(AGENT_A_ID, null);       // to be linked
+      const agentC = makeUser(AGENT_C_ID, GROUP_ID);   // to be unlinked
+
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(groupWithCurrentLeader);
+      jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([agentA]);
+      jest.spyOn(userRepository, 'findByGroupId').mockResolvedValue([agentC, makeUser(CURRENT_LEADER_ID, GROUP_ID)]);
+
+      const linkError = new Error('link step failed');
+      const updateUsersGroupIdSpy = jest.spyOn(userService, 'updateUsersGroupId')
+        .mockResolvedValueOnce(undefined)  // unlink agentC succeeds
+        .mockRejectedValueOnce(linkError)  // link agentA fails
+        .mockResolvedValueOnce(undefined); // rollback re-link agentC succeeds
+
+      await expect(
+        groupService.updateGroup({
+          groupId: GROUP_ID,
+          token: USER_TOKEN,
+          data: { member_ids: [AGENT_A_ID] },
+        }),
+      ).rejects.toThrow();
+
+      // Third call: rollback re-links agentC back to group
+      expect(updateUsersGroupIdSpy).toHaveBeenCalledTimes(3);
+      expect(updateUsersGroupIdSpy).toHaveBeenNthCalledWith(3, [AGENT_C_ID], GROUP_ID, USER_TOKEN);
+    });
+
+    it('rollback failure: logs error containing "member rollback failed" and original error still bubbles', async () => {
+      const agentA = makeUser(AGENT_A_ID, null);
+      const agentC = makeUser(AGENT_C_ID, GROUP_ID);
+
+      jest.spyOn(groupRepository, 'findById').mockResolvedValue(groupWithCurrentLeader);
+      jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([agentA]);
+      jest.spyOn(userRepository, 'findByGroupId').mockResolvedValue([agentC, makeUser(CURRENT_LEADER_ID, GROUP_ID)]);
+
+      const originalError = new Error('link step failed');
+      const rollbackError = new Error('rollback also failed');
+      jest.spyOn(userService, 'updateUsersGroupId')
+        .mockResolvedValueOnce(undefined)        // unlink agentC succeeds
+        .mockRejectedValueOnce(originalError)    // link agentA fails
+        .mockRejectedValueOnce(rollbackError);   // rollback also fails
+
+      await expect(
+        groupService.updateGroup({
+          groupId: GROUP_ID,
+          token: USER_TOKEN,
+          data: { member_ids: [AGENT_A_ID] },
+        }),
+      ).rejects.toThrow();
+
+      expect(mockLoggingError).toHaveBeenCalledWith(
+        expect.stringContaining('member rollback failed'),
+        rollbackError,
+        expect.objectContaining({ groupId: GROUP_ID }),
+      );
+    });
   });
 
   it('returns existingGroup directly when updatePayload is empty (only trainer_ids/member_ids sent)', async () => {
