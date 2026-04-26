@@ -1952,6 +1952,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Prospects]
+      summary: Delete a prospect
+      description: >
+        Deletes the prospect identified by prospectId. Requires a valid Bearer token.
+        RLS enforces tenant and agent scoping — if the prospect is not visible to the
+        caller, a 404 is returned (existence is not leaked via 403).
+        Only agents (own prospects) and admins may delete prospects.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: prospectId
+          in: path
+          required: true
+          description: The UUID of the prospect to delete.
+          schema:
+            type: string
+            format: uuid
+            example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      responses:
+        '200':
+          description: Prospect deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden. Returned when the authenticated user does not have the
+            `agent` or `admin` role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no prospect exists for the given `prospectId`,
+            or the prospect is not visible to the caller due to RLS.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Prospect not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   ##############################################################################
   # EVENTS
@@ -4351,7 +4419,7 @@ components:
 
     AgentPointsBreakdownItem:
       type: object
-      required: [id, date, category, action, subject, points]
+      required: [id, date, category, action, points]
       properties:
         id:
           type: string
@@ -4373,7 +4441,12 @@ components:
           example: Appointment Set
         subject:
           type: string
-          description: Name of the subject (e.g. prospect) associated with the action.
+          nullable: true
+          description: >
+            Name of the subject (e.g. prospect) associated with the action.
+            Null when the underlying subject has been deleted — e.g. a
+            `prospect_deleted` compensation row references a prospect that
+            no longer exists. Frontends should fall back to the action label.
           example: John Tan
         points:
           type: integer
