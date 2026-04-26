@@ -286,9 +286,45 @@ class UserRepository {
     }
   }
 
+  async findByGroupId(groupId: string, userToken: string): Promise<IUser[]> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'users',
+        '*',
+        { group_id: groupId } as Partial<UsersRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as UsersRow[];
+      const users: IUser[] = rows.map((row) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        agent_code: row.agent_code,
+        location: row.location,
+        group_id: row.group_id,
+        phone: row.phone,
+        agency: row.agency,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+
+      return users;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findByGroupId', error);
+    }
+  }
+
   async updateGroupIdForUsers(
     userIds: string[],
-    groupId: string,
+    groupId: string | null,
     userToken: string,
   ): Promise<void> {
     try {

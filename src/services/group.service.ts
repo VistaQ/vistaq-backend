@@ -10,6 +10,7 @@ import {
 } from '@src/models/errors/group.errors';
 import authRepository from '@src/repositories/auth.repository';
 import groupRepository from '@src/repositories/group.repository';
+import userRepository from '@src/repositories/user.repository';
 import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
 import { IGroup } from '@src/types/auth.types';
@@ -439,16 +440,55 @@ class GroupService {
         }
       }
 
-      // Step 4 — Members logic
-      if (data.member_ids) {
-        const foundMembers = await userService.findUsersByIds(
-          data.member_ids,
-          token,
-        );
-        if (foundMembers.length !== data.member_ids.length) {
-          throw new MissingMembersError();
+      // Step 4 — Members logic (replace semantics)
+      if (data.member_ids !== undefined) {
+        // Validate new members exist (skip if empty array)
+        if (data.member_ids.length > 0) {
+          const foundMembers = await userService.findUsersByIds(data.member_ids, token);
+          if (foundMembers.length !== data.member_ids.length) {
+            throw new MissingMembersError();
+          }
         }
-        await userService.updateUsersGroupId(data.member_ids, groupId, token);
+
+        // Effective leader — use new leader_id if being changed in this same request
+        const effectiveLeaderId = data.leader_id ?? existingGroup.leader_id;
+
+        // Fetch current members for diff and rollback
+        const currentMembers = await userRepository.findByGroupId(groupId, token);
+        const currentMemberIds = currentMembers.map((m) => m.id);
+
+        // Unlink: currently in group AND not in new list AND not the leader
+        const newMemberSet = new Set(data.member_ids);
+        const toUnlink = currentMemberIds.filter(
+          (id) => !newMemberSet.has(id) && id !== effectiveLeaderId,
+        );
+
+        // Link: in new list AND not already in this group
+        const currentMemberSet = new Set(currentMemberIds);
+        const toLink = data.member_ids.filter((id) => !currentMemberSet.has(id));
+
+        try {
+          if (toUnlink.length > 0) {
+            await userService.updateUsersGroupId(toUnlink, null, token);
+          }
+          if (toLink.length > 0) {
+            await userService.updateUsersGroupId(toLink, groupId, token);
+          }
+        } catch (memberError) {
+          // Rollback: re-link any unlinked users back to this group
+          if (toUnlink.length > 0) {
+            try {
+              await userService.updateUsersGroupId(toUnlink, groupId, token);
+            } catch (rollbackError) {
+              loggingService.error(
+                'GroupService.updateGroup — member rollback failed',
+                rollbackError,
+                { groupId },
+              );
+            }
+          }
+          throw memberError;
+        }
       }
 
       // Step 5 — Build update payload and persist (skip if nothing to update in the row)
