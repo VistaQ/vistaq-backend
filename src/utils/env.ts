@@ -25,6 +25,10 @@ const EnvVars = {
   VercelEnv: process.env.VERCEL_ENV || '',
   DisableHelmet: process.env.DISABLE_HELMET === 'true',
   MaintenanceMode: (process.env.MAINTENANCE_MODE || 'false') === 'true',
+  AllowedOrigins: (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {
@@ -45,6 +49,13 @@ if (!EnvVars.FrontendResetPasswordUrl.trim()) {
   throw new Error(
     'Missing required environment variable: FRONTEND_RESET_PASSWORD_URL',
   );
+}
+
+if (
+  EnvVars.NodeEnv === NodeEnvs.PRODUCTION &&
+  EnvVars.AllowedOrigins.length === 0
+) {
+  throw new Error('Missing required environment variable: ALLOWED_ORIGINS');
 }
 
 /******************************************************************************
