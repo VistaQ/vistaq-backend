@@ -1,18 +1,21 @@
-import './instrument';
-import cors from 'cors';
+import * as Sentry from '@sentry/node';
+import cors, { CorsOptions } from 'cors';
+import { randomUUID } from 'crypto';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
-import { randomUUID } from 'crypto';
 import path from 'path';
-import * as Sentry from '@sentry/node';
 
-import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import healthController from '@src/controllers/health.controller';
 import { RouteError } from '@src/models/errors/route.error';
 import router from '@src/routes/router';
-import healthController from '@src/controllers/health.controller';
-import { asyncLocalStorage, loggingService } from '@src/services/logging.service';
-import { emitHttpMetrics, emitActiveUser } from '@src/utils/sentry.metrics';
+import {
+  asyncLocalStorage,
+  loggingService,
+} from '@src/services/logging.service';
+import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import { emitActiveUser, emitHttpMetrics } from '@src/utils/sentry.metrics';
 
+import './instrument';
 import EnvVars, { NodeEnvs } from './utils/env';
 
 /******************************************************************************
@@ -25,8 +28,13 @@ const app = express();
                                 Middleware
 ******************************************************************************/
 
-// CORS — allow all origins (tighten before production go-live)
-app.use(cors());
+// CORS — restrict to allowed origins in production, permissive elsewhere
+const corsOptions: CorsOptions = {
+  origin:
+    EnvVars.NodeEnv === NodeEnvs.PRODUCTION ? EnvVars.AllowedOrigins : true,
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
 // Parse JSON bodies
 app.use(express.json());
