@@ -466,6 +466,64 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // Admin Upsert (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Upserts one or more rows into the given table using the service role client,
+   * bypassing RLS. Conflicting rows (per `onConflict`) are updated; new rows are
+   * inserted.
+   *
+   * @param table      - The table to upsert into.
+   * @param values     - A single row object or an array of row objects.
+   * @param onConflict - Comma-separated unique-constraint columns (e.g. 'tenant_id,user_id,year,month').
+   */
+  async adminUpsert<T extends keyof Database['public']['Tables']>(
+    table: T,
+    values:
+      | Database['public']['Tables'][T]['Insert']
+      | Database['public']['Tables'][T]['Insert'][],
+    onConflict: string,
+  ) {
+    return this.withSpan(
+      'db.upsert',
+      'SupabaseService.adminUpsert',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'upsert',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminUpsert called', { table, onConflict });
+
+          const response = await this.adminClient
+            .from(table)
+            .upsert(values as never, { onConflict })
+            .select();
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminUpsert query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.adminUpsert failed', error, { table });
+          throw new SupabaseServiceError(
+            'Admin upsert operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Update (RLS-bypassing)
   // ---------------------------------------------------------------------------
 

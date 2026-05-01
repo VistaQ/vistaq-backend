@@ -387,3 +387,43 @@ describe('SupabaseService.delete()', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// adminUpsert
+// ---------------------------------------------------------------------------
+
+describe('SupabaseService.adminUpsert', () => {
+  it('calls upsert with onConflict and returns the response', async () => {
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockResolvedValue({ data: [{ id: '1' }], error: null }),
+    });
+    const fromMock = jest.fn().mockReturnValue({ upsert: upsertMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    const response = await supabaseService.adminUpsert(
+      'tenants',
+      { id: '1', slug: 's', name: 'n' } as never,
+      'id',
+    );
+
+    expect(fromMock).toHaveBeenCalledWith('tenants');
+    expect(upsertMock).toHaveBeenCalledWith({ id: '1', slug: 's', name: 'n' }, { onConflict: 'id' });
+    expect(response.data).toEqual([{ id: '1' }]);
+    expect(response.error).toBeNull();
+  });
+
+  it('wraps thrown errors in SupabaseServiceError', async () => {
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: jest.fn().mockReturnValue({ upsert: upsertMock }),
+    } as never;
+
+    await expect(
+      supabaseService.adminUpsert('tenants', { id: '1' } as never, 'id'),
+    ).rejects.toThrow('Admin upsert operation failed in SupabaseService');
+  });
+});
