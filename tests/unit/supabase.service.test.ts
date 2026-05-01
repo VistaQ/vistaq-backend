@@ -426,4 +426,43 @@ describe('SupabaseService.adminUpsert', () => {
       supabaseService.adminUpsert('tenants', { id: '1' } as never, 'id'),
     ).rejects.toThrow('Admin upsert operation failed in SupabaseService');
   });
+
+  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+    const supabaseError = { message: 'upsert conflict', code: '23505' };
+    const fakeResponse = { data: null, error: supabaseError };
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockResolvedValue(fakeResponse),
+    });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: jest.fn().mockReturnValue({ upsert: upsertMock }),
+    } as never;
+
+    await expect(
+      supabaseService.adminUpsert('tenants', { id: '1', slug: 's', name: 'n' } as never, 'id'),
+    ).resolves.toBe(fakeResponse);
+
+    expect(mockLoggingError).toHaveBeenCalledWith(
+      'SupabaseService.adminUpsert query error',
+      supabaseError,
+      expect.objectContaining({ table: 'tenants' }),
+    );
+  });
+
+  it('preserves the original error as cause on the SupabaseServiceError', async () => {
+    const originalError = new Error('network timeout');
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockRejectedValue(originalError),
+    });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: jest.fn().mockReturnValue({ upsert: upsertMock }),
+    } as never;
+
+    try {
+      await supabaseService.adminUpsert('tenants', { id: '1' } as never, 'id');
+      fail('Expected SupabaseServiceError to be thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(SupabaseServiceError);
+      expect((err as SupabaseServiceError).cause).toBe(originalError);
+    }
+  });
 });

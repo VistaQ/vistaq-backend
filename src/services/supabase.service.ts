@@ -513,7 +513,9 @@ class SupabaseService {
 
           return response;
         } catch (error) {
-          loggingService.error('SupabaseService.adminUpsert failed', error, { table });
+          loggingService.error('SupabaseService.adminUpsert failed', error, {
+            table,
+          });
           throw new SupabaseServiceError(
             'Admin upsert operation failed in SupabaseService',
             error,
