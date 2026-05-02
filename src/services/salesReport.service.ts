@@ -35,6 +35,11 @@ class SalesReportService {
 
       // 2. Derive year/month
       const reportYear = new Date(etlResult.created_at).getFullYear();
+      if (isNaN(reportYear)) {
+        throw new InvalidEtlResultError(
+          `etlResult.created_at "${etlResult.created_at}" is not a valid date`,
+        );
+      }
       const reportMonthName = etlResult.months_detected.at(-1) ?? '';
       const reportMonth = MONTH_MAP[reportMonthName];
       if (!reportMonth) {
@@ -127,7 +132,7 @@ class SalesReportService {
       ) {
         throw error;
       }
-      handleServiceError('SalesReportService.uploadReport', error);
+      return handleServiceError('SalesReportService.uploadReport', error);
     }
   }
 
@@ -166,7 +171,7 @@ class SalesReportService {
         agents: sorted,
       };
     } catch (error) {
-      handleServiceError('SalesReportService.getGroupSummary', error);
+      return handleServiceError('SalesReportService.getGroupSummary', error);
     }
   }
 
@@ -174,7 +179,7 @@ class SalesReportService {
     try {
       return await salesReportMtdRepository.aggregateTrendByYear(p.tenantId, p.year);
     } catch (error) {
-      handleServiceError('SalesReportService.getGroupTrend', error);
+      return handleServiceError('SalesReportService.getGroupTrend', error);
     }
   }
 }

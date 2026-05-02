@@ -126,4 +126,12 @@ describe('SalesReportService.uploadReport — input errors', () => {
       uploadedBy: 'u-mgr',
     })).rejects.toThrow(UnknownReportMonthError);
   });
+
+  it('throws InvalidEtlResultError when created_at is not a valid date', async () => {
+    await expect(salesReportService.uploadReport({
+      etlResult: { ...baseEtl, created_at: 'not-a-date' },
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+    })).rejects.toThrow(InvalidEtlResultError);
+  });
 });
