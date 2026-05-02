@@ -254,4 +254,21 @@ describe('UserRepository.findByAgentCodes', () => {
     const result = await userRepository.findByAgentCodes('t1', []);
     expect(result).toEqual([]);
   });
+
+  it('throws RepositoryError on error response', async () => {
+    const inMock = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'query failed' },
+    });
+    const eqMock = jest.fn().mockReturnValue({ in: inMock });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    await expect(
+      userRepository.findByAgentCodes('t1', ['A1']),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
 });

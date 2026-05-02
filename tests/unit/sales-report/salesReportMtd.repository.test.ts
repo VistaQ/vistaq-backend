@@ -32,6 +32,16 @@ describe('SalesReportMtdRepository.bulkUpsert', () => {
     await salesReportMtdRepository.bulkUpsert([]);
     expect(supabaseService.adminUpsert).not.toHaveBeenCalled();
   });
+
+  it('throws RepositoryError on error response', async () => {
+    (supabaseService.adminUpsert as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'constraint violation' },
+    });
+    await expect(salesReportMtdRepository.bulkUpsert([
+      { batch_id: 'b', tenant_id: 't', user_id: 'u1', year: 2026, month: 5, ace: 1, noc: 1 },
+    ])).rejects.toThrow('SalesReportMtdRepository.bulkUpsert failed');
+  });
 });
 
 describe('SalesReportMtdRepository.aggregateTrendByYear', () => {
@@ -60,5 +70,22 @@ describe('SalesReportMtdRepository.aggregateTrendByYear', () => {
       { month: 1, fyc_mtd: 150, fyct_mtd: 170 },
       { month: 2, fyc_mtd: 200, fyct_mtd: 210 },
     ]);
+  });
+
+  it('throws RepositoryError on error response', async () => {
+    const eqMock2 = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'view query failed' },
+    });
+    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    await expect(
+      salesReportMtdRepository.aggregateTrendByYear('t1', 2026),
+    ).rejects.toThrow('SalesReportMtdRepository.aggregateTrendByYear failed');
   });
 });

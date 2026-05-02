@@ -63,4 +63,14 @@ describe('UploadBatchRepository.updateRowsLoaded', () => {
       { id: 'batch-1' },
     );
   });
+
+  it('throws RepositoryError on adminUpdate error response', async () => {
+    (supabaseService.adminUpdate as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'update failed' },
+    });
+    await expect(
+      uploadBatchRepository.updateRowsLoaded('batch-1', 42),
+    ).rejects.toThrow('UploadBatchRepository.updateRowsLoaded failed');
+  });
 });
