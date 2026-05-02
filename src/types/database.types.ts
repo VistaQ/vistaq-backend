@@ -666,6 +666,132 @@ export type Database = {
           },
         ]
       }
+      sales_report_mtd: {
+        Row: {
+          ace: number
+          batch_id: string
+          created_at: string
+          id: string
+          month: number
+          noc: number
+          tenant_id: string
+          updated_at: string
+          user_id: string
+          year: number
+        }
+        Insert: {
+          ace?: number
+          batch_id: string
+          created_at?: string
+          id?: string
+          month: number
+          noc?: number
+          tenant_id: string
+          updated_at?: string
+          user_id: string
+          year: number
+        }
+        Update: {
+          ace?: number
+          batch_id?: string
+          created_at?: string
+          id?: string
+          month?: number
+          noc?: number
+          tenant_id?: string
+          updated_at?: string
+          user_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_report_mtd_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_report_mtd_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_report_ytd: {
+        Row: {
+          ace: number
+          batch_id: string
+          created_at: string
+          fyc: number
+          fyc_pct: number
+          fyct: number
+          fyct_pct: number
+          id: string
+          mdrt_shortage_fyc: number
+          mdrt_shortage_fyct: number
+          month: number
+          noc: number
+          tenant_id: string
+          updated_at: string
+          user_id: string
+          year: number
+        }
+        Insert: {
+          ace?: number
+          batch_id: string
+          created_at?: string
+          fyc?: number
+          fyc_pct?: number
+          fyct?: number
+          fyct_pct?: number
+          id?: string
+          mdrt_shortage_fyc?: number
+          mdrt_shortage_fyct?: number
+          month: number
+          noc?: number
+          tenant_id: string
+          updated_at?: string
+          user_id: string
+          year: number
+        }
+        Update: {
+          ace?: number
+          batch_id?: string
+          created_at?: string
+          fyc?: number
+          fyc_pct?: number
+          fyct?: number
+          fyct_pct?: number
+          id?: string
+          mdrt_shortage_fyc?: number
+          mdrt_shortage_fyct?: number
+          month?: number
+          noc?: number
+          tenant_id?: string
+          updated_at?: string
+          user_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_report_ytd_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_report_ytd_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           created_at: string
@@ -689,6 +815,47 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      upload_batches: {
+        Row: {
+          created_at: string
+          file_name: string
+          id: string
+          month: number
+          rows_loaded: number
+          tenant_id: string
+          uploaded_by: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          id?: string
+          month: number
+          rows_loaded?: number
+          tenant_id: string
+          uploaded_by: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          id?: string
+          month?: number
+          rows_loaded?: number
+          tenant_id?: string
+          uploaded_by?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "upload_batches_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       users: {
         Row: {
@@ -755,7 +922,28 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      sales_report_mtd_fyc: {
+        Row: {
+          ace: number | null
+          fyc_mtd: number | null
+          fyct_mtd: number | null
+          id: string | null
+          month: number | null
+          noc: number | null
+          tenant_id: string | null
+          user_id: string | null
+          year: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_report_mtd_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
