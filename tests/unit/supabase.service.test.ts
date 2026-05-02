@@ -465,3 +465,86 @@ describe('SupabaseService.adminUpsert', () => {
     }
   });
 });
+
+describe('SupabaseService.uploadToStorage', () => {
+  it('uploads to the given bucket and path, returning the response', async () => {
+    const uploadMock = jest.fn().mockResolvedValue({ data: { path: 'abc.xlsx' }, error: null });
+    const fromMock = jest.fn().mockReturnValue({ upload: uploadMock });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    const buf = Buffer.from('fake');
+    const res = await supabaseService.uploadToStorage(
+      'reports-raw',
+      'jobs/1.xlsx',
+      buf,
+      'application/octet-stream',
+    );
+
+    expect(fromMock).toHaveBeenCalledWith('reports-raw');
+    expect(uploadMock).toHaveBeenCalledWith('jobs/1.xlsx', buf, {
+      contentType: 'application/octet-stream',
+      upsert: false,
+    });
+    expect(res.data?.path).toBe('abc.xlsx');
+  });
+
+  it('wraps thrown errors in SupabaseServiceError', async () => {
+    const fromMock = jest.fn().mockReturnValue({
+      upload: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    await expect(
+      supabaseService.uploadToStorage('reports-raw', 'x', Buffer.alloc(1), 'application/octet-stream'),
+    ).rejects.toThrow('Storage upload failed in SupabaseService');
+  });
+});
+
+describe('SupabaseService.createSignedDownloadUrl', () => {
+  it('returns the signed URL', async () => {
+    const signedMock = jest.fn().mockResolvedValue({
+      data: { signedUrl: 'https://signed/' },
+      error: null,
+    });
+    const fromMock = jest.fn().mockReturnValue({ createSignedUrl: signedMock });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    const url = await supabaseService.createSignedDownloadUrl('reports-raw', 'jobs/1.xlsx', 300);
+
+    expect(signedMock).toHaveBeenCalledWith('jobs/1.xlsx', 300);
+    expect(url).toBe('https://signed/');
+  });
+
+  it('throws SupabaseServiceError when signing returns an error', async () => {
+    const fromMock = jest.fn().mockReturnValue({
+      createSignedUrl: jest.fn().mockResolvedValue({ data: null, error: { message: 'nope' } }),
+    });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    await expect(
+      supabaseService.createSignedDownloadUrl('reports-raw', 'jobs/1.xlsx', 300),
+    ).rejects.toThrow('Create signed download URL failed');
+  });
+});
+
+describe('SupabaseService.removeFromStorage', () => {
+  it('calls remove on the bucket with the given paths', async () => {
+    const removeMock = jest.fn().mockResolvedValue({ data: [], error: null });
+    const fromMock = jest.fn().mockReturnValue({ remove: removeMock });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    await supabaseService.removeFromStorage('reports-raw', ['jobs/1.xlsx']);
+
+    expect(removeMock).toHaveBeenCalledWith(['jobs/1.xlsx']);
+  });
+});

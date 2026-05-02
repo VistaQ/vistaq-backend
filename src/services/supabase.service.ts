@@ -526,6 +526,130 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // Storage — upload (admin)
+  // ---------------------------------------------------------------------------
+
+  async uploadToStorage(
+    bucket: string,
+    path: string,
+    file: Buffer,
+    contentType: string,
+  ) {
+    return this.withSpan(
+      'storage.upload',
+      'SupabaseService.uploadToStorage',
+      {
+        'storage.system': 'supabase',
+        'storage.operation': 'upload',
+        'storage.bucket': bucket,
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.uploadToStorage called', { bucket, path });
+          const response = await this.adminClient.storage
+            .from(bucket)
+            .upload(path, file, { contentType, upsert: false });
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.uploadToStorage error',
+              response.error,
+              { bucket, path },
+            );
+          }
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.uploadToStorage failed', error, {
+            bucket,
+            path,
+          });
+          throw new SupabaseServiceError(
+            'Storage upload failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Storage — signed download URL
+  // ---------------------------------------------------------------------------
+
+  async createSignedDownloadUrl(
+    bucket: string,
+    path: string,
+    expiresInSeconds: number,
+  ): Promise<string> {
+    return this.withSpan(
+      'storage.signed_url',
+      'SupabaseService.createSignedDownloadUrl',
+      {
+        'storage.system': 'supabase',
+        'storage.operation': 'create_signed_url',
+        'storage.bucket': bucket,
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.createSignedDownloadUrl called', {
+            bucket,
+            path,
+          });
+          const { data, error } = await this.adminClient.storage
+            .from(bucket)
+            .createSignedUrl(path, expiresInSeconds);
+          if (error || !data?.signedUrl) {
+            throw new Error(error?.message ?? 'No signed URL returned');
+          }
+          return data.signedUrl;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.createSignedDownloadUrl failed',
+            error,
+            { bucket, path },
+          );
+          throw new SupabaseServiceError(
+            'Create signed download URL failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Storage — remove
+  // ---------------------------------------------------------------------------
+
+  async removeFromStorage(bucket: string, paths: string[]) {
+    return this.withSpan(
+      'storage.remove',
+      'SupabaseService.removeFromStorage',
+      {
+        'storage.system': 'supabase',
+        'storage.operation': 'remove',
+        'storage.bucket': bucket,
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.removeFromStorage called', {
+            bucket,
+            count: paths.length,
+          });
+          return await this.adminClient.storage.from(bucket).remove(paths);
+        } catch (error) {
+          loggingService.error('SupabaseService.removeFromStorage failed', error, {
+            bucket,
+          });
+          throw new SupabaseServiceError(
+            'Storage remove failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Update (RLS-bypassing)
   // ---------------------------------------------------------------------------
 
