@@ -666,6 +666,72 @@ export type Database = {
           },
         ]
       }
+      report_jobs: {
+        Row: {
+          attempts: number
+          batch_id: string | null
+          created_at: string
+          error_message: string | null
+          file_name: string
+          id: string
+          report_month: number
+          report_year: number
+          result: Json | null
+          status: string
+          storage_path: string
+          tenant_id: string
+          updated_at: string
+          uploaded_by: string
+        }
+        Insert: {
+          attempts?: number
+          batch_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          file_name: string
+          id?: string
+          report_month: number
+          report_year: number
+          result?: Json | null
+          status?: string
+          storage_path: string
+          tenant_id: string
+          updated_at?: string
+          uploaded_by: string
+        }
+        Update: {
+          attempts?: number
+          batch_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          file_name?: string
+          id?: string
+          report_month?: number
+          report_year?: number
+          result?: Json | null
+          status?: string
+          storage_path?: string
+          tenant_id?: string
+          updated_at?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_jobs_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_jobs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sales_report_mtd: {
         Row: {
           ace: number
@@ -999,6 +1065,7 @@ export type Database = {
         Args: { p_period_start: string; p_tenant_id: string }
         Returns: Json
       }
+      reconcile_stale_report_jobs: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
