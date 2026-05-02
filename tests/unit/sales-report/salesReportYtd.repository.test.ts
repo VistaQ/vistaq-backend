@@ -61,6 +61,70 @@ describe('SalesReportYtdRepository.bulkUpsert', () => {
   });
 });
 
+describe('SalesReportYtdRepository.findLatestUploadedMonth', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('returns the highest month for the tenant/year', async () => {
+    const limitMock = jest.fn().mockResolvedValue({
+      data: [{ month: 4 }],
+      error: null,
+    });
+    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
+    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    const month = await salesReportYtdRepository.findLatestUploadedMonth('t1', 2026);
+
+    expect(fromMock).toHaveBeenCalledWith('sales_report_ytd');
+    expect(selectMock).toHaveBeenCalledWith('month');
+    expect(eqMock1).toHaveBeenCalledWith('tenant_id', 't1');
+    expect(eqMock2).toHaveBeenCalledWith('year', 2026);
+    expect(orderMock).toHaveBeenCalledWith('month', { ascending: false });
+    expect(limitMock).toHaveBeenCalledWith(1);
+    expect(month).toBe(4);
+  });
+
+  it('returns null when no rows exist', async () => {
+    const limitMock = jest.fn().mockResolvedValue({ data: [], error: null });
+    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
+    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    const month = await salesReportYtdRepository.findLatestUploadedMonth('t1', 2026);
+
+    expect(month).toBeNull();
+  });
+
+  it('throws RepositoryError when supabase returns an error', async () => {
+    const limitMock = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'boom' },
+    });
+    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
+    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    await expect(
+      salesReportYtdRepository.findLatestUploadedMonth('t1', 2026),
+    ).rejects.toThrow('SalesReportYtdRepository.findLatestUploadedMonth failed');
+  });
+});
+
 describe('SalesReportYtdRepository.findByTenantYearMonthWithUser', () => {
   beforeEach(() => jest.resetAllMocks());
 

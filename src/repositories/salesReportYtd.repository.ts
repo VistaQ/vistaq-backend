@@ -34,6 +34,52 @@ class SalesReportYtdRepository {
     }
   }
 
+  async findLatestUploadedMonth(
+    tenantId: string,
+    year: number,
+  ): Promise<number | null> {
+    try {
+      // Direct adminClient call because the wrapper's `adminSelect` doesn't
+      // expose order/limit chaining.
+      const { data, error } = await (
+        supabaseService as unknown as {
+          adminClient: {
+            from: (t: string) => {
+              select: (s: string) => {
+                eq: (c: string, v: unknown) => {
+                  eq: (c: string, v: unknown) => {
+                    order: (c: string, opts: { ascending: boolean }) => {
+                      limit: (n: number) => Promise<{
+                        data: { month: number }[] | null;
+                        error: { message: string } | null;
+                      }>;
+                    };
+                  };
+                };
+              };
+            };
+          };
+        }
+      ).adminClient
+        .from('sales_report_ytd')
+        .select('month')
+        .eq('tenant_id', tenantId)
+        .eq('year', year)
+        .order('month', { ascending: false })
+        .limit(1);
+
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+      if (rows.length === 0) return null;
+      return rows[0].month;
+    } catch (error) {
+      handleRepositoryError(
+        'SalesReportYtdRepository.findLatestUploadedMonth',
+        error,
+      );
+    }
+  }
+
   async findByTenantYearMonthWithUser(
     tenantId: string,
     year: number,
