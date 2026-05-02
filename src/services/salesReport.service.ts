@@ -2,7 +2,10 @@ import salesReportMtdRepository from '@src/repositories/salesReportMtd.repositor
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
-import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
+import {
+  InvalidEtlResultError,
+  NonConsecutiveUploadError,
+} from '@src/models/errors/salesReport.errors';
 import {
   IEtlResult,
   IEtlRowData,
@@ -47,6 +50,19 @@ class SalesReportService {
       //    they are integers in the right ranges.
       const reportYear = etlResult.report_year;
       const reportMonth = etlResult.report_month;
+
+      // 2a. Defense-in-depth guard: enforce consecutive-month uploads.
+      const latest = await salesReportYtdRepository.findLatestUploadedMonth(
+        tenantId,
+        reportYear,
+      );
+      if (latest !== null && reportMonth !== latest + 1) {
+        const reqMonth = String(reportMonth).padStart(2, '0');
+        const latestMonth = String(latest).padStart(2, '0');
+        throw new NonConsecutiveUploadError(
+          `Cannot upload ${reportYear}-${reqMonth}. Latest uploaded is ${reportYear}-${latestMonth}; next must be ${latest + 1}.`,
+        );
+      }
 
       // 3. Insert upload batch
       const batch = await uploadBatchRepository.insertBatch({
@@ -129,6 +145,9 @@ class SalesReportService {
       };
     } catch (error) {
       if (error instanceof InvalidEtlResultError) {
+        throw error;
+      }
+      if (error instanceof NonConsecutiveUploadError) {
         throw error;
       }
       return handleServiceError('SalesReportService.uploadReport', error);

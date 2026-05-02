@@ -4,7 +4,10 @@ import userRepository from '@src/repositories/user.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import { IEtlResult } from '@src/types/salesReport.types';
-import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
+import {
+  InvalidEtlResultError,
+  NonConsecutiveUploadError,
+} from '@src/models/errors/salesReport.errors';
 
 jest.mock('@src/repositories/uploadBatch.repository', () => ({
   __esModule: true,
@@ -16,7 +19,7 @@ jest.mock('@src/repositories/user.repository', () => ({
 }));
 jest.mock('@src/repositories/salesReportYtd.repository', () => ({
   __esModule: true,
-  default: { bulkUpsert: jest.fn() },
+  default: { bulkUpsert: jest.fn(), findLatestUploadedMonth: jest.fn() },
 }));
 jest.mock('@src/repositories/salesReportMtd.repository', () => ({
   __esModule: true,
@@ -56,6 +59,7 @@ beforeEach(() => jest.resetAllMocks());
 
 describe('SalesReportService.uploadReport — happy path', () => {
   it('resolves agents, bulk upserts, updates rows_loaded, returns processed count', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
       id: 'batch-1', tenant_id: 't1', uploaded_by: 'u-mgr',
       year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
@@ -95,6 +99,7 @@ describe('SalesReportService.uploadReport — happy path', () => {
 
 describe('SalesReportService.uploadReport — unmatched agent', () => {
   it('records skipped + errors entry without blocking processed agents', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-1' });
     (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
       { id: 'u1', agent_code: 'A1' },
@@ -124,6 +129,7 @@ describe('SalesReportService.uploadReport — input errors', () => {
 
 describe('SalesReportService.uploadReport — coercion of mixed rowData values', () => {
   it('coerces string and null values to numbers, defaulting non-numerics to 0', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-c' });
     (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
       { id: 'u1', agent_code: 'A1' },
@@ -160,5 +166,37 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
     expect(mtdRow.month).toBe(1);
     expect(mtdRow.ace).toBe(15);
     expect(mtdRow.noc).toBe(1);
+  });
+});
+
+describe('SalesReportService.uploadReport — consecutive-month guard', () => {
+  it('rejects non-consecutive month with NonConsecutiveUploadError', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
+
+    await expect(salesReportService.uploadReport({
+      etlResult: { ...baseEtl, report_year: 2026, report_month: 4 },
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+    })).rejects.toBeInstanceOf(NonConsecutiveUploadError);
+
+    expect(uploadBatchRepository.insertBatch).not.toHaveBeenCalled();
+  });
+
+  it('accepts when no prior YTD row exists', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-x' });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+
+    const result = await salesReportService.uploadReport({
+      etlResult: { ...baseEtl, report_year: 2026, report_month: 8 },
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+    });
+
+    expect(result.batchId).toBe('batch-x');
+    expect(uploadBatchRepository.insertBatch).toHaveBeenCalled();
   });
 });
