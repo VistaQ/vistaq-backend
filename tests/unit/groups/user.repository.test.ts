@@ -216,3 +216,42 @@ describe('UserRepository.updateGroupIdForUsers', () => {
     ).rejects.toBeInstanceOf(RepositoryError);
   });
 });
+
+/******************************************************************************
+  Test suite — UserRepository.findByAgentCodes
+******************************************************************************/
+
+describe('UserRepository.findByAgentCodes', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('returns id+agent_code for matching agents in tenant', async () => {
+    const inMock = jest.fn().mockResolvedValue({
+      data: [
+        { id: 'u1', agent_code: 'A1' },
+        { id: 'u2', agent_code: 'A2' },
+      ],
+      error: null,
+    });
+    const eqMock = jest.fn().mockReturnValue({ in: inMock });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    const result = await userRepository.findByAgentCodes('t1', ['A1', 'A2']);
+
+    expect(fromMock).toHaveBeenCalledWith('users');
+    expect(eqMock).toHaveBeenCalledWith('tenant_id', 't1');
+    expect(inMock).toHaveBeenCalledWith('agent_code', ['A1', 'A2']);
+    expect(result).toEqual([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+  });
+
+  it('returns [] when given an empty agentCodes array (no DB call)', async () => {
+    const result = await userRepository.findByAgentCodes('t1', []);
+    expect(result).toEqual([]);
+  });
+});

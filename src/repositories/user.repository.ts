@@ -385,6 +385,38 @@ class UserRepository {
       return handleRepositoryError('UserRepository.updateAuthUserPassword', error);
     }
   }
+
+  async findByAgentCodes(
+    tenantId: string,
+    agentCodes: string[],
+  ): Promise<{ id: string; agent_code: string }[]> {
+    try {
+      if (agentCodes.length === 0) return [];
+
+      const { data, error } = await (
+        supabaseService as unknown as {
+          adminClient: {
+            from: (t: string) => {
+              select: (s: string) => {
+                eq: (c: string, v: unknown) => {
+                  in: (c: string, v: unknown[]) => Promise<{ data: { id: string; agent_code: string }[] | null; error: { message: string } | null }>;
+                };
+              };
+            };
+          };
+        }
+      ).adminClient
+        .from('users')
+        .select('id, agent_code')
+        .eq('tenant_id', tenantId)
+        .in('agent_code', agentCodes);
+
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    } catch (error) {
+      handleRepositoryError('UserRepository.findByAgentCodes', error);
+    }
+  }
 }
 
 /******************************************************************************
