@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import EnvVars from '@src/utils/env';
 
 /******************************************************************************
                             Internal-Key Middleware
@@ -12,7 +13,7 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 export function internalKey(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers['authorization'];
-  const expected = `Bearer ${process.env.INTERNAL_API_KEY}`;
+  const expected = `Bearer ${EnvVars.InternalApiKey}`;
 
   if (!header || header !== expected) {
     res.status(HttpStatusCodes.UNAUTHORIZED).json({ message: 'Unauthorized' });

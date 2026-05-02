@@ -5,7 +5,7 @@ import loggingService from '@src/services/logging.service';
 
 class EtlService {
   async kickoff(params: IEtlKickoffParams): Promise<void> {
-    const url = `${process.env.ETL_SERVICE_URL ?? EnvVars.EtlServiceUrl}/process`;
+    const url = `${EnvVars.EtlServiceUrl}/process`;
     try {
       loggingService.info('EtlService.kickoff called', { jobId: params.jobId, url });
 
@@ -13,7 +13,7 @@ class EtlService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.INTERNAL_API_KEY ?? EnvVars.InternalApiKey}`,
+          Authorization: `Bearer ${EnvVars.InternalApiKey}`,
         },
         body: JSON.stringify({
           job_id: params.jobId,
