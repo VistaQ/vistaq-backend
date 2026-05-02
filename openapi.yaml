@@ -3786,7 +3786,8 @@ paths:
       description: >
         Accepts a raw xlsx file, stores it in Supabase Storage, creates a
         `report_jobs` row, and kicks off the external ETL service. Returns
-        immediately with a `jobId`. Manager-only.
+        immediately with a human-readable `reference` identifier
+        (`SALES-REPORT-YYYYMMDDHHMMSSsss`). Manager-only.
       security:
         - bearerAuth: []
       requestBody:
@@ -3821,24 +3822,28 @@ paths:
                   data:
                     type: object
                     properties:
-                      jobId:
+                      reference:
                         type: string
-                        format: uuid
+                        pattern: '^SALES-REPORT-\d{17}$'
+                        example: SALES-REPORT-20260502143022873
         '400': { description: Missing file, invalid year/month, or file too large }
         '401': { description: Missing or invalid bearer token }
         '403': { description: Caller is not a manager }
 
-  /reports/jobs/{jobId}:
+  /reports/jobs/{reference}:
     get:
       tags: [Sales Reports]
       summary: Poll the status of a report-upload job
       security:
         - bearerAuth: []
       parameters:
-        - name: jobId
+        - name: reference
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
       responses:
         '200':
           description: Job state
@@ -3850,7 +3855,7 @@ paths:
         '403': { description: Job belongs to another tenant or caller is not a manager }
         '404': { description: Job not found }
 
-  /reports/jobs/{jobId}/complete:
+  /reports/jobs/{reference}/complete:
     post:
       tags: [Sales Reports]
       summary: ETL callback (internal-key auth, NOT user JWT)
@@ -3861,10 +3866,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - name: jobId
+        - name: reference
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
       requestBody:
         required: true
         content:
@@ -3877,7 +3885,7 @@ paths:
         '401': { description: Missing or wrong internal key }
         '404': { description: Job not found }
 
-  /reports/jobs/{jobId}/retry:
+  /reports/jobs/{reference}/retry:
     post:
       tags: [Sales Reports]
       summary: Retry a failed report job
@@ -3887,12 +3895,28 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - name: jobId
+        - name: reference
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
       responses:
-        '202': { description: Retry kicked off }
+        '202':
+          description: Retry kicked off
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      reference:
+                        type: string
+                        pattern: '^SALES-REPORT-\d{17}$'
         '401': { description: Missing or invalid bearer token }
         '403': { description: Caller is not a manager or job belongs to another tenant }
         '404': { description: Job not found }
@@ -5250,8 +5274,16 @@ components:
 
     ReportJobObject:
       type: object
+      description: >
+        Report-job record. The `reference` field is the public-facing,
+        human-readable identifier used in URLs, ETL payloads, callbacks,
+        and polling. The internal UUID `id` is intentionally omitted from
+        external responses.
       properties:
-        id: { type: string, format: uuid }
+        reference:
+          type: string
+          pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
         tenant_id: { type: string, format: uuid }
         uploaded_by: { type: string, format: uuid }
         storage_path: { type: string }
