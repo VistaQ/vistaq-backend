@@ -8,6 +8,7 @@ export type ReportJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface IReportJob {
   id: string;
+  reference: string;
   tenant_id: string;
   uploaded_by: string;
   storage_path: string;
@@ -33,14 +34,14 @@ export interface ICreateJobParams {
 }
 
 export interface ICompleteJobParams {
-  jobId: string;
+  reference: string;
   status: 'success' | 'failed';
   etlResult?: unknown;
   error?: string;
 }
 
 export interface IEtlKickoffParams {
-  jobId: string;
+  reference: string;
   fileUrl: string;
   callbackUrl: string;
 }

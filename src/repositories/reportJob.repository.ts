@@ -6,6 +6,7 @@ class ReportJobRepository {
   private mapRow(row: ReportJobRow): IReportJob {
     return {
       id: row.id,
+      reference: row.reference,
       tenant_id: row.tenant_id,
       uploaded_by: row.uploaded_by,
       storage_path: row.storage_path,
@@ -34,14 +35,14 @@ class ReportJobRepository {
     }
   }
 
-  async findById(id: string): Promise<IReportJob | null> {
+  async findByReference(reference: string): Promise<IReportJob | null> {
     try {
-      const response = await supabaseService.adminSelect('report_jobs', '*', { id });
+      const response = await supabaseService.adminSelect('report_jobs', '*', { reference });
       if (response.error) throw new Error(response.error.message);
       const row = (response.data ?? [])[0] as ReportJobRow | undefined;
       return row ? this.mapRow(row) : null;
     } catch (error) {
-      handleRepositoryError('ReportJobRepository.findById', error);
+      handleRepositoryError('ReportJobRepository.findByReference', error);
     }
   }
 

@@ -15,13 +15,14 @@ beforeEach(() => jest.resetAllMocks());
 const mockJobRow = {
   id: 'j1', tenant_id: 't1', uploaded_by: 'u1',
   storage_path: 'reports-raw/j1.xlsx', file_name: 'May.xlsx',
+  reference: 'SALES-REPORT-20260502143022873',
   report_year: 2026, report_month: 5,
   status: 'pending', batch_id: null, result: null, error_message: null,
   attempts: 0, created_at: 'now', updated_at: 'now',
 };
 
 describe('ReportJobRepository.insertJob', () => {
-  it('returns the inserted job row mapped to IReportJob', async () => {
+  it('returns the inserted job row mapped to IReportJob (including reference)', async () => {
     (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
       data: [mockJobRow],
       error: null,
@@ -32,15 +33,21 @@ describe('ReportJobRepository.insertJob', () => {
       uploaded_by: 'u1',
       storage_path: 'reports-raw/j1.xlsx',
       file_name: 'May.xlsx',
+      reference: 'SALES-REPORT-20260502143022873',
       report_year: 2026,
       report_month: 5,
     });
 
     expect(supabaseService.adminInsert).toHaveBeenCalledWith(
       'report_jobs',
-      expect.objectContaining({ tenant_id: 't1', file_name: 'May.xlsx' }),
+      expect.objectContaining({
+        tenant_id: 't1',
+        file_name: 'May.xlsx',
+        reference: 'SALES-REPORT-20260502143022873',
+      }),
     );
     expect(job.id).toBe('j1');
+    expect(job.reference).toBe('SALES-REPORT-20260502143022873');
     expect(job.status).toBe('pending');
   });
 
@@ -53,27 +60,28 @@ describe('ReportJobRepository.insertJob', () => {
       reportJobRepository.insertJob({
         tenant_id: 't1', uploaded_by: 'u1',
         storage_path: 'p', file_name: 'f',
+        reference: 'SALES-REPORT-20260502143022873',
         report_year: 2026, report_month: 5,
       }),
     ).rejects.toThrow('ReportJobRepository.insertJob failed');
   });
 });
 
-describe('ReportJobRepository.findById', () => {
+describe('ReportJobRepository.findByReference', () => {
   it('returns the job when found', async () => {
     (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
       data: [mockJobRow],
       error: null,
     });
 
-    const job = await reportJobRepository.findById('j1');
+    const job = await reportJobRepository.findByReference('SALES-REPORT-20260502143022873');
 
     expect(supabaseService.adminSelect).toHaveBeenCalledWith(
       'report_jobs',
       '*',
-      { id: 'j1' },
+      { reference: 'SALES-REPORT-20260502143022873' },
     );
-    expect(job?.id).toBe('j1');
+    expect(job?.reference).toBe('SALES-REPORT-20260502143022873');
   });
 
   it('returns null when not found', async () => {
@@ -82,7 +90,7 @@ describe('ReportJobRepository.findById', () => {
       error: null,
     });
 
-    const job = await reportJobRepository.findById('missing');
+    const job = await reportJobRepository.findByReference('SALES-REPORT-99999999999999999');
     expect(job).toBeNull();
   });
 });
