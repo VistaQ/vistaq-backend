@@ -32,6 +32,8 @@ tags:
     description: Gamification agent points endpoints
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
+  - name: Sales Reports
+    description: Sales report ingestion and group dashboard endpoints
   - name: Public
     description: Public endpoints that do not require authentication
 
@@ -3605,6 +3607,178 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # SALES REPORTS
+  ##############################################################################
+
+  /reports/upload:
+    post:
+      tags: [Sales Reports]
+      summary: Ingest a sales report ETL result
+      description: >
+        Persists a pre-shaped ETL result produced by the upstream ETL pipeline.
+        Creates a row in `upload_batches` for audit, then bulk-upserts a YTD
+        snapshot for the report month and MTD ACE/NOC rows for every month
+        present in `rowData`. Re-uploading the same `(tenant_id, year, month)`
+        is last-writer-wins on YTD/MTD; both batch rows are retained.
+        Manager-only (`group_leader`, `master_trainer`, or `admin`).
+        `tenant_id` and `uploaded_by` are derived from the JWT and are not
+        accepted from the request body.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadReportRequest'
+      responses:
+        '200':
+          description: >
+            Upload completed. Partial success is allowed: rows that failed
+            validation or whose `agentCode` did not resolve to a user are
+            reported in the `errors` array, while the rest are persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadReportResponse'
+        '400':
+          description: Validation failed (Zod schema mismatch or invalid ETL data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/group:
+    get:
+      tags: [Sales Reports]
+      summary: Group dashboard data for a year/month
+      description: >
+        Returns the group's cards (FYCT/FYC/ACE/NOC YTD totals, average
+        percentages, NOC per agent) plus the per-agent table sorted by
+        FYC descending. Tenant-scoped from the JWT. Manager-only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            example: 5
+      responses:
+        '200':
+          description: Group dashboard payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupReportResponse'
+        '400':
+          description: Invalid query parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/group/trend:
+    get:
+      tags: [Sales Reports]
+      summary: Monthly group trend points for a year
+      description: >
+        Returns one point per month for the given year, with FYC and FYCt
+        MTD aggregated across all agents in the tenant. Backed by the
+        `sales_report_mtd_fyc` view (FYC/FYCt MTD derived from YTD via
+        `LAG()`). Months without a YTD snapshot are intentionally omitted.
+        Tenant-scoped from the JWT. Manager-only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+      responses:
+        '200':
+          description: Sorted array of trend points (ascending by `month`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupTrendResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -4688,3 +4862,238 @@ components:
           items:
             type: object
           example: []
+
+    ##########################################################################
+    # Sales Reports
+    ##########################################################################
+
+    UploadReportRequest:
+      type: object
+      required: [etlResult]
+      additionalProperties: false
+      properties:
+        etlResult:
+          type: object
+          required: [source, created_at, rows_loaded, months_detected, records]
+          additionalProperties: false
+          properties:
+            source:
+              type: string
+              description: Filename or identifier of the original report.
+              example: May2026.xlsx
+            created_at:
+              type: string
+              format: date-time
+              description: Timestamp the ETL pipeline produced this result. Year is derived from this field.
+              example: '2026-06-01T00:00:00Z'
+            rows_loaded:
+              type: integer
+              minimum: 0
+              description: Number of rows the ETL pipeline read from the source.
+              example: 65
+            months_detected:
+              type: array
+              minItems: 1
+              description: >
+                Uppercase English month names present in the source. The last entry
+                is treated as the report month.
+              items:
+                type: string
+                enum:
+                  - JANUARY
+                  - FEBRUARY
+                  - MARCH
+                  - APRIL
+                  - MAY
+                  - JUNE
+                  - JULY
+                  - AUGUST
+                  - SEPTEMBER
+                  - OCTOBER
+                  - NOVEMBER
+                  - DECEMBER
+            records:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [agentCode, rowData]
+                additionalProperties: false
+                properties:
+                  agentCode:
+                    type: string
+                    description: The agent code from the source row; resolved server-side to a `users.id`.
+                    example: T66701C
+                  rowData:
+                    type: object
+                    description: >
+                      Bag of numeric values keyed by report column name. Recognised
+                      keys include the YTD totals (`'ACE (YTD)'`, `'NOC (YTD)'`,
+                      `'FYCT (YTD)'`, `'% FYCT (YTD)'`, `'MDRT SHORTAGE FYCT'`,
+                      `'FYC (YTD)'`, `'% FYC (YTD)'`, `'MDRT SHORTAGE FYC'`) and
+                      per-month MTD pairs (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.).
+                      Missing keys default to 0.
+                    additionalProperties:
+                      type: number
+
+    UploadReportResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          required: [batchId, processed, skipped, errors]
+          properties:
+            batchId:
+              type: string
+              format: uuid
+              example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+            processed:
+              type: integer
+              description: Count of agent rows that were successfully persisted.
+              example: 63
+            skipped:
+              type: integer
+              description: Count of agent rows that were skipped (e.g. unmatched agentCode).
+              example: 2
+            errors:
+              type: array
+              items:
+                type: object
+                required: [agentCode, reason]
+                properties:
+                  agentCode:
+                    type: string
+                    example: T12345A
+                  reason:
+                    type: string
+                    example: User not found
+
+    GroupSummaryObject:
+      type: object
+      required:
+        - fyct_ytd
+        - fyc_ytd
+        - ace_ytd
+        - noc_ytd
+        - fyc_pct_avg
+        - fyct_pct_avg
+        - agent_count
+        - noc_per_agent
+      properties:
+        fyct_ytd:
+          type: number
+          example: 774000
+        fyc_ytd:
+          type: number
+          example: 735700
+        ace_ytd:
+          type: number
+          example: 1547500
+        noc_ytd:
+          type: integer
+          example: 46
+        fyc_pct_avg:
+          type: number
+          description: Simple average of per-agent `fyc_pct`.
+          example: 0.46
+        fyct_pct_avg:
+          type: number
+          description: Reserved; currently always 0.
+          example: 0
+        agent_count:
+          type: integer
+          example: 4
+        noc_per_agent:
+          type: number
+          example: 11.5
+
+    GroupAgentObject:
+      type: object
+      required:
+        - user_id
+        - name
+        - agent_code
+        - fyct
+        - fyc
+        - fyc_pct
+        - ace
+        - noc
+        - mdrt_shortage_fyc
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Lee Chun Wei
+        agent_code:
+          type: string
+          example: T66701C
+        fyct:
+          type: number
+          example: 310000
+        fyc:
+          type: number
+          example: 295000
+        fyc_pct:
+          type: number
+          example: 0.738
+        ace:
+          type: number
+          example: 620000
+        noc:
+          type: integer
+          example: 18
+        mdrt_shortage_fyc:
+          type: number
+          example: 105000
+
+    GroupReportResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          required: [summary, agents]
+          properties:
+            summary:
+              $ref: '#/components/schemas/GroupSummaryObject'
+            agents:
+              type: array
+              items:
+                $ref: '#/components/schemas/GroupAgentObject'
+
+    GroupTrendPointObject:
+      type: object
+      required: [month, fyc_mtd, fyct_mtd]
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          example: 5
+        fyc_mtd:
+          type: number
+          example: 128000
+        fyct_mtd:
+          type: number
+          example: 133000
+
+    GroupTrendResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupTrendPointObject'
