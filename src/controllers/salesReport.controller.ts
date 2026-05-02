@@ -1,7 +1,10 @@
 import { NextFunction, Response } from 'express';
 
 import { RouteError } from '@src/models/errors/route.error';
-import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
+import {
+  InvalidEtlResultError,
+  NonConsecutiveUploadError,
+} from '@src/models/errors/salesReport.errors';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import salesReportService from '@src/services/salesReport.service';
 import {
@@ -73,6 +76,10 @@ class SalesReportController {
     } catch (error) {
       if (error instanceof InvalidEtlResultError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+      if (error instanceof NonConsecutiveUploadError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
         return;
       }
       return handleControllerError('SalesReportController.upload', error, next);

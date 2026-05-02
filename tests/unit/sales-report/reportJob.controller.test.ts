@@ -13,6 +13,7 @@ import reportJobController, {
 } from '@src/controllers/reportJob.controller';
 import reportJobService from '@src/services/reportJob.service';
 import { ReportJobNotFoundError, JobNotRetryableError } from '@src/models/errors/reportJob.errors';
+import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -63,6 +64,18 @@ describe('ReportJobController.create', () => {
     await reportJobController.create(baseReq('agent'), res, next);
     const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.FORBIDDEN);
+  });
+
+  it('maps NonConsecutiveUploadError to 409 Conflict', async () => {
+    (reportJobService.createJob as jest.Mock).mockRejectedValue(
+      new NonConsecutiveUploadError('Cannot upload 2026-04. Latest uploaded is 2026-02; next must be 3.'),
+    );
+    const res = mkRes();
+    const next = jest.fn() as unknown as NextFunction;
+    await reportJobController.create(baseReq('group_leader'), res, next);
+    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    expect(err.status).toBe(HttpStatusCodes.CONFLICT);
+    expect(err.message).toMatch(/^Cannot upload 2026-04/);
   });
 
   it('returns 400 when no file is attached', async () => {

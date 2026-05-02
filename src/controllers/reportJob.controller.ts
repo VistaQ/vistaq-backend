@@ -5,6 +5,7 @@ import {
   JobNotRetryableError,
   ReportJobNotFoundError,
 } from '@src/models/errors/reportJob.errors';
+import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import reportJobService from '@src/services/reportJob.service';
@@ -74,6 +75,10 @@ class ReportJobController {
       const body: ICreateJobRes = { success: true, data: { jobId: job.id } };
       res.status(HttpStatusCodes.ACCEPTED).json(body);
     } catch (error) {
+      if (error instanceof NonConsecutiveUploadError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
+        return;
+      }
       return handleControllerError('ReportJobController.create', error, next);
     }
   }

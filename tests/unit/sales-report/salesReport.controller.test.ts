@@ -1,7 +1,10 @@
 import { NextFunction, Response } from 'express';
 import salesReportController, { IUploadReportReq } from '@src/controllers/salesReport.controller';
 import salesReportService from '@src/services/salesReport.service';
-import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
+import {
+  InvalidEtlResultError,
+  NonConsecutiveUploadError,
+} from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -62,6 +65,18 @@ describe('SalesReportController.upload', () => {
     await salesReportController.upload(mkReq('group_leader'), res, next);
     const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.BAD_REQUEST);
+  });
+
+  it('maps NonConsecutiveUploadError to 409 Conflict', async () => {
+    (salesReportService.uploadReport as jest.Mock).mockRejectedValue(
+      new NonConsecutiveUploadError('Cannot upload 2026-04. Latest uploaded is 2026-02; next must be 3.'),
+    );
+    const res = mkRes();
+    const next = jest.fn() as unknown as NextFunction;
+    await salesReportController.upload(mkReq('group_leader'), res, next);
+    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    expect(err.status).toBe(HttpStatusCodes.CONFLICT);
+    expect(err.message).toMatch(/^Cannot upload 2026-04/);
   });
 
 });
