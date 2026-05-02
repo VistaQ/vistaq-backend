@@ -15,6 +15,7 @@ import {
 } from '@src/types/reportJob.types';
 import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { generateJobReference } from '@src/utils/generateJobReference';
 import loggingService from '@src/services/logging.service';
 
 const REPORTS_BUCKET = 'reports-raw';
@@ -51,12 +52,16 @@ class ReportJobService {
         throw new Error(`Storage upload failed: ${upload.error.message}`);
       }
 
-      // 2. Insert job row (status defaults to 'pending')
+      // 2. Insert job row (status defaults to 'pending'). Reference is the
+      // public-facing identifier; computed fresh per call so the timestamp
+      // matches when the row was created, not when the module was loaded.
+      const reference = generateJobReference();
       const job = await reportJobRepository.insertJob({
         tenant_id: params.tenantId,
         uploaded_by: params.uploadedBy,
         storage_path: storagePath,
         file_name: params.fileName,
+        reference,
         report_year: params.reportYear,
         report_month: params.reportMonth,
       });
@@ -64,7 +69,7 @@ class ReportJobService {
       // 3. Kick off ETL (fire-and-forget — don't fail the user upload if ETL is unavailable)
       void this.kickoffEtl(job).catch((err) => {
         loggingService.error('ReportJobService.kickoffEtl deferred failure', err, {
-          jobId: job.id,
+          reference: job.reference,
         });
       });
 
@@ -77,8 +82,8 @@ class ReportJobService {
 
   async completeJob(params: ICompleteJobParams): Promise<void> {
     try {
-      const job = await reportJobRepository.findById(params.jobId);
-      if (!job) throw new ReportJobNotFoundError(`Job ${params.jobId} not found`);
+      const job = await reportJobRepository.findByReference(params.reference);
+      if (!job) throw new ReportJobNotFoundError(`Job ${params.reference} not found`);
 
       if (params.status === 'failed') {
         await reportJobRepository.markFailed(job.id, params.error ?? 'Unknown ETL failure');
@@ -107,17 +112,17 @@ class ReportJobService {
     }
   }
 
-  async retryJob(jobId: string): Promise<void> {
+  async retryJob(reference: string): Promise<void> {
     try {
-      const job = await reportJobRepository.findById(jobId);
-      if (!job) throw new ReportJobNotFoundError(`Job ${jobId} not found`);
+      const job = await reportJobRepository.findByReference(reference);
+      if (!job) throw new ReportJobNotFoundError(`Job ${reference} not found`);
       if (job.status !== 'failed') {
         throw new JobNotRetryableError(
           `Job is in status '${job.status}'; only 'failed' jobs can be retried`,
         );
       }
 
-      await reportJobRepository.markProcessing(jobId, job.attempts + 1);
+      await reportJobRepository.markProcessing(job.id, job.attempts + 1);
       await this.kickoffEtl(job);
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) throw error;
@@ -126,10 +131,10 @@ class ReportJobService {
     }
   }
 
-  async getJob(jobId: string): Promise<IReportJob> {
+  async getJob(reference: string): Promise<IReportJob> {
     try {
-      const job = await reportJobRepository.findById(jobId);
-      if (!job) throw new ReportJobNotFoundError(`Job ${jobId} not found`);
+      const job = await reportJobRepository.findByReference(reference);
+      if (!job) throw new ReportJobNotFoundError(`Job ${reference} not found`);
       return job;
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) throw error;
@@ -144,9 +149,9 @@ class ReportJobService {
       SIGNED_URL_TTL_SECONDS,
     );
     await etlService.kickoff({
-      jobId: job.id,
+      reference: job.reference,
       fileUrl,
-      callbackUrl: `${EnvVars.BackendBaseUrl}/api/reports/jobs/${job.id}/complete`,
+      callbackUrl: `${EnvVars.BackendBaseUrl}/api/reports/jobs/${job.reference}/complete`,
     });
   }
 }

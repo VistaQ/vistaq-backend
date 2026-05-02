@@ -22,7 +22,7 @@ import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors
 jest.mock('@src/repositories/reportJob.repository', () => ({
   __esModule: true,
   default: {
-    insertJob: jest.fn(), findById: jest.fn(),
+    insertJob: jest.fn(), findByReference: jest.fn(),
     markProcessing: jest.fn(), markCompleted: jest.fn(), markFailed: jest.fn(),
   },
 }));
@@ -49,7 +49,8 @@ jest.mock('@src/services/supabase.service', () => ({
 beforeEach(() => jest.resetAllMocks());
 
 const fakeJob = {
-  id: 'j1', tenant_id: 't1', uploaded_by: 'u1',
+  id: 'j1', reference: 'SALES-REPORT-20260502143022873',
+  tenant_id: 't1', uploaded_by: 'u1',
   storage_path: 'reports-raw/j1.xlsx', file_name: 'May.xlsx',
   report_year: 2026, report_month: 5,
   status: 'pending' as const, batch_id: null, result: null, error_message: null,
@@ -57,7 +58,7 @@ const fakeJob = {
 };
 
 describe('ReportJobService.createJob', () => {
-  it('uploads file, inserts job, kicks off ETL, returns the job', async () => {
+  it('uploads file, generates a reference, inserts job, kicks off ETL with reference, returns the job', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
     (reportJobRepository.insertJob as jest.Mock).mockResolvedValue(fakeJob);
@@ -74,17 +75,18 @@ describe('ReportJobService.createJob', () => {
     expect(reportJobRepository.insertJob).toHaveBeenCalledWith(expect.objectContaining({
       tenant_id: 't1', uploaded_by: 'u1', file_name: 'May.xlsx',
       report_year: 2026, report_month: 5,
+      reference: expect.stringMatching(/^SALES-REPORT-\d{17}$/),
     }));
 
     // ETL kickoff is fire-and-forget; allow microtasks to flush
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(etlService.kickoff).toHaveBeenCalledWith(expect.objectContaining({
-      jobId: 'j1',
+      reference: 'SALES-REPORT-20260502143022873',
       fileUrl: 'https://signed/',
-      callbackUrl: expect.stringContaining('/api/reports/jobs/j1/complete'),
+      callbackUrl: expect.stringContaining('/api/reports/jobs/SALES-REPORT-20260502143022873/complete'),
     }));
-    expect(job.id).toBe('j1');
+    expect(job.reference).toBe('SALES-REPORT-20260502143022873');
   });
 
   it('still returns job even when ETL kickoff fails (reconciler will catch it)', async () => {
@@ -154,17 +156,20 @@ describe('ReportJobService.createJob', () => {
 });
 
 describe('ReportJobService.completeJob — success path', () => {
-  it('calls uploadReport with the job context and marks completed', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue(fakeJob);
+  it('looks up the job by reference, calls uploadReport with the job context, and marks completed', async () => {
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue(fakeJob);
     (salesReportService.uploadReport as jest.Mock).mockResolvedValue({
       batchId: 'b1', processed: 5, skipped: 0, errors: [],
     });
 
     await reportJobService.completeJob({
-      jobId: 'j1', status: 'success',
+      reference: 'SALES-REPORT-20260502143022873', status: 'success',
       etlResult: { source: 's', records: [] },
     });
 
+    expect(reportJobRepository.findByReference).toHaveBeenCalledWith(
+      'SALES-REPORT-20260502143022873',
+    );
     expect(salesReportService.uploadReport).toHaveBeenCalledWith({
       etlResult: expect.objectContaining({
         source: 's', records: [], report_year: 2026, report_month: 5,
@@ -178,20 +183,22 @@ describe('ReportJobService.completeJob — success path', () => {
   });
 
   it('throws ReportJobNotFoundError when the job does not exist', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue(null);
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue(null);
 
     await expect(
-      reportJobService.completeJob({ jobId: 'missing', status: 'success', etlResult: {} }),
+      reportJobService.completeJob({
+        reference: 'SALES-REPORT-99999999999999999', status: 'success', etlResult: {},
+      }),
     ).rejects.toBeInstanceOf(ReportJobNotFoundError);
   });
 });
 
 describe('ReportJobService.completeJob — failed path', () => {
   it('marks the job failed with the supplied error', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue(fakeJob);
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue(fakeJob);
 
     await reportJobService.completeJob({
-      jobId: 'j1', status: 'failed', error: 'ColumnNotFoundError',
+      reference: 'SALES-REPORT-20260502143022873', status: 'failed', error: 'ColumnNotFoundError',
     });
 
     expect(reportJobRepository.markFailed).toHaveBeenCalledWith('j1', 'ColumnNotFoundError');
@@ -201,30 +208,39 @@ describe('ReportJobService.completeJob — failed path', () => {
 
 describe('ReportJobService.retryJob', () => {
   it('throws JobNotRetryableError when status is not failed', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue({ ...fakeJob, status: 'completed' });
-    await expect(reportJobService.retryJob('j1')).rejects.toBeInstanceOf(JobNotRetryableError);
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue({ ...fakeJob, status: 'completed' });
+    await expect(
+      reportJobService.retryJob('SALES-REPORT-20260502143022873'),
+    ).rejects.toBeInstanceOf(JobNotRetryableError);
   });
 
   it('marks processing, regenerates signed URL, kicks off ETL', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue({ ...fakeJob, status: 'failed', attempts: 1 });
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue({ ...fakeJob, status: 'failed', attempts: 1 });
     (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
 
-    await reportJobService.retryJob('j1');
+    await reportJobService.retryJob('SALES-REPORT-20260502143022873');
 
     expect(reportJobRepository.markProcessing).toHaveBeenCalledWith('j1', 2);
-    expect(etlService.kickoff).toHaveBeenCalled();
+    expect(etlService.kickoff).toHaveBeenCalledWith(expect.objectContaining({
+      reference: 'SALES-REPORT-20260502143022873',
+    }));
   });
 });
 
 describe('ReportJobService.getJob', () => {
-  it('returns the job', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue(fakeJob);
-    const job = await reportJobService.getJob('j1');
+  it('returns the job by reference', async () => {
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue(fakeJob);
+    const job = await reportJobService.getJob('SALES-REPORT-20260502143022873');
+    expect(reportJobRepository.findByReference).toHaveBeenCalledWith(
+      'SALES-REPORT-20260502143022873',
+    );
     expect(job).toEqual(fakeJob);
   });
 
   it('throws ReportJobNotFoundError when missing', async () => {
-    (reportJobRepository.findById as jest.Mock).mockResolvedValue(null);
-    await expect(reportJobService.getJob('missing')).rejects.toBeInstanceOf(ReportJobNotFoundError);
+    (reportJobRepository.findByReference as jest.Mock).mockResolvedValue(null);
+    await expect(
+      reportJobService.getJob('SALES-REPORT-99999999999999999'),
+    ).rejects.toBeInstanceOf(ReportJobNotFoundError);
   });
 });
