@@ -29,7 +29,7 @@ async function uploadJob(token: string): Promise<string> {
   const originalFetch = global.fetch;
   // Only intercept requests to the ETL service; pass everything else
   // (supabase-js internal HTTP calls) through to the real fetch.
-  global.fetch = jest.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+  global.fetch = jest.fn().mockImplementation((input: string | Request | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url.includes('localhost:8000')) {
       return Promise.resolve({
@@ -48,7 +48,7 @@ async function uploadJob(token: string): Promise<string> {
       .set('Authorization', `Bearer ${token}`)
       .field('reportYear', '2026').field('reportMonth', '5')
       .attach('file', sampleXlsx);
-    return res.body.data.jobId;
+    return res.body.data.jobId as string;
   } finally {
     global.fetch = originalFetch;
   }
@@ -80,7 +80,7 @@ describe('POST /api/reports/jobs/:id/retry — only failed jobs', () => {
 
     // Now retry should succeed (re-mock fetch since the previous one was restored)
     const originalFetch = global.fetch;
-    global.fetch = jest.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    global.fetch = jest.fn().mockImplementation((input: string | Request | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.includes('localhost:8000')) {
         return Promise.resolve({

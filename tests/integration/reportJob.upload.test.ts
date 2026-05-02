@@ -34,7 +34,7 @@ describe('POST /api/reports/jobs — happy path', () => {
     const originalFetch = global.fetch;
     // Only intercept requests to the ETL service; pass everything else
     // (supabase-js internal HTTP calls) through to the real fetch.
-    global.fetch = jest.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    global.fetch = jest.fn().mockImplementation((input: string | Request | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.includes('localhost:8000')) {
         return Promise.resolve({

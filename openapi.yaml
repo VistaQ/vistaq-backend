@@ -3779,6 +3779,125 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /reports/jobs:
+    post:
+      tags: [Sales Reports]
+      summary: Create an async report-upload job
+      description: >
+        Accepts a raw xlsx file, stores it in Supabase Storage, creates a
+        `report_jobs` row, and kicks off the external ETL service. Returns
+        immediately with a `jobId`. Manager-only.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, reportYear, reportMonth]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The raw .xlsx file
+                reportYear:
+                  type: integer
+                  minimum: 2000
+                  maximum: 2100
+                reportMonth:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+      responses:
+        '202':
+          description: Job accepted; processing asynchronously
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      jobId:
+                        type: string
+                        format: uuid
+        '400': { description: Missing file, invalid year/month, or file too large }
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Caller is not a manager }
+
+  /reports/jobs/{jobId}:
+    get:
+      tags: [Sales Reports]
+      summary: Poll the status of a report-upload job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJobResponse'
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Job belongs to another tenant or caller is not a manager }
+        '404': { description: Job not found }
+
+  /reports/jobs/{jobId}/complete:
+    post:
+      tags: [Sales Reports]
+      summary: ETL callback (internal-key auth, NOT user JWT)
+      description: >
+        Called by the Python ETL service when processing finishes. Authenticated
+        with `Authorization: Bearer <INTERNAL_API_KEY>`. Triggers persistence
+        on success or marks the job failed on error.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EtlCallbackBody'
+      responses:
+        '204': { description: Callback accepted }
+        '400': { description: Validation failed }
+        '401': { description: Missing or wrong internal key }
+        '404': { description: Job not found }
+
+  /reports/jobs/{jobId}/retry:
+    post:
+      tags: [Sales Reports]
+      summary: Retry a failed report job
+      description: >
+        Re-kicks the ETL using the file already in Storage. Only allowed when
+        the job is in `failed` status. Manager-only, tenant-scoped.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202': { description: Retry kicked off }
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Caller is not a manager or job belongs to another tenant }
+        '404': { description: Job not found }
+        '409': { description: Job is not in failed status }
+
 ################################################################################
 # Components
 ################################################################################
@@ -5128,3 +5247,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GroupTrendPointObject'
+
+    ReportJobObject:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        uploaded_by: { type: string, format: uuid }
+        storage_path: { type: string }
+        file_name: { type: string }
+        report_year: { type: integer }
+        report_month: { type: integer, minimum: 1, maximum: 12 }
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        result:
+          type: object
+          nullable: true
+          description: IUploadResult on success
+        error_message:
+          type: string
+          nullable: true
+        attempts: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ReportJobResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/ReportJobObject' }
+
+    EtlCallbackBody:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+        etl_result:
+          type: object
+          description: Required when status=success. Full etl_result.json shape.
+        error:
+          type: string
+          description: Required when status=failed
