@@ -10,7 +10,7 @@ export class InvalidEtlResultError extends Error {
 }
 
 export class NonConsecutiveUploadError extends Error {
-  constructor(message: string) {
+  public constructor(message = 'Non-consecutive month upload') {
     super(message);
     this.name = 'NonConsecutiveUploadError';
   }
