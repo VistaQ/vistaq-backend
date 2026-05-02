@@ -24,16 +24,16 @@ export interface ICreateJobReq extends IBaseReq {
 
 export interface ICreateJobRes extends IBaseRes {
   success: boolean;
-  data: { jobId: string };
+  data: { reference: string };
 }
 
 export interface ICompleteJobReq extends IBaseReq {
-  params: { jobId: string };
+  params: { reference: string };
   body: { status: 'success' | 'failed'; etl_result?: unknown; error?: string };
 }
 
 export interface IGetJobReq extends IBaseReq {
-  params: { jobId: string };
+  params: { reference: string };
 }
 
 export interface IGetJobRes extends IBaseRes {
@@ -42,7 +42,7 @@ export interface IGetJobRes extends IBaseRes {
 }
 
 export interface IRetryJobReq extends IBaseReq {
-  params: { jobId: string };
+  params: { reference: string };
 }
 
 /******************************************************************************
@@ -72,7 +72,7 @@ class ReportJobController {
         reportMonth: req.body.reportMonth,
       });
 
-      const body: ICreateJobRes = { success: true, data: { jobId: job.id } };
+      const body: ICreateJobRes = { success: true, data: { reference: job.reference } };
       res.status(HttpStatusCodes.ACCEPTED).json(body);
     } catch (error) {
       if (error instanceof NonConsecutiveUploadError) {
@@ -85,11 +85,11 @@ class ReportJobController {
 
   async complete(req: ICompleteJobReq, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jobId } = req.params;
+      const { reference } = req.params;
       const { status, etl_result, error } = req.body;
 
       await reportJobService.completeJob({
-        jobId,
+        reference,
         status,
         etlResult: etl_result,
         error,
@@ -112,7 +112,7 @@ class ReportJobController {
         return;
       }
 
-      const job = await reportJobService.getJob(req.params.jobId);
+      const job = await reportJobService.getJob(req.params.reference);
 
       // Tenant isolation: a manager from tenant A must not see tenant B's jobs.
       // Admin client bypasses RLS, so we enforce it here.
@@ -140,15 +140,15 @@ class ReportJobController {
       }
 
       // Tenant guard before the retry
-      const existing = await reportJobService.getJob(req.params.jobId);
+      const existing = await reportJobService.getJob(req.params.reference);
       if (existing.tenant_id !== req.user!.tenant_id) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
 
-      await reportJobService.retryJob(req.params.jobId);
+      await reportJobService.retryJob(req.params.reference);
 
-      res.status(HttpStatusCodes.ACCEPTED).json({ success: true, data: { jobId: req.params.jobId } });
+      res.status(HttpStatusCodes.ACCEPTED).json({ success: true, data: { reference: req.params.reference } });
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));

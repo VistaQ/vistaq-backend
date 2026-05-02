@@ -35,6 +35,8 @@ const mkRes = () => {
 
 beforeEach(() => jest.resetAllMocks());
 
+const REF = 'SALES-REPORT-20260502143022873';
+
 describe('ReportJobController.create', () => {
   const baseReq = (role: string): ICreateJobReq => ({
     user: { id: 'u1', tenant_id: 't1', role },
@@ -47,15 +49,15 @@ describe('ReportJobController.create', () => {
     } as never,
   } as unknown as ICreateJobReq);
 
-  it('returns 202 with jobId on success', async () => {
-    (reportJobService.createJob as jest.Mock).mockResolvedValue({ id: 'j1' });
+  it('returns 202 with the reference (not the UUID) on success', async () => {
+    (reportJobService.createJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF });
     const res = mkRes();
     const next = jest.fn() as NextFunction;
 
     await reportJobController.create(baseReq('group_leader'), res, next);
 
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.ACCEPTED);
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: { jobId: 'j1' } });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { reference: REF } });
   });
 
   it('returns 403 for non-manager', async () => {
@@ -90,7 +92,7 @@ describe('ReportJobController.create', () => {
 
 describe('ReportJobController.complete', () => {
   const req = (status: 'success' | 'failed'): ICompleteJobReq => ({
-    params: { jobId: 'j1' },
+    params: { reference: REF },
     body: status === 'success'
       ? { status, etl_result: { source: 's', records: [] } }
       : { status, error: 'crashed' },
@@ -104,7 +106,7 @@ describe('ReportJobController.complete', () => {
     await reportJobController.complete(req('success'), res, next);
 
     expect(reportJobService.completeJob).toHaveBeenCalledWith({
-      jobId: 'j1', status: 'success', etlResult: { source: 's', records: [] },
+      reference: REF, status: 'success', etlResult: { source: 's', records: [] },
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.NO_CONTENT);
   });
@@ -117,7 +119,7 @@ describe('ReportJobController.complete', () => {
     await reportJobController.complete(req('failed'), res, next);
 
     expect(reportJobService.completeJob).toHaveBeenCalledWith({
-      jobId: 'j1', status: 'failed', error: 'crashed',
+      reference: REF, status: 'failed', error: 'crashed',
     });
   });
 
@@ -134,17 +136,18 @@ describe('ReportJobController.complete', () => {
 describe('ReportJobController.getById', () => {
   const req = (role: string): IGetJobReq => ({
     user: { id: 'u1', tenant_id: 't1', role },
-    params: { jobId: 'j1' },
+    params: { reference: REF },
   } as unknown as IGetJobReq);
 
   it('returns 200 with the job', async () => {
-    const job = { id: 'j1', tenant_id: 't1', status: 'completed' };
+    const job = { id: 'j1', reference: REF, tenant_id: 't1', status: 'completed' };
     (reportJobService.getJob as jest.Mock).mockResolvedValue(job);
     const res = mkRes();
     const next = jest.fn() as NextFunction;
 
     await reportJobController.getById(req('group_leader'), res, next);
 
+    expect(reportJobService.getJob).toHaveBeenCalledWith(REF);
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: job });
   });
@@ -168,7 +171,7 @@ describe('ReportJobController.getById', () => {
 
   it('returns 403 when job belongs to another tenant', async () => {
     (reportJobService.getJob as jest.Mock).mockResolvedValue({
-      id: 'j1', tenant_id: 'other-tenant', status: 'completed',
+      id: 'j1', reference: REF, tenant_id: 'other-tenant', status: 'completed',
     });
     const res = mkRes();
     const next = jest.fn() as unknown as NextFunction;
@@ -181,23 +184,24 @@ describe('ReportJobController.getById', () => {
 describe('ReportJobController.retry', () => {
   const req = (role: string): IRetryJobReq => ({
     user: { id: 'u1', tenant_id: 't1', role },
-    params: { jobId: 'j1' },
+    params: { reference: REF },
   } as unknown as IRetryJobReq);
 
-  it('returns 202 on success', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', tenant_id: 't1', status: 'failed' });
+  it('returns 202 with the reference on success', async () => {
+    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, tenant_id: 't1', status: 'failed' });
     (reportJobService.retryJob as jest.Mock).mockResolvedValue(undefined);
     const res = mkRes();
     const next = jest.fn() as NextFunction;
 
     await reportJobController.retry(req('group_leader'), res, next);
 
-    expect(reportJobService.retryJob).toHaveBeenCalledWith('j1');
+    expect(reportJobService.retryJob).toHaveBeenCalledWith(REF);
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.ACCEPTED);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { reference: REF } });
   });
 
   it('maps JobNotRetryableError to 409 Conflict', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', tenant_id: 't1', status: 'completed' });
+    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, tenant_id: 't1', status: 'completed' });
     (reportJobService.retryJob as jest.Mock).mockRejectedValue(new JobNotRetryableError());
     const res = mkRes();
     const next = jest.fn() as unknown as NextFunction;

@@ -59,17 +59,17 @@ router.post(
 
 // Internal callback from the ETL service. Authed by shared key, NOT user JWT.
 router.post(
-  '/:jobId/complete',
+  '/:reference/complete',
   internalKey,
   validate(completeJobSchema),
   (req, res, next) => reportJobController.complete(req as unknown as ICompleteJobReq, res, next),
 );
 
-router.get('/:jobId', authenticate, (req, res, next) =>
+router.get('/:reference', authenticate, (req, res, next) =>
   reportJobController.getById(req as unknown as IGetJobReq, res, next),
 );
 
-router.post('/:jobId/retry', authenticate, (req, res, next) =>
+router.post('/:reference/retry', authenticate, (req, res, next) =>
   reportJobController.retry(req as unknown as IRetryJobReq, res, next),
 );
 
