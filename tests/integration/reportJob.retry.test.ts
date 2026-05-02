@@ -48,21 +48,22 @@ async function uploadJob(token: string): Promise<string> {
       .set('Authorization', `Bearer ${token}`)
       .field('reportYear', '2026').field('reportMonth', '5')
       .attach('file', sampleXlsx);
-    return res.body.data.jobId as string;
+    return res.body.data.reference as string;
   } finally {
     global.fetch = originalFetch;
   }
 }
 
-describe('POST /api/reports/jobs/:id/retry — only failed jobs', () => {
+describe('POST /api/reports/jobs/:reference/retry — only failed jobs', () => {
   it('returns 409 Conflict when retrying a non-failed job', async () => {
     if (!glToken) throw new Error('login failed');
 
-    const jobId = await uploadJob(glToken);
+    const reference = await uploadJob(glToken);
+    expect(reference).toMatch(/^SALES-REPORT-\d{17}$/);
 
     // Job is in 'pending' (or 'processing' if the kickoff was synchronous in this test env) — retry should reject
     const retry = await request(app)
-      .post(`/api/reports/jobs/${jobId}/retry`)
+      .post(`/api/reports/jobs/${reference}/retry`)
       .set('Authorization', `Bearer ${glToken}`);
     expect(retry.status).toBe(409);
   });
@@ -70,11 +71,11 @@ describe('POST /api/reports/jobs/:id/retry — only failed jobs', () => {
   it('returns 202 when retrying a failed job', async () => {
     if (!glToken) throw new Error('login failed');
 
-    const jobId = await uploadJob(glToken);
+    const reference = await uploadJob(glToken);
 
     // Mark the job failed via the callback path
     await request(app)
-      .post(`/api/reports/jobs/${jobId}/complete`)
+      .post(`/api/reports/jobs/${reference}/complete`)
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
       .send({ status: 'failed', error: 'simulated failure' });
 
@@ -94,9 +95,10 @@ describe('POST /api/reports/jobs/:id/retry — only failed jobs', () => {
     }) as never;
     try {
       const retry = await request(app)
-        .post(`/api/reports/jobs/${jobId}/retry`)
+        .post(`/api/reports/jobs/${reference}/retry`)
         .set('Authorization', `Bearer ${glToken}`);
       expect(retry.status).toBe(202);
+      expect(retry.body.data.reference).toBe(reference);
     } finally {
       global.fetch = originalFetch;
     }

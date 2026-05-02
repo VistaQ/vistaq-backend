@@ -25,25 +25,27 @@ beforeAll(async () => {
 
 const sampleXlsx = path.join(__dirname, '../../docs/sample_report.xlsx');
 
-describe('POST /api/reports/jobs/:id/complete — guards', () => {
+describe('POST /api/reports/jobs/:reference/complete — guards', () => {
+  const UNKNOWN_REF = 'SALES-REPORT-19990101000000000';
+
   it('returns 401 without internal key', async () => {
     const res = await request(app)
-      .post('/api/reports/jobs/00000000-0000-0000-0000-000000000999/complete')
+      .post(`/api/reports/jobs/${UNKNOWN_REF}/complete`)
       .send({ status: 'failed', error: 'x' });
     expect(res.status).toBe(401);
   });
 
   it('returns 401 with wrong internal key', async () => {
     const res = await request(app)
-      .post('/api/reports/jobs/00000000-0000-0000-0000-000000000999/complete')
+      .post(`/api/reports/jobs/${UNKNOWN_REF}/complete`)
       .set('Authorization', 'Bearer wrong')
       .send({ status: 'failed', error: 'x' });
     expect(res.status).toBe(401);
   });
 
-  it('returns 404 when jobId does not exist', async () => {
+  it('returns 404 when reference does not exist', async () => {
     const res = await request(app)
-      .post('/api/reports/jobs/00000000-0000-0000-0000-000000000999/complete')
+      .post(`/api/reports/jobs/${UNKNOWN_REF}/complete`)
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
       .send({ status: 'failed', error: 'x' });
     expect(res.status).toBe(404);
@@ -70,7 +72,7 @@ describe('Full async lifecycle: upload → callback → completed', () => {
       return originalFetch(input, init);
     }) as never;
 
-    let jobId: string;
+    let reference: string;
     try {
       const upload = await request(app)
         .post('/api/reports/jobs')
@@ -80,7 +82,8 @@ describe('Full async lifecycle: upload → callback → completed', () => {
         .attach('file', sampleXlsx);
 
       expect(upload.status).toBe(202);
-      jobId = upload.body.data.jobId;
+      reference = upload.body.data.reference;
+      expect(reference).toMatch(/^SALES-REPORT-\d{17}$/);
     } finally {
       global.fetch = originalFetch;
     }
@@ -97,13 +100,13 @@ describe('Full async lifecycle: upload → callback → completed', () => {
     };
 
     const cb = await request(app)
-      .post(`/api/reports/jobs/${jobId}/complete`)
+      .post(`/api/reports/jobs/${reference}/complete`)
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
       .send({ status: 'success', etl_result: etlResult });
     expect(cb.status).toBe(204);
 
     const get = await request(app)
-      .get(`/api/reports/jobs/${jobId}`)
+      .get(`/api/reports/jobs/${reference}`)
       .set('Authorization', `Bearer ${glToken}`);
     expect(get.status).toBe(200);
     expect(get.body.data.status).toBe('completed');

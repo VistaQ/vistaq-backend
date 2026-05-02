@@ -40,7 +40,7 @@ describe('POST /api/reports/jobs — happy path', () => {
     latestSpy.mockRestore();
   });
 
-  it('returns 202 with jobId for a valid multipart upload', async () => {
+  it('returns 202 with reference for a valid multipart upload', async () => {
     if (!glToken) throw new Error('login failed; check seed-manifest');
     if (!fs.existsSync(sampleXlsx)) throw new Error('sample_report.xlsx not present');
 
@@ -70,7 +70,7 @@ describe('POST /api/reports/jobs — happy path', () => {
 
       expect(res.status).toBe(202);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.jobId).toEqual(expect.any(String));
+      expect(res.body.data.reference).toMatch(/^SALES-REPORT-\d{17}$/);
     } finally {
       global.fetch = originalFetch;
     }
