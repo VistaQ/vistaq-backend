@@ -8,3 +8,10 @@ export class InvalidEtlResultError extends Error {
     this.name = 'InvalidEtlResultError';
   }
 }
+
+export class NonConsecutiveUploadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NonConsecutiveUploadError';
+  }
+}
