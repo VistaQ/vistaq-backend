@@ -7,7 +7,10 @@ class EtlService {
   async kickoff(params: IEtlKickoffParams): Promise<void> {
     const url = `${EnvVars.EtlServiceUrl}/process`;
     try {
-      loggingService.info('EtlService.kickoff called', { jobId: params.jobId, url });
+      loggingService.info('EtlService.kickoff called', {
+        reference: params.reference,
+        url,
+      });
 
       const response = await fetch(url, {
         method: 'POST',
@@ -16,7 +19,7 @@ class EtlService {
           Authorization: `Bearer ${EnvVars.InternalApiKey}`,
         },
         body: JSON.stringify({
-          job_id: params.jobId,
+          job_reference: params.reference,
           file_url: params.fileUrl,
           callback_url: params.callbackUrl,
         }),
@@ -29,7 +32,9 @@ class EtlService {
         );
       }
     } catch (error) {
-      loggingService.error('EtlService.kickoff failed', error, { jobId: params.jobId });
+      loggingService.error('EtlService.kickoff failed', error, {
+        reference: params.reference,
+      });
       if (error instanceof EtlServiceError) throw error;
       throw new EtlServiceError(
         `ETL service request failed: ${error instanceof Error ? error.message : String(error)}`,

@@ -10,18 +10,19 @@ process.env.BACKEND_BASE_URL = 'http://api';
 import etlService from '@src/services/etl.service';
 import { EtlServiceError } from '@src/models/errors/reportJob.errors';
 
+const REF = 'SALES-REPORT-20260502143022873';
 const originalFetch = global.fetch;
 afterEach(() => { global.fetch = originalFetch; });
 
 describe('EtlService.kickoff', () => {
-  it('POSTs the job payload with the bearer key', async () => {
+  it('POSTs the job_reference payload with the bearer key', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => ({ accepted: true }),
     });
     global.fetch = fetchMock as never;
 
     await etlService.kickoff({
-      jobId: 'j1', fileUrl: 'https://signed/', callbackUrl: 'https://api/cb',
+      reference: REF, fileUrl: 'https://signed/', callbackUrl: 'https://api/cb',
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -31,7 +32,7 @@ describe('EtlService.kickoff', () => {
     expect(init.headers.Authorization).toBe('Bearer test-key');
     const body = JSON.parse(init.body);
     expect(body).toEqual({
-      job_id: 'j1', file_url: 'https://signed/', callback_url: 'https://api/cb',
+      job_reference: REF, file_url: 'https://signed/', callback_url: 'https://api/cb',
     });
   });
 
@@ -41,7 +42,7 @@ describe('EtlService.kickoff', () => {
     }) as never;
 
     await expect(
-      etlService.kickoff({ jobId: 'j1', fileUrl: 'u', callbackUrl: 'c' }),
+      etlService.kickoff({ reference: REF, fileUrl: 'u', callbackUrl: 'c' }),
     ).rejects.toBeInstanceOf(EtlServiceError);
   });
 
@@ -49,7 +50,7 @@ describe('EtlService.kickoff', () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as never;
 
     await expect(
-      etlService.kickoff({ jobId: 'j1', fileUrl: 'u', callbackUrl: 'c' }),
+      etlService.kickoff({ reference: REF, fileUrl: 'u', callbackUrl: 'c' }),
     ).rejects.toBeInstanceOf(EtlServiceError);
   });
 });
