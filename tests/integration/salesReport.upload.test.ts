@@ -2,6 +2,7 @@ import path from 'path';
 import request from 'supertest';
 
 import app from '@src/app';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 
 /******************************************************************************
   Integration — POST /api/reports/upload
@@ -73,6 +74,19 @@ beforeAll(async () => {
 ******************************************************************************/
 
 describe('POST /api/reports/upload — happy path', () => {
+  let latestSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    // Force the consecutive-month guard to pass regardless of DB state.
+    latestSpy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(null);
+  });
+
+  afterAll(() => {
+    latestSpy.mockRestore();
+  });
+
   it('returns 200 with batchId + processed count for a valid ETL payload', async () => {
     if (!glToken) throw new Error('Could not log in as group_leader; check seed data');
 
@@ -89,6 +103,38 @@ describe('POST /api/reports/upload — happy path', () => {
     expect(res.body.data.batchId).toEqual(expect.any(String));
     expect(res.body.data.processed).toBe(seededAgentCodes.length);
     expect(res.body.data.errors).toEqual([]);
+  });
+});
+
+describe('POST /api/reports/upload — consecutive-month guard', () => {
+  let latestSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    latestSpy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(2);
+  });
+
+  afterAll(() => {
+    latestSpy.mockRestore();
+  });
+
+  it('returns 409 when reportMonth is non-consecutive', async () => {
+    if (!glToken) throw new Error('Could not log in as group_leader');
+
+    const etl = {
+      ...fixtureEtl(['AG009']),
+      report_year: 2026,
+      report_month: 4,
+    };
+
+    const res = await request(app)
+      .post('/api/reports/upload')
+      .set('Authorization', `Bearer ${glToken}`)
+      .send({ etlResult: etl });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toMatch(/^Cannot upload 2026-04/);
   });
 });
 

@@ -3,6 +3,7 @@ import request from 'supertest';
 import fs from 'fs';
 
 import app from '@src/app';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 
 const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json')) as {
   tenantSlug: string;
@@ -27,6 +28,18 @@ beforeAll(async () => {
 const sampleXlsx = path.join(__dirname, '../../docs/sample_report.xlsx');
 
 describe('POST /api/reports/jobs — happy path', () => {
+  let latestSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    latestSpy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(null);
+  });
+
+  afterAll(() => {
+    latestSpy.mockRestore();
+  });
+
   it('returns 202 with jobId for a valid multipart upload', async () => {
     if (!glToken) throw new Error('login failed; check seed-manifest');
     if (!fs.existsSync(sampleXlsx)) throw new Error('sample_report.xlsx not present');
@@ -93,5 +106,34 @@ describe('POST /api/reports/jobs — guards', () => {
       .field('reportMonth', '13')
       .attach('file', sampleXlsx);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/reports/jobs — consecutive-month guard', () => {
+  let latestSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    latestSpy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(2);
+  });
+
+  afterAll(() => {
+    latestSpy.mockRestore();
+  });
+
+  it('returns 409 when reportMonth is non-consecutive', async () => {
+    if (!glToken) throw new Error('login failed');
+    if (!fs.existsSync(sampleXlsx)) throw new Error('sample_report.xlsx not present');
+
+    const res = await request(app)
+      .post('/api/reports/jobs')
+      .set('Authorization', `Bearer ${glToken}`)
+      .field('reportYear', '2026')
+      .field('reportMonth', '4')
+      .attach('file', sampleXlsx);
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toMatch(/^Cannot upload 2026-04/);
   });
 });
