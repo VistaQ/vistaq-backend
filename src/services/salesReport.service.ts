@@ -170,8 +170,12 @@ class SalesReportService {
     }
   }
 
-  async getGroupTrend(_p: { tenantId: string; year: number }): Promise<IGroupTrendPoint[]> {
-    throw new Error('not implemented');
+  async getGroupTrend(p: { tenantId: string; year: number }): Promise<IGroupTrendPoint[]> {
+    try {
+      return await salesReportMtdRepository.aggregateTrendByYear(p.tenantId, p.year);
+    } catch (error) {
+      handleServiceError('SalesReportService.getGroupTrend', error);
+    }
   }
 }
 
