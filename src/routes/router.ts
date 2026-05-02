@@ -11,6 +11,7 @@ import groupRoutes from '@src/routes/group.routes';
 import pointActivityTypeRoutes from '@src/routes/pointActivityType.routes';
 import pointConfigRoutes from '@src/routes/pointConfig.routes';
 import prospectRoutes from '@src/routes/prospect.routes';
+import salesReportRoutes from '@src/routes/salesReport.routes';
 import userRoutes from '@src/routes/user.routes';
 
 const router = express.Router();
@@ -33,5 +34,6 @@ router.use('/point-activity-types', pointActivityTypeRoutes);
 router.use('/point-configs', pointConfigRoutes);
 router.use('/leaderboard', leaderboardRoutes);
 router.use('/agent-points', agentPointsRoutes);
+router.use('/reports', salesReportRoutes);
 
 export default router;
