@@ -1,11 +1,13 @@
 import etlService from '@src/services/etl.service';
 import reportJobRepository from '@src/repositories/reportJob.repository';
 import salesReportService from '@src/services/salesReport.service';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import supabaseService from '@src/services/supabase.service';
 import {
   JobNotRetryableError,
   ReportJobNotFoundError,
 } from '@src/models/errors/reportJob.errors';
+import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 import {
   ICompleteJobParams,
   ICreateJobParams,
@@ -23,6 +25,19 @@ const XLSX_CONTENT_TYPE =
 class ReportJobService {
   async createJob(params: ICreateJobParams): Promise<IReportJob> {
     try {
+      // 0. Guard: enforce consecutive-month uploads to keep MTD FYC math correct.
+      const latest = await salesReportYtdRepository.findLatestUploadedMonth(
+        params.tenantId,
+        params.reportYear,
+      );
+      if (latest !== null && params.reportMonth !== latest + 1) {
+        const reqMonth = String(params.reportMonth).padStart(2, '0');
+        const latestMonth = String(latest).padStart(2, '0');
+        throw new NonConsecutiveUploadError(
+          `Cannot upload ${params.reportYear}-${reqMonth}. Latest uploaded is ${params.reportYear}-${latestMonth}; next must be ${latest + 1}.`,
+        );
+      }
+
       const storagePath = `${params.tenantId}/${params.reportYear}-${String(params.reportMonth).padStart(2, '0')}/${Date.now()}-${params.fileName}`;
 
       // 1. Upload file to Storage
@@ -55,6 +70,7 @@ class ReportJobService {
 
       return job;
     } catch (error) {
+      if (error instanceof NonConsecutiveUploadError) throw error;
       return handleServiceError('ReportJobService.createJob', error);
     }
   }

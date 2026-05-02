@@ -10,12 +10,14 @@ process.env.BACKEND_BASE_URL = 'http://api';
 import reportJobService from '@src/services/reportJob.service';
 import reportJobRepository from '@src/repositories/reportJob.repository';
 import salesReportService from '@src/services/salesReport.service';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import etlService from '@src/services/etl.service';
 import supabaseService from '@src/services/supabase.service';
 import {
   ReportJobNotFoundError,
   JobNotRetryableError,
 } from '@src/models/errors/reportJob.errors';
+import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 
 jest.mock('@src/repositories/reportJob.repository', () => ({
   __esModule: true,
@@ -27,6 +29,10 @@ jest.mock('@src/repositories/reportJob.repository', () => ({
 jest.mock('@src/services/salesReport.service', () => ({
   __esModule: true,
   default: { uploadReport: jest.fn() },
+}));
+jest.mock('@src/repositories/salesReportYtd.repository', () => ({
+  __esModule: true,
+  default: { findLatestUploadedMonth: jest.fn() },
 }));
 jest.mock('@src/services/etl.service', () => ({
   __esModule: true,
@@ -52,6 +58,7 @@ const fakeJob = {
 
 describe('ReportJobService.createJob', () => {
   it('uploads file, inserts job, kicks off ETL, returns the job', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
     (reportJobRepository.insertJob as jest.Mock).mockResolvedValue(fakeJob);
     (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
@@ -81,6 +88,7 @@ describe('ReportJobService.createJob', () => {
   });
 
   it('still returns job even when ETL kickoff fails (reconciler will catch it)', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
     (reportJobRepository.insertJob as jest.Mock).mockResolvedValue(fakeJob);
     (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
@@ -93,6 +101,55 @@ describe('ReportJobService.createJob', () => {
     });
 
     expect(job.id).toBe('j1');
+  });
+
+  it('rejects non-consecutive month with NonConsecutiveUploadError', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
+
+    await expect(
+      reportJobService.createJob({
+        tenantId: 't1', uploadedBy: 'u1',
+        fileBuffer: Buffer.from('x'), fileName: 'Apr.xlsx',
+        reportYear: 2026, reportMonth: 4,
+      }),
+    ).rejects.toBeInstanceOf(NonConsecutiveUploadError);
+
+    expect(supabaseService.uploadToStorage).not.toHaveBeenCalled();
+    expect(reportJobRepository.insertJob).not.toHaveBeenCalled();
+  });
+
+  it('accepts the next consecutive month', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
+    (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
+    (reportJobRepository.insertJob as jest.Mock).mockResolvedValue({ ...fakeJob, report_month: 3 });
+    (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
+    (etlService.kickoff as jest.Mock).mockResolvedValue(undefined);
+
+    const job = await reportJobService.createJob({
+      tenantId: 't1', uploadedBy: 'u1',
+      fileBuffer: Buffer.from('x'), fileName: 'Mar.xlsx',
+      reportYear: 2026, reportMonth: 3,
+    });
+
+    expect(job.id).toBe('j1');
+    expect(reportJobRepository.insertJob).toHaveBeenCalled();
+  });
+
+  it('accepts any month when no prior YTD row exists', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
+    (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
+    (reportJobRepository.insertJob as jest.Mock).mockResolvedValue(fakeJob);
+    (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
+    (etlService.kickoff as jest.Mock).mockResolvedValue(undefined);
+
+    const job = await reportJobService.createJob({
+      tenantId: 't1', uploadedBy: 'u1',
+      fileBuffer: Buffer.from('x'), fileName: 'Aug.xlsx',
+      reportYear: 2026, reportMonth: 8,
+    });
+
+    expect(job.id).toBe('j1');
+    expect(reportJobRepository.insertJob).toHaveBeenCalled();
   });
 });
 
