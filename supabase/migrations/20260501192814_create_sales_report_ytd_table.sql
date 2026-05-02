@@ -9,7 +9,7 @@ $$ LANGUAGE plpgsql;
 
 CREATE TABLE sales_report_ytd (
   id                  UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
-  batch_id            UUID          NOT NULL REFERENCES upload_batches(id),
+  batch_id            UUID          NOT NULL REFERENCES upload_batches(id) ON DELETE RESTRICT,
   tenant_id           UUID          NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   user_id             UUID          NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   year                SMALLINT      NOT NULL,

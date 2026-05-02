@@ -59,3 +59,14 @@ FOR UPDATE USING (
   tenant_id = (auth.jwt() ->> 'tenant_id')::UUID
   AND (auth.jwt() ->> 'app_role') IN ('admin', 'master_trainer', 'group_leader')
 );
+
+-- DELETE policies: deny-all. Sales report data is append-only audit;
+-- the admin client bypasses RLS for any operational cleanup.
+CREATE POLICY "upload_batches_delete" ON upload_batches
+FOR DELETE USING (false);
+
+CREATE POLICY "sales_report_ytd_delete" ON sales_report_ytd
+FOR DELETE USING (false);
+
+CREATE POLICY "sales_report_mtd_delete" ON sales_report_mtd
+FOR DELETE USING (false);
