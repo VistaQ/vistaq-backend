@@ -131,10 +131,45 @@ class SalesReportService {
     }
   }
 
-  // getGroupSummary and getGroupTrend added in subsequent tasks.
-  async getGroupSummary(_p: { tenantId: string; year: number; month: number }): Promise<IGroupReport> {
-    throw new Error('not implemented');
+  async getGroupSummary(p: {
+    tenantId: string;
+    year: number;
+    month: number;
+  }): Promise<IGroupReport> {
+    try {
+      const agents = await salesReportYtdRepository.findByTenantYearMonthWithUser(
+        p.tenantId,
+        p.year,
+        p.month,
+      );
+
+      const sorted = [...agents].sort((a, b) => b.fyc - a.fyc);
+
+      const agentCount = sorted.length;
+      const sum = (k: keyof typeof sorted[number]) =>
+        sorted.reduce((acc, a) => acc + Number(a[k] as number), 0);
+
+      const fyct_ytd = sum('fyct');
+      const fyc_ytd = sum('fyc');
+      const ace_ytd = sum('ace');
+      const noc_ytd = sum('noc');
+      const fyc_pct_avg = agentCount > 0 ? sum('fyc_pct') / agentCount : 0;
+      // fyct_pct is not currently selected — defaulting to 0 until we surface it.
+      const fyct_pct_avg = 0;
+      const noc_per_agent = agentCount > 0 ? noc_ytd / agentCount : 0;
+
+      return {
+        summary: {
+          fyct_ytd, fyc_ytd, ace_ytd, noc_ytd,
+          fyc_pct_avg, fyct_pct_avg, agent_count: agentCount, noc_per_agent,
+        },
+        agents: sorted,
+      };
+    } catch (error) {
+      handleServiceError('SalesReportService.getGroupSummary', error);
+    }
   }
+
   async getGroupTrend(_p: { tenantId: string; year: number }): Promise<IGroupTrendPoint[]> {
     throw new Error('not implemented');
   }
