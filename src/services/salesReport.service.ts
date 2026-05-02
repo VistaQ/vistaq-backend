@@ -40,7 +40,8 @@ class SalesReportService {
           `etlResult.created_at "${etlResult.created_at}" is not a valid date`,
         );
       }
-      const reportMonthName = etlResult.months_detected.at(-1) ?? '';
+      const reportMonthName =
+        etlResult.months_detected[etlResult.months_detected.length - 1] ?? '';
       const reportMonth = MONTH_MAP[reportMonthName];
       if (!reportMonth) {
         throw new UnknownReportMonthError(

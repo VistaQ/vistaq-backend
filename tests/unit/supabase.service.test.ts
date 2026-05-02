@@ -13,7 +13,6 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 // ---------------------------------------------------------------------------
 
 // Chainable builder returned by from()
-const mockEq = jest.fn();
 const mockSelect = jest.fn();
 const mockInsert = jest.fn();
 const mockUpdate = jest.fn();
