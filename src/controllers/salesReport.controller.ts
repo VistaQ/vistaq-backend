@@ -1,10 +1,7 @@
 import { NextFunction, Response } from 'express';
 
-import {
-  InvalidEtlResultError,
-  UnknownReportMonthError,
-} from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
+import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import salesReportService from '@src/services/salesReport.service';
 import {
@@ -78,10 +75,6 @@ class SalesReportController {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
         return;
       }
-      if (error instanceof UnknownReportMonthError) {
-        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
-        return;
-      }
       return handleControllerError('SalesReportController.upload', error, next);
     }
   }
@@ -108,7 +101,11 @@ class SalesReportController {
       const responseBody: IGetGroupRes = { success: true, data };
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
-      return handleControllerError('SalesReportController.getGroup', error, next);
+      return handleControllerError(
+        'SalesReportController.getGroup',
+        error,
+        next,
+      );
     }
   }
 
@@ -132,7 +129,11 @@ class SalesReportController {
       const responseBody: IGetGroupTrendRes = { success: true, data };
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
-      return handleControllerError('SalesReportController.getGroupTrend', error, next);
+      return handleControllerError(
+        'SalesReportController.getGroupTrend',
+        error,
+        next,
+      );
     }
   }
 }

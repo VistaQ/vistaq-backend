@@ -74,21 +74,17 @@ export interface IGroupTrendPoint {
 ******************************************************************************/
 
 /**
- * The keys present in `rowData` for each agent in an `etlResult`.
- * Per-month ACE/NOC are uppercase month name + ' ACE' or ' NOC',
- * e.g. 'JANUARY ACE', 'JANUARY NOC'.
+ * `rowData` is a bag of column-name → value pairs as produced by the ETL pipeline.
+ * Recognised numeric keys (the ones the service reads) include the YTD totals
+ * (`'ACE (YTD)'`, `'NOC (YTD)'`, `'FYCT (YTD)'`, `'% FYCT (YTD)'`,
+ * `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`, `'% FYC (YTD)'`, `'MDRT SHORTAGE FYC'`)
+ * and per-month ACE/NOC pairs (`'JANUARY ACE'`, `'JANUARY NOC'`, etc).
+ *
+ * The ETL also includes string columns (e.g. `'AGENT CODE'`, `'AGENT NAME'`) and
+ * may include `null` placeholders. We accept everything and coerce per-key when
+ * building DB rows. Unknown/non-numeric values default to 0.
  */
-export interface IEtlRowData {
-  'ACE (YTD)'?: number;
-  'NOC (YTD)'?: number;
-  'FYCT (YTD)'?: number;
-  '% FYCT (YTD)'?: number;
-  'MDRT SHORTAGE FYCT'?: number;
-  'FYC (YTD)'?: number;
-  '% FYC (YTD)'?: number;
-  'MDRT SHORTAGE FYC'?: number;
-  [key: string]: number | undefined;
-}
+export type IEtlRowData = Record<string, unknown>;
 
 export interface IEtlRecord {
   agentCode: string;
@@ -100,6 +96,10 @@ export interface IEtlResult {
   created_at: string;
   rows_loaded: number;
   months_detected: string[];
+  /** Year the report covers (e.g. 2026). Authoritative — supplied by the caller, not derived. */
+  report_year: number;
+  /** Calendar month the report covers, 1-12. Authoritative — supplied by the caller, not derived. */
+  report_month: number;
   records: IEtlRecord[];
 }
 

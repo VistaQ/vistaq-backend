@@ -34,6 +34,8 @@ const fixtureEtl = (agentCodes: string[]) => ({
   created_at: '2026-06-01T00:00:00Z',
   rows_loaded: agentCodes.length,
   months_detected: ['MAY'],
+  report_year: 2026,
+  report_month: 5,
   records: agentCodes.map((c) => ({
     agentCode: c,
     rowData: {
@@ -133,6 +135,8 @@ describe('POST /api/reports/upload — validation', () => {
           created_at: '2026-06-01T00:00:00Z',
           rows_loaded: 0,
           months_detected: ['MAY'],
+          report_year: 2026,
+          report_month: 5,
           records: [],
         },
       });

@@ -8,10 +8,3 @@ export class InvalidEtlResultError extends Error {
     this.name = 'InvalidEtlResultError';
   }
 }
-
-export class UnknownReportMonthError extends Error {
-  public constructor(message = 'Report month name in months_detected is not a recognised month') {
-    super(message);
-    this.name = 'UnknownReportMonthError';
-  }
-}

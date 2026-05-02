@@ -4,7 +4,7 @@ import userRepository from '@src/repositories/user.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import { IEtlResult } from '@src/types/salesReport.types';
-import { InvalidEtlResultError, UnknownReportMonthError } from '@src/models/errors/salesReport.errors';
+import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
 
 jest.mock('@src/repositories/uploadBatch.repository', () => ({
   __esModule: true,
@@ -28,6 +28,8 @@ const baseEtl: IEtlResult = {
   created_at: '2026-06-01T00:00:00Z',
   rows_loaded: 2,
   months_detected: ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY'],
+  report_year: 2026,
+  report_month: 5,
   records: [
     {
       agentCode: 'A1',
@@ -118,20 +120,45 @@ describe('SalesReportService.uploadReport — input errors', () => {
       uploadedBy: 'u-mgr',
     })).rejects.toThrow(InvalidEtlResultError);
   });
+});
 
-  it('throws UnknownReportMonthError when months_detected last entry is not a month', async () => {
-    await expect(salesReportService.uploadReport({
-      etlResult: { ...baseEtl, months_detected: ['NOPE'] },
-      tenantId: 't1',
-      uploadedBy: 'u-mgr',
-    })).rejects.toThrow(UnknownReportMonthError);
-  });
+describe('SalesReportService.uploadReport — coercion of mixed rowData values', () => {
+  it('coerces string and null values to numbers, defaulting non-numerics to 0', async () => {
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-c' });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+    ]);
 
-  it('throws InvalidEtlResultError when created_at is not a valid date', async () => {
-    await expect(salesReportService.uploadReport({
-      etlResult: { ...baseEtl, created_at: 'not-a-date' },
-      tenantId: 't1',
-      uploadedBy: 'u-mgr',
-    })).rejects.toThrow(InvalidEtlResultError);
+    const etl: IEtlResult = {
+      ...baseEtl,
+      records: [{
+        agentCode: 'A1',
+        rowData: {
+          // Strings the ETL also emits — must not break the upsert
+          'AGENT CODE': 'A1',
+          'AGENT NAME': 'Alice',
+          // Numeric values as strings (defensive coercion)
+          'ACE (YTD)': '100.5' as unknown as number,
+          'NOC (YTD)': null as unknown as number,
+          'FYC (YTD)': 70,
+          'JANUARY ACE': '15' as unknown as number,
+          'JANUARY NOC': 1,
+        },
+      }],
+    };
+
+    await salesReportService.uploadReport({
+      etlResult: etl, tenantId: 't1', uploadedBy: 'u-mgr',
+    });
+
+    const ytdRow = (salesReportYtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0][0];
+    expect(ytdRow.ace).toBe(100.5);  // string coerced
+    expect(ytdRow.noc).toBe(0);      // null → 0
+    expect(ytdRow.fyc).toBe(70);
+
+    const mtdRow = (salesReportMtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0][0];
+    expect(mtdRow.month).toBe(1);
+    expect(mtdRow.ace).toBe(15);
+    expect(mtdRow.noc).toBe(1);
   });
 });

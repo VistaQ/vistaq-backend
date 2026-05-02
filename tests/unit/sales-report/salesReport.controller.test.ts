@@ -1,7 +1,7 @@
 import { NextFunction, Response } from 'express';
 import salesReportController, { IUploadReportReq } from '@src/controllers/salesReport.controller';
 import salesReportService from '@src/services/salesReport.service';
-import { InvalidEtlResultError, UnknownReportMonthError } from '@src/models/errors/salesReport.errors';
+import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -12,7 +12,15 @@ jest.mock('@src/services/salesReport.service', () => ({
 
 const mkReq = (role: string): IUploadReportReq => ({
   user: { id: 'u-mgr', tenant_id: 't1', role },
-  body: { etlResult: { source: 's', created_at: '2026-06-01T00:00:00Z', rows_loaded: 0, months_detected: ['MAY'], records: [{ agentCode: 'A1', rowData: {} }] } },
+  body: { etlResult: {
+    source: 's',
+    created_at: '2026-06-01T00:00:00Z',
+    rows_loaded: 0,
+    months_detected: ['MAY'],
+    report_year: 2026,
+    report_month: 5,
+    records: [{ agentCode: 'A1', rowData: {} }],
+  } },
 } as unknown as IUploadReportReq);
 
 const mkRes = () => {
@@ -56,12 +64,4 @@ describe('SalesReportController.upload', () => {
     expect(err.status).toBe(HttpStatusCodes.BAD_REQUEST);
   });
 
-  it('maps UnknownReportMonthError to 400', async () => {
-    (salesReportService.uploadReport as jest.Mock).mockRejectedValue(new UnknownReportMonthError());
-    const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
-    await salesReportController.upload(mkReq('group_leader'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
-    expect(err.status).toBe(HttpStatusCodes.BAD_REQUEST);
-  });
 });

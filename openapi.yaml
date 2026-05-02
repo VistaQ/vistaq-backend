@@ -4874,29 +4874,43 @@ components:
       properties:
         etlResult:
           type: object
-          required: [source, created_at, rows_loaded, months_detected, records]
-          additionalProperties: false
+          required:
+            - source
+            - created_at
+            - rows_loaded
+            - months_detected
+            - report_year
+            - report_month
+            - records
+          description: >
+            ETL pipeline output as produced by the upstream `dynamic_excel_etl`
+            template. Extra top-level fields (`success`, `etl_version`,
+            `template_name`, `upload_id`, `output_excel`, `json_output`,
+            `log_file`, `errors_found`, `columns_detected`, `layout_detected`,
+            `errors`) are accepted and ignored.
           properties:
             source:
               type: string
               description: Filename or identifier of the original report.
-              example: May2026.xlsx
+              example: tests/samples/Book2_ytd_and_months_uploaded.xlsx
             created_at:
               type: string
               format: date-time
-              description: Timestamp the ETL pipeline produced this result. Year is derived from this field.
-              example: '2026-06-01T00:00:00Z'
+              description: Timestamp the ETL pipeline produced this result. Informational only — not used to derive year/month.
+              example: '2026-04-29T16:01:33.114596+00:00'
             rows_loaded:
               type: integer
               minimum: 0
               description: Number of rows the ETL pipeline read from the source.
-              example: 65
+              example: 67
             months_detected:
               type: array
               minItems: 1
               description: >
-                Uppercase English month names present in the source. The last entry
-                is treated as the report month.
+                Uppercase English month names whose ACE/NOC columns are present
+                in the source. Informational only — used by the FE for
+                column-coverage display, not by the backend to derive the
+                report month.
               items:
                 type: string
                 enum:
@@ -4912,13 +4926,27 @@ components:
                   - OCTOBER
                   - NOVEMBER
                   - DECEMBER
+            report_year:
+              type: integer
+              minimum: 2000
+              maximum: 2100
+              description: Calendar year the report covers. Authoritative — supplied by the caller.
+              example: 2026
+            report_month:
+              type: integer
+              minimum: 1
+              maximum: 12
+              description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller.
+              example: 5
             records:
               type: array
               minItems: 1
               items:
                 type: object
                 required: [agentCode, rowData]
-                additionalProperties: false
+                description: >
+                  Per-agent record. Extra fields like `agentName` are accepted
+                  and ignored.
                 properties:
                   agentCode:
                     type: string
@@ -4927,14 +4955,17 @@ components:
                   rowData:
                     type: object
                     description: >
-                      Bag of numeric values keyed by report column name. Recognised
-                      keys include the YTD totals (`'ACE (YTD)'`, `'NOC (YTD)'`,
-                      `'FYCT (YTD)'`, `'% FYCT (YTD)'`, `'MDRT SHORTAGE FYCT'`,
-                      `'FYC (YTD)'`, `'% FYC (YTD)'`, `'MDRT SHORTAGE FYC'`) and
-                      per-month MTD pairs (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.).
-                      Missing keys default to 0.
-                    additionalProperties:
-                      type: number
+                      Open-ended bag of column-name → value pairs. Recognised
+                      numeric keys include the YTD totals (`'ACE (YTD)'`,
+                      `'NOC (YTD)'`, `'FYCT (YTD)'`, `'% FYCT (YTD)'`,
+                      `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`, `'% FYC (YTD)'`,
+                      `'MDRT SHORTAGE FYC'`) and per-month MTD pairs
+                      (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.). String keys
+                      like `'AGENT CODE'` and `'AGENT NAME'` (which the ETL
+                      may include as duplicates of the outer fields) are
+                      accepted and ignored. Missing or non-numeric values
+                      default to 0.
+                    additionalProperties: true
 
     UploadReportResponse:
       type: object

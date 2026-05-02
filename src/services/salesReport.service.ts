@@ -2,12 +2,10 @@ import salesReportMtdRepository from '@src/repositories/salesReportMtd.repositor
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
-import {
-  InvalidEtlResultError,
-  UnknownReportMonthError,
-} from '@src/models/errors/salesReport.errors';
+import { InvalidEtlResultError } from '@src/models/errors/salesReport.errors';
 import {
   IEtlResult,
+  IEtlRowData,
   IGroupReport,
   IGroupTrendPoint,
   IUploadResult,
@@ -23,6 +21,18 @@ interface IUploadParams {
   uploadedBy: string;
 }
 
+// rowData values are unknown — the ETL emits numbers, strings, and nulls.
+// Coerce per-key when building DB rows; non-numeric/missing → 0.
+function num(value: unknown): number {
+  if (value === undefined || value === null) return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readRowData(r: IEtlRowData, key: string): number {
+  return num(r[key]);
+}
+
 class SalesReportService {
   async uploadReport(params: IUploadParams): Promise<IUploadResult> {
     try {
@@ -33,21 +43,10 @@ class SalesReportService {
         throw new InvalidEtlResultError('etlResult.records must be non-empty');
       }
 
-      // 2. Derive year/month
-      const reportYear = new Date(etlResult.created_at).getFullYear();
-      if (isNaN(reportYear)) {
-        throw new InvalidEtlResultError(
-          `etlResult.created_at "${etlResult.created_at}" is not a valid date`,
-        );
-      }
-      const reportMonthName =
-        etlResult.months_detected[etlResult.months_detected.length - 1] ?? '';
-      const reportMonth = MONTH_MAP[reportMonthName];
-      if (!reportMonth) {
-        throw new UnknownReportMonthError(
-          `months_detected last entry "${reportMonthName}" is not a recognised month`,
-        );
-      }
+      // 2. Year/month come straight from the caller — Zod has already validated
+      //    they are integers in the right ranges.
+      const reportYear = etlResult.report_year;
+      const reportMonth = etlResult.report_month;
 
       // 3. Insert upload batch
       const batch = await uploadBatchRepository.insertBatch({
@@ -83,20 +82,22 @@ class SalesReportService {
           user_id: userId,
           year: reportYear,
           month: reportMonth,
-          ace: r['ACE (YTD)'] ?? 0,
-          noc: r['NOC (YTD)'] ?? 0,
-          fyct: r['FYCT (YTD)'] ?? 0,
-          fyct_pct: r['% FYCT (YTD)'] ?? 0,
-          mdrt_shortage_fyct: r['MDRT SHORTAGE FYCT'] ?? 0,
-          fyc: r['FYC (YTD)'] ?? 0,
-          fyc_pct: r['% FYC (YTD)'] ?? 0,
-          mdrt_shortage_fyc: r['MDRT SHORTAGE FYC'] ?? 0,
+          ace: readRowData(r, 'ACE (YTD)'),
+          noc: readRowData(r, 'NOC (YTD)'),
+          fyct: readRowData(r, 'FYCT (YTD)'),
+          fyct_pct: readRowData(r, '% FYCT (YTD)'),
+          mdrt_shortage_fyct: readRowData(r, 'MDRT SHORTAGE FYCT'),
+          fyc: readRowData(r, 'FYC (YTD)'),
+          fyc_pct: readRowData(r, '% FYC (YTD)'),
+          mdrt_shortage_fyc: readRowData(r, 'MDRT SHORTAGE FYC'),
         });
 
         for (const [monthName, monthNum] of Object.entries(MONTH_MAP)) {
-          const ace = r[`${monthName} ACE`];
-          const noc = r[`${monthName} NOC`];
-          if (ace === undefined && noc === undefined) continue;
+          const aceKey = `${monthName} ACE`;
+          const nocKey = `${monthName} NOC`;
+          const aceRaw = r[aceKey];
+          const nocRaw = r[nocKey];
+          if (aceRaw === undefined && nocRaw === undefined) continue;
 
           mtdRows.push({
             batch_id: batch.id,
@@ -104,8 +105,8 @@ class SalesReportService {
             user_id: userId,
             year: reportYear,
             month: monthNum,
-            ace: ace ?? 0,
-            noc: noc ?? 0,
+            ace: num(aceRaw),
+            noc: num(nocRaw),
           });
         }
       }
@@ -127,10 +128,7 @@ class SalesReportService {
         errors,
       };
     } catch (error) {
-      if (
-        error instanceof InvalidEtlResultError ||
-        error instanceof UnknownReportMonthError
-      ) {
+      if (error instanceof InvalidEtlResultError) {
         throw error;
       }
       return handleServiceError('SalesReportService.uploadReport', error);

@@ -28,27 +28,30 @@ const MONTH_NAMES = [
   'DECEMBER',
 ] as const;
 
-// rowData has fixed YTD keys + dynamic per-month keys (e.g. 'JANUARY ACE').
-// Strict object would reject the per-month keys, so we use a record with optional fixed fields.
-const etlRowDataSchema = z.record(z.string(), z.number().optional());
+// rowData carries arbitrary column-name → value pairs as the ETL emits them.
+// Some keys are strings (e.g. 'AGENT CODE', 'AGENT NAME') and the value set is
+// open-ended, so we accept anything and let the service coerce per-key.
+const etlRowDataSchema = z.record(z.string(), z.unknown());
 
-const etlRecordSchema = z
-  .object({
-    agentCode: z.string().min(1),
-    rowData: etlRowDataSchema,
-  })
-  .strict();
+// Default `z.object` behaviour strips unknown keys without rejecting them, so
+// the ETL pipeline can include extra metadata (e.g. `agentName` on records,
+// `etl_version` at the top level) and we just ignore it.
+const etlRecordSchema = z.object({
+  agentCode: z.string().min(1),
+  rowData: etlRowDataSchema,
+});
 
-const etlResultSchema = z
-  .object({
-    source: z.string().min(1),
-    created_at: z.iso.datetime({ offset: true }),
-    rows_loaded: z.number().int().nonnegative(),
-    months_detected: z.array(z.enum(MONTH_NAMES)).min(1),
-    records: z.array(etlRecordSchema).min(1),
-  })
-  .strict();
+const etlResultSchema = z.object({
+  source: z.string().min(1),
+  created_at: z.iso.datetime({ offset: true }),
+  rows_loaded: z.number().int().nonnegative(),
+  months_detected: z.array(z.enum(MONTH_NAMES)).min(1),
+  report_year: z.number().int().min(2000).max(2100),
+  report_month: z.number().int().min(1).max(12),
+  records: z.array(etlRecordSchema).min(1),
+});
 
+// Outer wrapper stays strict — the only valid top-level key is `etlResult`.
 export const uploadReportSchema = z
   .object({
     etlResult: etlResultSchema,
