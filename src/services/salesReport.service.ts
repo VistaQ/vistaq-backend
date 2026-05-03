@@ -69,16 +69,20 @@ class SalesReportService {
       //    they live as siblings of etlResult, never inside it. The route's
       //    Zod schema has already validated they are integers in range.
 
-      // 2a. Defense-in-depth guard: enforce consecutive-month uploads.
+      // 2a. Defense-in-depth guard: block skip-ahead uploads only. Re-uploads of
+      //     the latest month (data corrections) and earlier months (historical
+      //     corrections) are allowed — the upsert on (tenant, user, year, month)
+      //     replaces cleanly and the LAG-derived MTD FYC view recomputes.
       const latest = await salesReportYtdRepository.findLatestUploadedMonth(
         tenantId,
         reportYear,
       );
-      if (latest !== null && reportMonth !== latest + 1) {
+      if (latest !== null && reportMonth > latest + 1) {
         const reqMonth = String(reportMonth).padStart(2, '0');
         const latestMonth = String(latest).padStart(2, '0');
+        const nextAllowed = String(latest + 1).padStart(2, '0');
         throw new NonConsecutiveUploadError(
-          `Cannot upload ${reportYear}-${reqMonth}. Latest uploaded is ${reportYear}-${latestMonth}; next must be ${latest + 1}.`,
+          `Cannot upload ${reportYear}-${reqMonth}. Latest uploaded is ${reportYear}-${latestMonth}; cannot skip ahead — next allowed is ${reportYear}-${nextAllowed} or any earlier month.`,
         );
       }
 

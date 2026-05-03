@@ -27,16 +27,20 @@ const XLSX_CONTENT_TYPE =
 class ReportJobService {
   async createJob(params: ICreateJobParams): Promise<IReportJob> {
     try {
-      // 0. Guard: enforce consecutive-month uploads to keep MTD FYC math correct.
+      // 0. Guard: block skip-ahead uploads only. Re-uploads of the latest month
+      //    (data corrections) and earlier months (historical corrections) are
+      //    allowed — the upsert on (tenant, user, year, month) replaces cleanly
+      //    and the LAG-derived MTD FYC view recomputes automatically.
       const latest = await salesReportYtdRepository.findLatestUploadedMonth(
         params.tenantId,
         params.reportYear,
       );
-      if (latest !== null && params.reportMonth !== latest + 1) {
+      if (latest !== null && params.reportMonth > latest + 1) {
         const reqMonth = String(params.reportMonth).padStart(2, '0');
         const latestMonth = String(latest).padStart(2, '0');
+        const nextAllowed = String(latest + 1).padStart(2, '0');
         throw new NonConsecutiveUploadError(
-          `Cannot upload ${params.reportYear}-${reqMonth}. Latest uploaded is ${params.reportYear}-${latestMonth}; next must be ${latest + 1}.`,
+          `Cannot upload ${params.reportYear}-${reqMonth}. Latest uploaded is ${params.reportYear}-${latestMonth}; cannot skip ahead — next allowed is ${params.reportYear}-${nextAllowed} or any earlier month.`,
         );
       }
 
