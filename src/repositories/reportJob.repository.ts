@@ -96,11 +96,9 @@ class ReportJobRepository {
 
   async findByReference(reference: string): Promise<IReportJob | null> {
     try {
-      const response = await supabaseService.adminSelect(
-        'report_jobs',
-        '*',
-        { reference },
-      );
+      const response = await supabaseService.adminSelect('report_jobs', '*', {
+        reference,
+      });
       if (response.error) throw new Error(response.error.message);
       const row = (response.data ?? [])[0] as unknown as
         | ReportJobRow
@@ -156,6 +154,64 @@ class ReportJobRepository {
       if (response.error) throw new Error(response.error.message);
     } catch (error) {
       handleRepositoryError('ReportJobRepository.markFailed', error);
+    }
+  }
+
+  /**
+   * Returns `{ id, storage_path }` for completed report jobs whose
+   * `created_at` is strictly older than the given cutoff and whose
+   * `storage_path` is non-empty (i.e. still references a file in Storage).
+   *
+   * Used by the retention-cleanup service to identify the files eligible
+   * for removal.
+   *
+   * @param cutoff - Inclusive upper bound encoded as an ISO timestamp; rows
+   *                 with `created_at < cutoff` are returned.
+   */
+  async findCompletedJobsOlderThan(
+    cutoff: string,
+  ): Promise<{ id: string; storage_path: string }[]> {
+    try {
+      const response = await supabaseService.adminSelectLessThan(
+        'report_jobs',
+        'id, storage_path',
+        'created_at',
+        cutoff,
+        { status: 'completed' },
+      );
+      if (response.error) throw new Error(response.error.message);
+      const rows = (response.data ?? []) as Pick<
+        ReportJobRow,
+        'id' | 'storage_path'
+      >[];
+      return rows
+        .filter((row) => row.storage_path !== '')
+        .map((row) => ({ id: row.id, storage_path: row.storage_path }));
+    } catch (error) {
+      handleRepositoryError(
+        'ReportJobRepository.findCompletedJobsOlderThan',
+        error,
+      );
+    }
+  }
+
+  /**
+   * Blanks `storage_path` for the given job ids. Called after a successful
+   * Storage removal so the same files are not re-queued on the next run.
+   */
+  async clearStoragePaths(ids: string[]): Promise<void> {
+    try {
+      if (ids.length === 0) return;
+      for (const id of ids) {
+        const response = await supabaseService.adminUpdate(
+          'report_jobs',
+          { storage_path: '' },
+          { id },
+        );
+        if (response.error) throw new Error(response.error.message);
+      }
+    } catch (error) {
+      handleRepositoryError('ReportJobRepository.clearStoragePaths', error);
     }
   }
 }

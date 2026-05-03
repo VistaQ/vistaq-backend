@@ -8,6 +8,7 @@ jest.mock('@src/services/supabase.service', () => ({
     adminInsert: jest.fn(),
     adminUpdate: jest.fn(),
     adminSelect: jest.fn(),
+    adminSelectLessThan: jest.fn(),
   },
 }));
 
@@ -217,5 +218,88 @@ describe('ReportJobRepository.markFailed', () => {
       { status: 'failed', error_message: 'ETL crashed' },
       { id: 'j1' },
     );
+  });
+});
+
+describe('ReportJobRepository.findCompletedJobsOlderThan', () => {
+  it('queries report_jobs with status=completed and created_at < cutoff and returns rows with non-empty paths', async () => {
+    (supabaseService.adminSelectLessThan as jest.Mock).mockResolvedValue({
+      data: [
+        { id: 'j1', storage_path: 'p1.xlsx' },
+        { id: 'j2', storage_path: '' }, // should be filtered out
+        { id: 'j3', storage_path: 'p3.xlsx' },
+      ],
+      error: null,
+    });
+
+    const rows = await reportJobRepository.findCompletedJobsOlderThan(
+      '2026-04-01T00:00:00Z',
+    );
+
+    expect(supabaseService.adminSelectLessThan).toHaveBeenCalledWith(
+      'report_jobs',
+      'id, storage_path',
+      'created_at',
+      '2026-04-01T00:00:00Z',
+      { status: 'completed' },
+    );
+    expect(rows).toEqual([
+      { id: 'j1', storage_path: 'p1.xlsx' },
+      { id: 'j3', storage_path: 'p3.xlsx' },
+    ]);
+  });
+
+  it('returns an empty array when the query returns no rows', async () => {
+    (supabaseService.adminSelectLessThan as jest.Mock).mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    const rows = await reportJobRepository.findCompletedJobsOlderThan(
+      '2026-04-01T00:00:00Z',
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it('throws (wrapped) when the query errors', async () => {
+    (supabaseService.adminSelectLessThan as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'db down' },
+    });
+
+    await expect(
+      reportJobRepository.findCompletedJobsOlderThan('2026-04-01T00:00:00Z'),
+    ).rejects.toThrow();
+  });
+});
+
+describe('ReportJobRepository.clearStoragePaths', () => {
+  it('updates each id with storage_path = ""', async () => {
+    (supabaseService.adminUpdate as jest.Mock).mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    await reportJobRepository.clearStoragePaths(['j1', 'j2']);
+
+    expect(supabaseService.adminUpdate).toHaveBeenCalledTimes(2);
+    expect(supabaseService.adminUpdate).toHaveBeenNthCalledWith(
+      1,
+      'report_jobs',
+      { storage_path: '' },
+      { id: 'j1' },
+    );
+    expect(supabaseService.adminUpdate).toHaveBeenNthCalledWith(
+      2,
+      'report_jobs',
+      { storage_path: '' },
+      { id: 'j2' },
+    );
+  });
+
+  it('is a no-op when given an empty list', async () => {
+    await reportJobRepository.clearStoragePaths([]);
+    expect(supabaseService.adminUpdate).not.toHaveBeenCalled();
   });
 });
