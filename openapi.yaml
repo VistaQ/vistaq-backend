@@ -5076,15 +5076,16 @@ components:
         - created_at
         - rows_loaded
         - months_detected
-        - report_year
-        - report_month
         - records
       description: >
         ETL pipeline output as produced by the upstream `dynamic_excel_etl`
-        template. Extra top-level fields (`success`, `etl_version`,
-        `template_name`, `upload_id`, `output_excel`, `json_output`,
-        `log_file`, `errors_found`, `columns_detected`, `layout_detected`,
-        `errors`) are accepted and ignored.
+        template — the raw artifact, untouched by the caller. The intent
+        metadata `report_year` / `report_month` lives one level up on the
+        request body, not inside this object. Extra top-level fields
+        (`success`, `etl_version`, `template_name`, `upload_id`,
+        `output_excel`, `json_output`, `log_file`, `errors_found`,
+        `columns_detected`, `layout_detected`, `errors`) are accepted and
+        ignored.
       properties:
         source:
           type: string
@@ -5123,18 +5124,6 @@ components:
               - OCTOBER
               - NOVEMBER
               - DECEMBER
-        report_year:
-          type: integer
-          minimum: 2000
-          maximum: 2100
-          description: Calendar year the report covers. Authoritative — supplied by the caller.
-          example: 2026
-        report_month:
-          type: integer
-          minimum: 1
-          maximum: 12
-          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller.
-          example: 5
         records:
           type: array
           minItems: 1
@@ -5166,20 +5155,38 @@ components:
 
     UploadReportRequest:
       type: object
-      required: [etlResult]
+      required: [report_year, report_month, etlResult]
       additionalProperties: false
+      description: >
+        Sync upload body. `report_year` / `report_month` are caller-supplied
+        intent metadata that sit alongside the raw ETL artifact rather than
+        inside it.
       properties:
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 5
         etlResult:
           $ref: '#/components/schemas/EtlResultObject'
 
     IngestReportRequest:
       type: object
-      required: [tenant_id, etl_result]
+      required: [tenant_id, report_year, report_month, etl_result]
       additionalProperties: false
       description: >
         Manual-mode ingest body. Field names use snake_case to mirror the
         ETL JSON style (the ETL author POSTs this directly from a Python
-        `requests.post(...)` call).
+        `requests.post(...)` call). `report_year` / `report_month` are
+        siblings of `etl_result` — admin tells the ETL author what month
+        the file covers out-of-band; the ETL itself is unaware of them.
       properties:
         tenant_id:
           type: string
@@ -5189,6 +5196,18 @@ components:
             admin out-of-band (Slack/email) — there is no JWT to derive it
             from in manual mode.
           example: 00000000-0000-0000-0000-000000000001
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 5
         etl_result:
           $ref: '#/components/schemas/EtlResultObject'
 
