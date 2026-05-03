@@ -34,8 +34,6 @@ const fixtureEtl = (agentCodes: string[]) => ({
   created_at: '2026-06-01T00:00:00Z',
   rows_loaded: agentCodes.length,
   months_detected: ['MAY'],
-  report_year: 2026,
-  report_month: 5,
   records: agentCodes.map((c) => ({
     agentCode: c,
     rowData: {
@@ -61,7 +59,12 @@ describe('POST /api/reports/ingest — auth guard', () => {
   it('returns 401 without Authorization header', async () => {
     const res = await request(app)
       .post('/api/reports/ingest')
-      .send({ tenant_id: TENANT_ID, etl_result: fixtureEtl(['AG009']) });
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 5,
+        etl_result: fixtureEtl(['AG009']),
+      });
 
     expect(res.status).toBe(401);
   });
@@ -70,7 +73,12 @@ describe('POST /api/reports/ingest — auth guard', () => {
     const res = await request(app)
       .post('/api/reports/ingest')
       .set('Authorization', 'Bearer not-the-real-key')
-      .send({ tenant_id: TENANT_ID, etl_result: fixtureEtl(['AG009']) });
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 5,
+        etl_result: fixtureEtl(['AG009']),
+      });
 
     expect(res.status).toBe(401);
   });
@@ -95,7 +103,12 @@ describe('POST /api/reports/ingest — validation', () => {
     const res = await request(app)
       .post('/api/reports/ingest')
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
-      .send({ tenant_id: 'not-a-uuid', etl_result: fixtureEtl(['AG009']) });
+      .send({
+        tenant_id: 'not-a-uuid',
+        report_year: 2026,
+        report_month: 5,
+        etl_result: fixtureEtl(['AG009']),
+      });
 
     expect(res.status).toBe(400);
   });
@@ -106,18 +119,46 @@ describe('POST /api/reports/ingest — validation', () => {
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
       .send({
         tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 5,
         etl_result: {
           source: 'IngestIntegrationTest.xlsx',
           created_at: '2026-06-01T00:00:00Z',
           rows_loaded: 0,
           months_detected: ['MAY'],
-          report_year: 2026,
-          report_month: 5,
           records: [],
         },
       });
 
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when report_year is missing from the body', async () => {
+    const res = await request(app)
+      .post('/api/reports/ingest')
+      .set('Authorization', `Bearer ${INTERNAL_KEY}`)
+      .send({
+        tenant_id: TENANT_ID,
+        report_month: 5,
+        etl_result: fixtureEtl(['AG009']),
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
+  });
+
+  it('returns 400 when report_month is missing from the body', async () => {
+    const res = await request(app)
+      .post('/api/reports/ingest')
+      .set('Authorization', `Bearer ${INTERNAL_KEY}`)
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        etl_result: fixtureEtl(['AG009']),
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
   });
 });
 
@@ -146,7 +187,12 @@ describe('POST /api/reports/ingest — happy path', () => {
     const res = await request(app)
       .post('/api/reports/ingest')
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
-      .send({ tenant_id: TENANT_ID, etl_result: fixtureEtl(seededAgentCodes) });
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 5,
+        etl_result: fixtureEtl(seededAgentCodes),
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -175,16 +221,15 @@ describe('POST /api/reports/ingest — consecutive-month guard', () => {
   });
 
   it('returns 409 when reportMonth is non-consecutive', async () => {
-    const etl = {
-      ...fixtureEtl(['AG009']),
-      report_year: 2026,
-      report_month: 4,
-    };
-
     const res = await request(app)
       .post('/api/reports/ingest')
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
-      .send({ tenant_id: TENANT_ID, etl_result: etl });
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 4,
+        etl_result: fixtureEtl(['AG009']),
+      });
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/^Cannot upload 2026-04/);

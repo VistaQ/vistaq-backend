@@ -35,8 +35,6 @@ const fixtureEtl = (agentCodes: string[]) => ({
   created_at: '2026-06-01T00:00:00Z',
   rows_loaded: agentCodes.length,
   months_detected: ['MAY'],
-  report_year: 2026,
-  report_month: 5,
   records: agentCodes.map((c) => ({
     agentCode: c,
     rowData: {
@@ -96,7 +94,11 @@ describe('POST /api/reports/upload — happy path', () => {
     const res = await request(app)
       .post('/api/reports/upload')
       .set('Authorization', `Bearer ${glToken}`)
-      .send({ etlResult: fixtureEtl(seededAgentCodes) });
+      .send({
+        report_year: 2026,
+        report_month: 5,
+        etlResult: fixtureEtl(seededAgentCodes),
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -122,16 +124,14 @@ describe('POST /api/reports/upload — consecutive-month guard', () => {
   it('returns 409 when reportMonth is non-consecutive', async () => {
     if (!glToken) throw new Error('Could not log in as group_leader');
 
-    const etl = {
-      ...fixtureEtl(['AG009']),
-      report_year: 2026,
-      report_month: 4,
-    };
-
     const res = await request(app)
       .post('/api/reports/upload')
       .set('Authorization', `Bearer ${glToken}`)
-      .send({ etlResult: etl });
+      .send({
+        report_year: 2026,
+        report_month: 4,
+        etlResult: fixtureEtl(['AG009']),
+      });
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/^Cannot upload 2026-04/);
@@ -146,7 +146,11 @@ describe('POST /api/reports/upload — auth guard', () => {
   it('returns 401 without Authorization header', async () => {
     const res = await request(app)
       .post('/api/reports/upload')
-      .send({ etlResult: fixtureEtl(['AG009']) });
+      .send({
+        report_year: 2026,
+        report_month: 5,
+        etlResult: fixtureEtl(['AG009']),
+      });
 
     expect(res.status).toBe(401);
   });
@@ -176,17 +180,47 @@ describe('POST /api/reports/upload — validation', () => {
       .post('/api/reports/upload')
       .set('Authorization', `Bearer ${glToken}`)
       .send({
+        report_year: 2026,
+        report_month: 5,
         etlResult: {
           source: 'IntegrationTest.xlsx',
           created_at: '2026-06-01T00:00:00Z',
           rows_loaded: 0,
           months_detected: ['MAY'],
-          report_year: 2026,
-          report_month: 5,
           records: [],
         },
       });
 
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when report_year is missing from the body', async () => {
+    if (!glToken) throw new Error('Could not log in as group_leader');
+
+    const res = await request(app)
+      .post('/api/reports/upload')
+      .set('Authorization', `Bearer ${glToken}`)
+      .send({
+        report_month: 5,
+        etlResult: fixtureEtl(['AG009']),
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
+  });
+
+  it('returns 400 when report_month is missing from the body', async () => {
+    if (!glToken) throw new Error('Could not log in as group_leader');
+
+    const res = await request(app)
+      .post('/api/reports/upload')
+      .set('Authorization', `Bearer ${glToken}`)
+      .send({
+        report_year: 2026,
+        etlResult: fixtureEtl(['AG009']),
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
   });
 });
