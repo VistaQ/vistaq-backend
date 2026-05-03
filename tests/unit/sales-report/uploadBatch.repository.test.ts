@@ -33,6 +33,27 @@ describe('UploadBatchRepository.insertBatch', () => {
     expect(batch.id).toBe('batch-1');
   });
 
+  it('inserts a batch with uploaded_by = null (manual ingest)', async () => {
+    (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
+      data: [{
+        id: 'batch-2', tenant_id: 't1', uploaded_by: null,
+        year: 2026, month: 5, file_name: 'manual.xlsx', rows_loaded: 0,
+        created_at: '2026-05-02T00:00:00Z',
+      }],
+      error: null,
+    });
+
+    const batch = await uploadBatchRepository.insertBatch({
+      tenant_id: 't1', uploaded_by: null, year: 2026, month: 5,
+      file_name: 'manual.xlsx', rows_loaded: 0,
+    });
+
+    expect(supabaseService.adminInsert).toHaveBeenCalledWith('upload_batches', expect.objectContaining({
+      tenant_id: 't1', uploaded_by: null, file_name: 'manual.xlsx',
+    }));
+    expect(batch.uploaded_by).toBeNull();
+  });
+
   it('throws RepositoryError on error response', async () => {
     (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
       data: null,

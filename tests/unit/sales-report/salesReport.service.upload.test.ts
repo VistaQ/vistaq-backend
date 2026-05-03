@@ -97,6 +97,32 @@ describe('SalesReportService.uploadReport — happy path', () => {
   });
 });
 
+describe('SalesReportService.uploadReport — manual mode (null uploadedBy)', () => {
+  it('passes uploadedBy: null straight through to insertBatch', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
+      id: 'batch-manual', tenant_id: 't1', uploaded_by: null,
+      year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
+      created_at: 'now',
+    });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+
+    const result = await salesReportService.uploadReport({
+      etlResult: baseEtl,
+      tenantId: 't1',
+      uploadedBy: null,
+    });
+
+    expect(result.batchId).toBe('batch-manual');
+    expect(uploadBatchRepository.insertBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ uploaded_by: null }),
+    );
+  });
+});
+
 describe('SalesReportService.uploadReport — unmatched agent', () => {
   it('records skipped + errors entry without blocking processed agents', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);

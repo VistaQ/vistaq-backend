@@ -21,7 +21,12 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 interface IUploadParams {
   etlResult: IEtlResult;
   tenantId: string;
-  uploadedBy: string;
+  /**
+   * Nullable for manual ETL ingests (POST /api/reports/ingest) where the
+   * caller is authenticated via INTERNAL_API_KEY rather than a user JWT.
+   * Standard JWT-authenticated uploads always pass the user id.
+   */
+  uploadedBy: string | null;
 }
 
 // rowData values are unknown — the ETL emits numbers, strings, and nulls.

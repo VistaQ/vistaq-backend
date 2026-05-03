@@ -20,7 +20,12 @@ export type SalesReportMtdFycRow =
 export interface IUploadBatch {
   id: string;
   tenant_id: string;
-  uploaded_by: string;
+  /**
+   * Nullable: manual ETL ingests (POST /api/reports/ingest) authenticate via
+   * INTERNAL_API_KEY rather than a user JWT, so there is no uploader to
+   * attribute. Standard JWT-authenticated uploads always populate this field.
+   */
+  uploaded_by: string | null;
   year: number;
   month: number;
   file_name: string;
