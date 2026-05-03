@@ -383,7 +383,11 @@ class SalesReportService {
       agent_code: user?.agent_code ?? '',
       agent_name: user?.name ?? '',
       year,
-      imported_at: ytd.created_at,
+      // `imported_at` reflects when this YTD snapshot was LAST written. On a
+      // corrective re-upload, the upsert preserves `created_at` and only
+      // advances `updated_at`; using `updated_at` here keeps the FE's "when
+      // was this data imported" reading correct after corrections.
+      imported_at: ytd.updated_at,
       ace_ytd: Number(ytd.ace),
       noc_ytd: Number(ytd.noc),
       fyct_ytd: Number(ytd.fyct),

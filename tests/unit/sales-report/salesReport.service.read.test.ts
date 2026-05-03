@@ -37,6 +37,7 @@ describe('SalesReportService.getYearReports', () => {
         ace: 620000, noc: 18, fyct: 295000, fyct_pct: 0.0132, mdrt_shortage_fyct: 393112.13,
         fyc: 1222.11, fyc_pct: 0.0092, mdrt_shortage_fyc: 131577.89,
         created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-30T08:15:00.000Z',
       },
     ]);
     (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([
@@ -58,7 +59,7 @@ describe('SalesReportService.getYearReports', () => {
     expect(r.agent_code).toBe('T75040K');
     expect(r.agent_name).toBe('MELISSA ADLINA');
     expect(r.year).toBe(2026);
-    expect(r.imported_at).toBe('2026-04-29T16:01:33.000Z');
+    expect(r.imported_at).toBe('2026-04-30T08:15:00.000Z');
     expect(r.ace_ytd).toBe(620000);
     expect(r.fyct_pct).toBeCloseTo(0.0132);
     expect(r.month_ace).toEqual([0, 0, 9118.64, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -100,12 +101,14 @@ describe('SalesReportService.getYearReports', () => {
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
         fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
         created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-29T16:01:33.000Z',
       },
       {
         id: 'ytd-u2', user_id: 'u2', year: 2026, month: 3,
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
         fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
         created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
     (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
@@ -136,6 +139,7 @@ describe('SalesReportService.getYearReports', () => {
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
         fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
         created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
     (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
@@ -167,6 +171,7 @@ describe('SalesReportService.getMyYearReport', () => {
       ace: 100, noc: 5, fyct: 80, fyct_pct: 0.4, mdrt_shortage_fyct: 20,
       fyc: 70, fyc_pct: 0.35, mdrt_shortage_fyc: 30,
       created_at: '2026-06-01T00:00:00Z',
+      updated_at: '2026-06-02T10:00:00Z',
     });
     (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 1, ace: 10, noc: 1 },

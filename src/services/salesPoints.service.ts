@@ -1,16 +1,15 @@
+import * as Sentry from '@sentry/node';
+
 import pointConfigRepository from '@src/repositories/pointConfig.repository';
 import pointTransactionRepository from '@src/repositories/pointTransaction.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
-import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import loggingService from '@src/services/logging.service';
 import { IUploadBatch } from '@src/types/salesReport.types';
 import {
-  IPointTransactionIns,
   ISalesPointsAward,
   ISalesPointsRates,
   SALES_POINTS_ACTIVITIES,
-  SALES_POINTS_SUBJECT_TYPE,
 } from '@src/types/salesPoints.types';
 
 /**
@@ -44,9 +43,19 @@ export interface IAgentResolution {
  * inserts offsetting negative entries for every prior batch's transactions
  * before awarding the fresh positives. The ledger stays append-only.
  *
- * The whole flow is non-throwing by design: if any step fails it is logged
- * and swallowed — the upload itself has already succeeded by the time this
- * runs, and we don't want a points failure to roll the upload back.
+ * Concurrency guarantee: the critical reversal-then-insert section is pushed
+ * into a single Postgres function (`award_sales_points_for_batch`) which
+ * acquires `pg_advisory_xact_lock(hashtext('sales_points:tenant:year:month'))`
+ * before reading priors and writing offsets+awards. Two simultaneous
+ * re-uploads of the same period are serialised inside the database — the
+ * second caller sees the first caller's writes when it acquires the lock,
+ * so each correction reverses the immediately-preceding state, not a stale
+ * one. See `supabase/migrations/.._add_award_sales_points_rpc.sql`.
+ *
+ * The whole flow is non-throwing by design: if any step fails it is logged,
+ * surfaced as a Sentry issue, and swallowed — the upload itself has already
+ * succeeded by the time this runs, and we don't want a points failure to
+ * roll the upload back.
  */
 class SalesPointsService {
   /**
@@ -63,40 +72,53 @@ class SalesPointsService {
       //    upload.
       const rates = await this.fetchRates(batch.tenant_id);
 
-      // 2. Reversal step: find prior batches for this (tenant, year, month)
-      //    EXCLUDING the current one, gather their point_transactions, and
-      //    build offset entries.
-      const reversalRows = await this.buildReversalRows(batch);
-
-      // 3. Award step: for each agent in the upload, look up MTD ACE/NOC
-      //    (from sales_report_mtd) and derive MTD FYCT (current YTD - previous
-      //    YTD). Compute points and stage non-zero awards.
+      // 2. Compute fresh awards in-memory: for each agent in the upload, look
+      //    up MTD ACE/NOC (from sales_report_mtd) and derive MTD FYCT (current
+      //    YTD - previous YTD). Skip zero-point rows so the ledger stays clean.
       const awardRows = await this.buildAwardRows(
         batch,
         agentResolutions,
         rates,
       );
 
-      // 4. Bulk-insert reversal + awards in a single round trip.
-      const allRows = [...reversalRows, ...awardRows];
-      if (allRows.length === 0) {
-        loggingService.info('SalesPointsService.awardForBatch — nothing to insert', {
-          batchId: batch.id,
-        });
-        return;
-      }
-
-      await pointTransactionRepository.bulkInsert(allRows);
+      // 3. Atomic reversal+insert in a single Postgres transaction guarded by
+      //    a period-scoped advisory lock. The RPC handles:
+      //      a. acquire pg_advisory_xact_lock on (tenant, year, month)
+      //      b. find prior batches for this period (excluding current)
+      //      c. insert negative offset rows for their point_transactions
+      //      d. insert the fresh `awardRows` we just computed
+      //    All four steps run inside the function's implicit transaction, so
+      //    the second caller in a concurrent re-upload observes the first
+      //    caller's writes when it acquires the lock.
+      await pointTransactionRepository.awardWithReversal({
+        tenantId: batch.tenant_id,
+        year: batch.year,
+        month: batch.month,
+        batchId: batch.id,
+        activities: SALES_POINTS_ACTIVITIES,
+        awards: awardRows,
+      });
 
       loggingService.info('SalesPointsService.awardForBatch completed', {
         batchId: batch.id,
-        reversals: reversalRows.length,
         awards: awardRows.length,
       });
     } catch (error) {
       // Non-throwing by design: the upload has already succeeded, points are
-      // a downstream concern. Log and swallow so the upload response stays
-      // unaffected. Admins can re-trigger an awarding pass if needed.
+      // a downstream concern. Surface as a Sentry issue (separate from the
+      // log entry, which is breadcrumb-only) so operators can detect schema
+      // drift, RPC outages, or programming errors during reversal — then log
+      // and swallow so the upload response stays unaffected. Admins can
+      // re-trigger an awarding pass if needed.
+      Sentry.captureException(error, {
+        tags: { critical: 'sales_points_awarding' },
+        extra: {
+          batchId: batch.id,
+          tenantId: batch.tenant_id,
+          year: batch.year,
+          month: batch.month,
+        },
+      });
       loggingService.error('SalesPointsService.awardForBatch failed', error, {
         batchId: batch.id,
       });
@@ -121,40 +143,6 @@ class SalesPointsService {
   }
 
   /**
-   * Builds offsetting negative entries for every prior point_transaction
-   * linked to a previous batch for the same (tenant, year, month). The
-   * `subject_id` on each reversal row points to the ORIGINAL batch (not the
-   * new one) so audit links resolve to the row being reversed.
-   */
-  private async buildReversalRows(
-    batch: IUploadBatch,
-  ): Promise<IPointTransactionIns[]> {
-    const priorBatchIds = await uploadBatchRepository.findPriorBatchIdsForPeriod(
-      batch.tenant_id,
-      batch.year,
-      batch.month,
-      batch.id,
-    );
-    if (priorBatchIds.length === 0) return [];
-
-    const priorTxns = await pointTransactionRepository.findBySubjectIds(
-      batch.tenant_id,
-      priorBatchIds,
-      [...SALES_POINTS_ACTIVITIES],
-    );
-
-    return priorTxns.map((t) => ({
-      tenant_id: t.tenant_id,
-      user_id: t.user_id,
-      activity: t.activity,
-      points: -t.points,
-      subject_type: SALES_POINTS_SUBJECT_TYPE,
-      // Link reversal back to the ORIGINAL batch — preserves the audit chain.
-      subject_id: t.subject_id,
-    }));
-  }
-
-  /**
    * Builds the fresh positive award entries for the just-uploaded batch.
    * Looks up MTD ACE/NOC for the report month and derives MTD FYCT from the
    * delta between current-month and previous-month YTD totals. Skips zero-
@@ -164,7 +152,7 @@ class SalesPointsService {
     batch: IUploadBatch,
     agentResolutions: IAgentResolution[],
     rates: ISalesPointsRates,
-  ): Promise<IPointTransactionIns[]> {
+  ): Promise<ISalesPointsAward[]> {
     if (agentResolutions.length === 0) return [];
 
     const userIds = agentResolutions.map((a) => a.user_id);
@@ -246,14 +234,7 @@ class SalesPointsService {
       }
     }
 
-    return awards.map((a) => ({
-      tenant_id: tenantId,
-      user_id: a.user_id,
-      activity: a.activity,
-      points: a.points,
-      subject_type: SALES_POINTS_SUBJECT_TYPE,
-      subject_id: a.subject_id,
-    }));
+    return awards;
   }
 }
 
