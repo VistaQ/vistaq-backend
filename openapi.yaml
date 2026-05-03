@@ -3660,6 +3660,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error.
           content:
@@ -3972,6 +3978,12 @@ paths:
         '400': { description: Missing file, invalid year/month, or file too large }
         '401': { description: Missing or invalid bearer token }
         '403': { description: Caller is not a manager }
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /reports/jobs/{reference}:
     get:
@@ -5337,7 +5349,9 @@ components:
         Per-agent annual sales-report rollup. Combines the latest YTD snapshot
         of the year with monthly arrays. `id` is the `sales_report_ytd.id` of
         the latest month for that agent. `agent_id` is the public `users.id`.
-        `imported_at` is the latest YTD row's `created_at`. The four
+        `imported_at` is the most recent time this YTD snapshot was written
+        or overwritten — corrective re-uploads of the same (tenant, user,
+        year, month) advance this without changing `created_at`. The four
         `month_*` arrays are 12-element, index 0 = January, index 11 =
         December; missing months are 0.
       required:
@@ -5378,6 +5392,10 @@ components:
         imported_at:
           type: string
           format: date-time
+          description: >
+            Most recent time this YTD snapshot was written or overwritten.
+            Sourced from `sales_report_ytd.updated_at`; advances on every
+            corrective re-upload while `created_at` stays fixed.
           example: 2026-04-29T16:01:33.000Z
         ace_ytd:
           type: number
