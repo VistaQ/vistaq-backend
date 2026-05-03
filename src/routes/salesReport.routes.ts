@@ -70,9 +70,12 @@ export const ingestReportSchema = z
     // and lets Postgres' uuid type do the final validation.
     tenant_id: z
       .string()
-      .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
-        message: 'Invalid UUID',
-      }),
+      .regex(
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+        {
+          message: 'Invalid UUID',
+        },
+      ),
     report_year: z.number().int().min(2000).max(2100),
     report_month: z.number().int().min(1).max(12),
     etl_result: etlResultSchema,

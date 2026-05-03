@@ -42,8 +42,8 @@ export interface IUploadBatch {
  * the year with monthly arrays sourced from `sales_report_mtd` (ACE/NOC) and
  * the `sales_report_mtd_fyc` view (FYC/FYCt MTD derived via LAG()).
  *
- * `imported_at` is the `sales_report_ytd.created_at` of the latest YTD row,
- * surfaced as a more meaningful name for FE consumers.
+ * `imported_at` is the `sales_report_ytd.updated_at` of the latest YTD row —
+ * advances on every re-upload to reflect the most recent ingest time.
  */
 export interface ISalesReport {
   id: string;

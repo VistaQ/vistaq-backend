@@ -170,7 +170,6 @@ describe('SalesReportController.ingest', () => {
 
 const mkGetYearReq = (role: string): IGetYearReportsReq => ({
   user: { id: 'u-mgr', tenant_id: 't1', role },
-  headers: { authorization: 'Bearer faketoken' },
   query: { year: '2026' },
 } as unknown as IGetYearReportsReq);
 
