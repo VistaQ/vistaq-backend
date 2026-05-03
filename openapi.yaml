@@ -33,7 +33,7 @@ tags:
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
   - name: Sales Reports
-    description: Sales report ingestion and group dashboard endpoints
+    description: Sales report ingestion, per-agent year rollups, and upload audit endpoints
   - name: Public
     description: Public endpoints that do not require authentication
 
@@ -3726,14 +3726,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /reports/group:
+  /sales-reports:
     get:
       tags: [Sales Reports]
-      summary: Group dashboard data for a year/month
+      summary: Per-agent year rollup for the tenant
       description: >
-        Returns the group's cards (FYCT/FYC/ACE/NOC YTD totals, average
-        percentages, NOC per agent) plus the per-agent table sorted by
-        FYC descending. Tenant-scoped from the JWT. Manager-only.
+        Returns one `SalesReport` per agent in the tenant for the given year.
+        Each entry combines the agent's latest YTD snapshot with monthly
+        arrays for ACE/NOC (from `sales_report_mtd`) and FYC/FYCt
+        (from the `sales_report_mtd_fyc` view, which derives MTD values from
+        YTD via `LAG()`). Tenant-scoped from the JWT. Manager-only.
       security:
         - bearerAuth: []
       parameters:
@@ -3745,23 +3747,15 @@ paths:
             minimum: 2000
             maximum: 2100
             example: 2026
-        - name: month
-          in: query
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 12
-            example: 5
       responses:
         '200':
-          description: Group dashboard payload.
+          description: Array of per-agent year rollups for the tenant.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GroupReportResponse'
+                $ref: '#/components/schemas/SalesReportListResponse'
         '400':
-          description: Invalid query parameters.
+          description: Invalid query parameter.
           content:
             application/json:
               schema:
@@ -3785,16 +3779,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /reports/group/trend:
+  /sales-reports/me:
     get:
       tags: [Sales Reports]
-      summary: Monthly group trend points for a year
+      summary: Caller's own year rollup
       description: >
-        Returns one point per month for the given year, with FYC and FYCt
-        MTD aggregated across all agents in the tenant. Backed by the
-        `sales_report_mtd_fyc` view (FYC/FYCt MTD derived from YTD via
-        `LAG()`). Months without a YTD snapshot are intentionally omitted.
-        Tenant-scoped from the JWT. Manager-only.
+        Returns the calling user's `SalesReport` for the given year. Available
+        to any authenticated user — no role gate. Returns 404 when the user
+        has no YTD row for that year (e.g. they were not part of any upload
+        yet).
       security:
         - bearerAuth: []
       parameters:
@@ -3808,11 +3801,86 @@ paths:
             example: 2026
       responses:
         '200':
-          description: Sorted array of trend points (ascending by `month`).
+          description: The caller's per-agent year rollup.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GroupTrendResponse'
+                $ref: '#/components/schemas/SalesReportSingleResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No sales report exists for the calling user in that year.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: No sales report for this year
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports/uploads:
+    get:
+      tags: [Sales Reports]
+      summary: Paginated audit list of past uploads
+      description: >
+        Returns past `upload_batches` rows for the tenant, sorted most-recent
+        first. Each row reports its `rows_loaded`, `rows_skipped`, derived
+        `status` (`success` | `partial` | `failed`), and the uploader's
+        display name. `uploader_name` is `null` for manual-mode uploads
+        (POST `/api/reports/ingest`) where there is no JWT to attribute.
+
+        NOTE: Failed uploads that never created an `upload_batches` row
+        (e.g. validation rejected the payload before persistence) do not
+        appear in this list. They are visible only in error logs and
+        `report_jobs` (async path only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated audit entries with `meta` for pagination state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadAuditListResponse'
         '400':
           description: Invalid query parameter.
           content:
@@ -5247,121 +5315,104 @@ components:
                     type: string
                     example: User not found
 
-    GroupSummaryObject:
+    SalesReport:
       type: object
+      description: >
+        Per-agent annual sales-report rollup. Combines the latest YTD snapshot
+        of the year with monthly arrays. `id` is the `sales_report_ytd.id` of
+        the latest month for that agent. `agent_id` is the public `users.id`.
+        `imported_at` is the latest YTD row's `created_at`. The four
+        `month_*` arrays are 12-element, index 0 = January, index 11 =
+        December; missing months are 0.
       required:
-        - fyct_ytd
-        - fyc_ytd
+        - id
+        - agent_id
+        - agent_code
+        - agent_name
+        - year
+        - imported_at
         - ace_ytd
         - noc_ytd
-        - fyc_pct_avg
-        - fyct_pct_avg
-        - agent_count
-        - noc_per_agent
-      properties:
-        fyct_ytd:
-          type: number
-          example: 774000
-        fyc_ytd:
-          type: number
-          example: 735700
-        ace_ytd:
-          type: number
-          example: 1547500
-        noc_ytd:
-          type: integer
-          example: 46
-        fyc_pct_avg:
-          type: number
-          description: Simple average of per-agent `fyc_pct`.
-          example: 0.46
-        fyct_pct_avg:
-          type: number
-          description: Reserved; currently always 0.
-          example: 0
-        agent_count:
-          type: integer
-          example: 4
-        noc_per_agent:
-          type: number
-          example: 11.5
-
-    GroupAgentObject:
-      type: object
-      required:
-        - user_id
-        - name
-        - agent_code
-        - fyct
-        - fyc
+        - fyct_ytd
+        - fyct_pct
+        - mdrt_shortage_fyct
+        - fyc_ytd
         - fyc_pct
-        - ace
-        - noc
         - mdrt_shortage_fyc
+        - month_ace
+        - month_noc
+        - month_fyct
+        - month_fyc
       properties:
-        user_id:
+        id:
           type: string
           format: uuid
-        name:
+        agent_id:
           type: string
-          example: Lee Chun Wei
+          format: uuid
         agent_code:
           type: string
-          example: T66701C
-        fyct:
-          type: number
-          example: 310000
-        fyc:
-          type: number
-          example: 295000
-        fyc_pct:
-          type: number
-          example: 0.738
-        ace:
+          example: T75040K
+        agent_name:
+          type: string
+          example: MELISSA ADLINA
+        year:
+          type: integer
+          example: 2026
+        imported_at:
+          type: string
+          format: date-time
+          example: 2026-04-29T16:01:33.000Z
+        ace_ytd:
           type: number
           example: 620000
-        noc:
+        noc_ytd:
           type: integer
           example: 18
+        fyct_ytd:
+          type: number
+          example: 295000
+        fyct_pct:
+          type: number
+          example: 0.0132
+        mdrt_shortage_fyct:
+          type: number
+          example: 393112.13
+        fyc_ytd:
+          type: number
+          example: 1222.11
+        fyc_pct:
+          type: number
+          example: 0.0092
         mdrt_shortage_fyc:
           type: number
-          example: 105000
+          example: 131577.89
+        month_ace:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 9118.64, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_noc:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_fyct:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 5287.87, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_fyc:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 1222.11, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-    GroupReportResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success:
-          type: boolean
-          example: true
-        data:
-          type: object
-          required: [summary, agents]
-          properties:
-            summary:
-              $ref: '#/components/schemas/GroupSummaryObject'
-            agents:
-              type: array
-              items:
-                $ref: '#/components/schemas/GroupAgentObject'
-
-    GroupTrendPointObject:
-      type: object
-      required: [month, fyc_mtd, fyct_mtd]
-      properties:
-        month:
-          type: integer
-          minimum: 1
-          maximum: 12
-          example: 5
-        fyc_mtd:
-          type: number
-          example: 128000
-        fyct_mtd:
-          type: number
-          example: 133000
-
-    GroupTrendResponse:
+    SalesReportListResponse:
       type: object
       required: [success, data]
       properties:
@@ -5371,7 +5422,92 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/GroupTrendPointObject'
+            $ref: '#/components/schemas/SalesReport'
+
+    SalesReportSingleResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/SalesReport'
+
+    UploadAuditEntry:
+      type: object
+      description: >
+        Audit row for a past upload batch. `imported_at` maps from
+        `upload_batches.created_at`. `uploader_name` is null when the upload
+        was manual-mode (no JWT).
+      required:
+        - id
+        - year
+        - month
+        - file_name
+        - rows_loaded
+        - rows_skipped
+        - status
+        - uploader_name
+        - imported_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+          example: 2026
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          example: 3
+        file_name:
+          type: string
+          example: input.xlsx
+        rows_loaded:
+          type: integer
+          example: 65
+        rows_skipped:
+          type: integer
+          example: 2
+        status:
+          type: string
+          enum: [success, partial, failed]
+          example: partial
+        uploader_name:
+          type: string
+          nullable: true
+          example: Jane Doe
+        imported_at:
+          type: string
+          format: date-time
+          example: 2026-04-29T16:01:33.000Z
+
+    UploadAuditListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadAuditEntry'
+        meta:
+          type: object
+          required: [page, pageSize, total]
+          properties:
+            page:
+              type: integer
+              example: 1
+            pageSize:
+              type: integer
+              example: 50
+            total:
+              type: integer
+              example: 12
 
     ReportJobObject:
       type: object
