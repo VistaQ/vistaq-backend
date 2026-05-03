@@ -3667,6 +3667,65 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /reports/ingest:
+    post:
+      tags: [Sales Reports]
+      summary: Manual ETL ingest (interim — INTERNAL_API_KEY auth, NOT user JWT)
+      description: >
+        Manual-mode endpoint used while the production HTTP-hosted ETL is
+        being built. The ETL author runs the local Python pipeline on their
+        laptop and POSTs the resulting `etl_result` here directly. Skips the
+        `report_jobs` lifecycle and Storage round-trip entirely; just persists
+        the same audit + YTD/MTD rows that `/reports/upload` does.
+
+        Authenticated with `Authorization: Bearer <INTERNAL_API_KEY>` (the same
+        shared secret the ETL uses for `/reports/jobs/{reference}/complete`).
+        Because there is no JWT, `tenant_id` is supplied in the request body
+        and `uploaded_by` is intentionally recorded as NULL. The
+        consecutive-month guard (409) is inherited from the shared service
+        layer.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestReportRequest'
+      responses:
+        '200':
+          description: >
+            Upload completed. Partial success is allowed: rows whose
+            `agentCode` did not resolve to a user are reported in `errors`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadReportResponse'
+        '400':
+          description: Validation failed (Zod schema mismatch or invalid ETL data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or wrong internal key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /reports/group:
     get:
       tags: [Sales Reports]
@@ -5010,105 +5069,128 @@ components:
     # Sales Reports
     ##########################################################################
 
+    EtlResultObject:
+      type: object
+      required:
+        - source
+        - created_at
+        - rows_loaded
+        - months_detected
+        - report_year
+        - report_month
+        - records
+      description: >
+        ETL pipeline output as produced by the upstream `dynamic_excel_etl`
+        template. Extra top-level fields (`success`, `etl_version`,
+        `template_name`, `upload_id`, `output_excel`, `json_output`,
+        `log_file`, `errors_found`, `columns_detected`, `layout_detected`,
+        `errors`) are accepted and ignored.
+      properties:
+        source:
+          type: string
+          description: Filename or identifier of the original report.
+          example: tests/samples/Book2_ytd_and_months_uploaded.xlsx
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp the ETL pipeline produced this result. Informational only — not used to derive year/month.
+          example: '2026-04-29T16:01:33.114596+00:00'
+        rows_loaded:
+          type: integer
+          minimum: 0
+          description: Number of rows the ETL pipeline read from the source.
+          example: 67
+        months_detected:
+          type: array
+          minItems: 1
+          description: >
+            Uppercase English month names whose ACE/NOC columns are present
+            in the source. Informational only — used by the FE for
+            column-coverage display, not by the backend to derive the
+            report month.
+          items:
+            type: string
+            enum:
+              - JANUARY
+              - FEBRUARY
+              - MARCH
+              - APRIL
+              - MAY
+              - JUNE
+              - JULY
+              - AUGUST
+              - SEPTEMBER
+              - OCTOBER
+              - NOVEMBER
+              - DECEMBER
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller.
+          example: 5
+        records:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [agentCode, rowData]
+            description: >
+              Per-agent record. Extra fields like `agentName` are accepted
+              and ignored.
+            properties:
+              agentCode:
+                type: string
+                description: The agent code from the source row; resolved server-side to a `users.id`.
+                example: T66701C
+              rowData:
+                type: object
+                description: >
+                  Open-ended bag of column-name → value pairs. Recognised
+                  numeric keys include the YTD totals (`'ACE (YTD)'`,
+                  `'NOC (YTD)'`, `'FYCT (YTD)'`, `'% FYCT (YTD)'`,
+                  `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`, `'% FYC (YTD)'`,
+                  `'MDRT SHORTAGE FYC'`) and per-month MTD pairs
+                  (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.). String keys
+                  like `'AGENT CODE'` and `'AGENT NAME'` (which the ETL
+                  may include as duplicates of the outer fields) are
+                  accepted and ignored. Missing or non-numeric values
+                  default to 0.
+                additionalProperties: true
+
     UploadReportRequest:
       type: object
       required: [etlResult]
       additionalProperties: false
       properties:
         etlResult:
-          type: object
-          required:
-            - source
-            - created_at
-            - rows_loaded
-            - months_detected
-            - report_year
-            - report_month
-            - records
+          $ref: '#/components/schemas/EtlResultObject'
+
+    IngestReportRequest:
+      type: object
+      required: [tenant_id, etl_result]
+      additionalProperties: false
+      description: >
+        Manual-mode ingest body. Field names use snake_case to mirror the
+        ETL JSON style (the ETL author POSTs this directly from a Python
+        `requests.post(...)` call).
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
           description: >
-            ETL pipeline output as produced by the upstream `dynamic_excel_etl`
-            template. Extra top-level fields (`success`, `etl_version`,
-            `template_name`, `upload_id`, `output_excel`, `json_output`,
-            `log_file`, `errors_found`, `columns_detected`, `layout_detected`,
-            `errors`) are accepted and ignored.
-          properties:
-            source:
-              type: string
-              description: Filename or identifier of the original report.
-              example: tests/samples/Book2_ytd_and_months_uploaded.xlsx
-            created_at:
-              type: string
-              format: date-time
-              description: Timestamp the ETL pipeline produced this result. Informational only — not used to derive year/month.
-              example: '2026-04-29T16:01:33.114596+00:00'
-            rows_loaded:
-              type: integer
-              minimum: 0
-              description: Number of rows the ETL pipeline read from the source.
-              example: 67
-            months_detected:
-              type: array
-              minItems: 1
-              description: >
-                Uppercase English month names whose ACE/NOC columns are present
-                in the source. Informational only — used by the FE for
-                column-coverage display, not by the backend to derive the
-                report month.
-              items:
-                type: string
-                enum:
-                  - JANUARY
-                  - FEBRUARY
-                  - MARCH
-                  - APRIL
-                  - MAY
-                  - JUNE
-                  - JULY
-                  - AUGUST
-                  - SEPTEMBER
-                  - OCTOBER
-                  - NOVEMBER
-                  - DECEMBER
-            report_year:
-              type: integer
-              minimum: 2000
-              maximum: 2100
-              description: Calendar year the report covers. Authoritative — supplied by the caller.
-              example: 2026
-            report_month:
-              type: integer
-              minimum: 1
-              maximum: 12
-              description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller.
-              example: 5
-            records:
-              type: array
-              minItems: 1
-              items:
-                type: object
-                required: [agentCode, rowData]
-                description: >
-                  Per-agent record. Extra fields like `agentName` are accepted
-                  and ignored.
-                properties:
-                  agentCode:
-                    type: string
-                    description: The agent code from the source row; resolved server-side to a `users.id`.
-                    example: T66701C
-                  rowData:
-                    type: object
-                    description: >
-                      Open-ended bag of column-name → value pairs. Recognised
-                      numeric keys include the YTD totals (`'ACE (YTD)'`,
-                      `'NOC (YTD)'`, `'FYCT (YTD)'`, `'% FYCT (YTD)'`,
-                      `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`, `'% FYC (YTD)'`,
-                      `'MDRT SHORTAGE FYC'`) and per-month MTD pairs
-                      (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.). String keys
-                      like `'AGENT CODE'` and `'AGENT NAME'` (which the ETL
-                      may include as duplicates of the outer fields) are
-                      accepted and ignored. Missing or non-numeric values
-                      default to 0.
-                    additionalProperties: true
+            Tenant the records belong to. Supplied to the ETL author by an
+            admin out-of-band (Slack/email) — there is no JWT to derive it
+            from in manual mode.
+          example: 00000000-0000-0000-0000-000000000001
+        etl_result:
+          $ref: '#/components/schemas/EtlResultObject'
 
     UploadReportResponse:
       type: object
