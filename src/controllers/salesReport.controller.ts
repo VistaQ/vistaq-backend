@@ -36,7 +36,7 @@ export interface IUploadReportRes extends IBaseRes {
 
 /**
  * Manual-mode ingest from the local ETL script. Body fields use snake_case to
- * mirror the ETL JSON style. Authenticated by INTERNAL_API_KEY (no JWT), so
+ * mirror the ETL JSON style. Authenticated by ETL_API_KEY (no JWT), so
  * `tenant_id` is supplied in the body and `uploaded_by` is intentionally
  * unattributed (null).
  */

@@ -1,15 +1,15 @@
 import * as Sentry from '@sentry/node';
 
+import {
+  InvalidEtlResultError,
+  NonConsecutiveUploadError,
+} from '@src/models/errors/salesReport.errors';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository, {
   YtdRollupRow,
 } from '@src/repositories/salesReportYtd.repository';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
-import {
-  InvalidEtlResultError,
-  NonConsecutiveUploadError,
-} from '@src/models/errors/salesReport.errors';
 import loggingService from '@src/services/logging.service';
 import salesPointsService, {
   IAgentResolution,
@@ -33,7 +33,7 @@ interface IUploadParams {
   tenantId: string;
   /**
    * Nullable for manual ETL ingests (POST /api/reports/ingest) where the
-   * caller is authenticated via INTERNAL_API_KEY rather than a user JWT.
+   * caller is authenticated via ETL_API_KEY rather than a user JWT.
    * Standard JWT-authenticated uploads always pass the user id.
    */
   uploadedBy: string | null;
@@ -65,7 +65,8 @@ function readRowData(r: IEtlRowData, key: string): number {
 class SalesReportService {
   async uploadReport(params: IUploadParams): Promise<IUploadResult> {
     try {
-      const { etlResult, tenantId, uploadedBy, reportYear, reportMonth } = params;
+      const { etlResult, tenantId, uploadedBy, reportYear, reportMonth } =
+        params;
 
       // 1. Validate input
       if (!etlResult.records?.length) {
@@ -105,7 +106,10 @@ class SalesReportService {
 
       // 4. Resolve agentCode → user_id
       const agentCodes = etlResult.records.map((r) => r.agentCode);
-      const matched = await userRepository.findByAgentCodes(tenantId, agentCodes);
+      const matched = await userRepository.findByAgentCodes(
+        tenantId,
+        agentCodes,
+      );
       const userIdByCode = new Map(matched.map((m) => [m.agent_code, m.id]));
 
       // 5. Build YTD rows (report month only) + MTD rows (every month present in rowData)
@@ -117,10 +121,16 @@ class SalesReportService {
       for (const record of etlResult.records) {
         const userId = userIdByCode.get(record.agentCode);
         if (!userId) {
-          errors.push({ agentCode: record.agentCode, reason: 'User not found' });
+          errors.push({
+            agentCode: record.agentCode,
+            reason: 'User not found',
+          });
           continue;
         }
-        agentResolutions.push({ user_id: userId, agent_code: record.agentCode });
+        agentResolutions.push({
+          user_id: userId,
+          agent_code: record.agentCode,
+        });
 
         const r = record.rowData;
         ytdRows.push({

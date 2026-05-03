@@ -37,7 +37,7 @@ tags:
   - name: Public
     description: Public endpoints that do not require authentication
   - name: Internal
-    description: Service-to-service operations (cron, retention cleanup) authenticated via INTERNAL_API_KEY rather than user JWTs
+    description: Service-to-service operations (cron, retention cleanup) authenticated via ETL_API_KEY rather than user JWTs
 
 ################################################################################
 # Paths
@@ -3678,7 +3678,7 @@ paths:
   /reports/ingest:
     post:
       tags: [Sales Reports]
-      summary: Manual ETL ingest (interim — INTERNAL_API_KEY auth, NOT user JWT)
+      summary: Manual ETL ingest (interim — ETL_API_KEY auth, NOT user JWT)
       description: >
         Manual-mode endpoint used while the production HTTP-hosted ETL is
         being built. The ETL author runs the local Python pipeline on their
@@ -3686,7 +3686,7 @@ paths:
         `report_jobs` lifecycle and Storage round-trip entirely; just persists
         the same audit + YTD/MTD rows that `/reports/upload` does.
 
-        Authenticated with `Authorization: Bearer <INTERNAL_API_KEY>` (the same
+        Authenticated with `Authorization: Bearer <ETL_API_KEY>` (the same
         shared secret the ETL uses for `/reports/jobs/{reference}/complete`).
         Because there is no JWT, `tenant_id` is supplied in the request body
         and `uploaded_by` is intentionally recorded as NULL. The
@@ -4018,7 +4018,7 @@ paths:
       summary: ETL callback (internal-key auth, NOT user JWT)
       description: >
         Called by the Python ETL service when processing finishes. Authenticated
-        with `Authorization: Bearer <INTERNAL_API_KEY>`. Triggers persistence
+        with `Authorization: Bearer <ETL_API_KEY>`. Triggers persistence
         on success or marks the job failed on error.
       security:
         - bearerAuth: []
@@ -4086,14 +4086,14 @@ paths:
   /internal/cleanup-old-report-files:
     post:
       tags: [Internal]
-      summary: Retention cleanup for raw report files (INTERNAL_API_KEY auth)
+      summary: Retention cleanup for raw report files (ETL_API_KEY auth)
       description: >
         Deletes raw xlsx files in the `reports-raw` Storage bucket attached to
         completed `report_jobs` whose `created_at` is older than 30 days, then
         clears the `report_jobs.storage_path` for those rows so the same files
         are not re-queued on subsequent runs. The audit row itself is retained.
 
-        Authenticated with `Authorization: Bearer <INTERNAL_API_KEY>`. Designed
+        Authenticated with `Authorization: Bearer <ETL_API_KEY>`. Designed
         to be invoked by an external scheduler (Vercel Cron, GitHub Actions,
         etc.) once per day. Replaces an earlier pg_cron-based approach which
         deleted only `storage.objects` metadata rows and orphaned the file

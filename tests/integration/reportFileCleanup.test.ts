@@ -3,7 +3,7 @@ import request from 'supertest';
 import app from '@src/app';
 import reportFileCleanupService from '@src/services/reportFileCleanup.service';
 
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'dev-internal-key-rotate-me';
+const INTERNAL_KEY = process.env.ETL_API_KEY ?? 'dev-internal-key-rotate-me';
 const ENDPOINT = '/api/internal/cleanup-old-report-files';
 
 describe('POST /api/internal/cleanup-old-report-files — auth', () => {
