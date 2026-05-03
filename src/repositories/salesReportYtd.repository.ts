@@ -1,23 +1,29 @@
 import supabaseService from '@src/services/supabase.service';
-import {
-  IGroupAgent,
-  SalesReportYtdIns,
-} from '@src/types/salesReport.types';
+import { SalesReportYtdIns } from '@src/types/salesReport.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
-const YTD_USER_JOIN_SELECT =
-  'user_id, fyct, fyc, fyc_pct, ace, noc, mdrt_shortage_fyc, users!inner(name, agent_code)';
-
-interface YtdJoinRow {
+/**
+ * Subset of `sales_report_ytd` columns the read API needs. Repo-local; the
+ * service layer maps these into domain interfaces before returning.
+ */
+export interface YtdRollupRow {
+  id: string;
   user_id: string;
-  fyct: number;
-  fyc: number;
-  fyc_pct: number;
+  year: number;
+  month: number;
   ace: number;
   noc: number;
+  fyct: number;
+  fyct_pct: number;
+  mdrt_shortage_fyct: number;
+  fyc: number;
+  fyc_pct: number;
   mdrt_shortage_fyc: number;
-  users: { name: string | null; agent_code: string | null };
+  created_at: string;
 }
+
+const ROLLUP_COLUMNS =
+  'id, user_id, year, month, ace, noc, fyct, fyct_pct, mdrt_shortage_fyct, fyc, fyc_pct, mdrt_shortage_fyc, created_at';
 
 class SalesReportYtdRepository {
   async bulkUpsert(rows: SalesReportYtdIns[]): Promise<void> {
@@ -80,14 +86,69 @@ class SalesReportYtdRepository {
     }
   }
 
-  async findByTenantYearMonthWithUser(
+  /**
+   * Returns one YTD row per (user_id) — the LATEST month for that user in the
+   * given tenant + year. Backing storage holds one row per (tenant, user, year,
+   * month); we fetch all rows for the year and reduce to the highest month per
+   * user in memory.
+   */
+  async findLatestYtdPerUserByTenantYear(
     tenantId: string,
     year: number,
-    month: number,
-  ): Promise<IGroupAgent[]> {
+  ): Promise<YtdRollupRow[]> {
     try {
-      // Direct adminClient call because the wrapper's `adminSelect` doesn't support
-      // the embedded relationship select-string syntax we need for the users join.
+      const { data, error } = await (
+        supabaseService as unknown as {
+          adminClient: {
+            from: (t: string) => {
+              select: (s: string) => {
+                eq: (c: string, v: unknown) => {
+                  eq: (
+                    c: string,
+                    v: unknown,
+                  ) => Promise<{
+                    data: YtdRollupRow[] | null;
+                    error: { message: string } | null;
+                  }>;
+                };
+              };
+            };
+          };
+        }
+      ).adminClient
+        .from('sales_report_ytd')
+        .select(ROLLUP_COLUMNS)
+        .eq('tenant_id', tenantId)
+        .eq('year', year);
+
+      if (error) throw new Error(error.message);
+
+      const latestByUser = new Map<string, YtdRollupRow>();
+      for (const row of data ?? []) {
+        const existing = latestByUser.get(row.user_id);
+        if (!existing || row.month > existing.month) {
+          latestByUser.set(row.user_id, row);
+        }
+      }
+      return Array.from(latestByUser.values());
+    } catch (error) {
+      handleRepositoryError(
+        'SalesReportYtdRepository.findLatestYtdPerUserByTenantYear',
+        error,
+      );
+    }
+  }
+
+  /**
+   * Returns the LATEST YTD row for a single user in the given tenant + year,
+   * or null if the user has no YTD row for that year yet.
+   */
+  async findLatestYtdForUserYear(
+    tenantId: string,
+    userId: string,
+    year: number,
+  ): Promise<YtdRollupRow | null> {
+    try {
       const { data, error } = await (
         supabaseService as unknown as {
           adminClient: {
@@ -95,7 +156,14 @@ class SalesReportYtdRepository {
               select: (s: string) => {
                 eq: (c: string, v: unknown) => {
                   eq: (c: string, v: unknown) => {
-                    eq: (c: string, v: unknown) => Promise<{ data: YtdJoinRow[] | null; error: { message: string } | null }>;
+                    eq: (c: string, v: unknown) => {
+                      order: (c: string, opts: { ascending: boolean }) => {
+                        limit: (n: number) => Promise<{
+                          data: YtdRollupRow[] | null;
+                          error: { message: string } | null;
+                        }>;
+                      };
+                    };
                   };
                 };
               };
@@ -104,27 +172,19 @@ class SalesReportYtdRepository {
         }
       ).adminClient
         .from('sales_report_ytd')
-        .select(YTD_USER_JOIN_SELECT)
+        .select(ROLLUP_COLUMNS)
         .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
         .eq('year', year)
-        .eq('month', month);
+        .order('month', { ascending: false })
+        .limit(1);
 
       if (error) throw new Error(error.message);
       const rows = data ?? [];
-      return rows.map((r) => ({
-        user_id: r.user_id,
-        name: r.users.name ?? '',
-        agent_code: r.users.agent_code ?? '',
-        fyct: Number(r.fyct),
-        fyc: Number(r.fyc),
-        fyc_pct: Number(r.fyc_pct),
-        ace: Number(r.ace),
-        noc: Number(r.noc),
-        mdrt_shortage_fyc: Number(r.mdrt_shortage_fyc),
-      }));
+      return rows.length === 0 ? null : rows[0];
     } catch (error) {
       handleRepositoryError(
-        'SalesReportYtdRepository.findByTenantYearMonthWithUser',
+        'SalesReportYtdRepository.findLatestYtdForUserYear',
         error,
       );
     }

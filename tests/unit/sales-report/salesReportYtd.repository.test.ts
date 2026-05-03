@@ -125,20 +125,63 @@ describe('SalesReportYtdRepository.findLatestUploadedMonth', () => {
   });
 });
 
-describe('SalesReportYtdRepository.findByTenantYearMonthWithUser', () => {
+describe('SalesReportYtdRepository.findLatestYtdPerUserByTenantYear', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it('queries with the user join and returns mapped rows', async () => {
-    // Stub the chained from->select->eq->eq->eq builder used directly
-    // (this method bypasses the wrapper because it needs a join select string).
-    const eqMock3 = jest.fn().mockResolvedValue({
-      data: [{
-        user_id: 'u1', fyct: 100, fyc: 90, fyc_pct: 0.5,
-        ace: 200, noc: 5, mdrt_shortage_fyc: 10,
-        users: { name: 'Alice', agent_code: 'A1' },
-      }],
-      error: null,
-    });
+  function stub(
+    rows: { user_id: string; month: number; [k: string]: unknown }[] | null,
+    error: { message: string } | null = null,
+  ) {
+    const eqMock2 = jest.fn().mockResolvedValue({ data: rows, error });
+    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
+    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
+    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+    return { fromMock, selectMock };
+  }
+
+  it('keeps only the highest-month row per user', async () => {
+    stub([
+      { id: 'r1', user_id: 'u1', year: 2026, month: 3, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-04-01' },
+      { id: 'r2', user_id: 'u1', year: 2026, month: 5, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-06-01' },
+      { id: 'r3', user_id: 'u2', year: 2026, month: 4, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-05-01' },
+    ]);
+
+    const out = await salesReportYtdRepository.findLatestYtdPerUserByTenantYear('t1', 2026);
+
+    expect(out.find((r) => r.user_id === 'u1')?.id).toBe('r2');
+    expect(out.find((r) => r.user_id === 'u2')?.id).toBe('r3');
+    expect(out).toHaveLength(2);
+  });
+
+  it('returns empty array when nothing matches', async () => {
+    stub([]);
+    const out = await salesReportYtdRepository.findLatestYtdPerUserByTenantYear('t1', 2026);
+    expect(out).toEqual([]);
+  });
+
+  it('throws RepositoryError when supabase returns an error', async () => {
+    stub(null, { message: 'boom' });
+    await expect(
+      salesReportYtdRepository.findLatestYtdPerUserByTenantYear('t1', 2026),
+    ).rejects.toThrow(
+      'SalesReportYtdRepository.findLatestYtdPerUserByTenantYear failed',
+    );
+  });
+});
+
+describe('SalesReportYtdRepository.findLatestYtdForUserYear', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  function stub(
+    rows: { user_id: string; month: number; [k: string]: unknown }[] | null,
+    error: { message: string } | null = null,
+  ) {
+    const limitMock = jest.fn().mockResolvedValue({ data: rows, error });
+    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const eqMock3 = jest.fn().mockReturnValue({ order: orderMock });
     const eqMock2 = jest.fn().mockReturnValue({ eq: eqMock3 });
     const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
     const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
@@ -146,12 +189,38 @@ describe('SalesReportYtdRepository.findByTenantYearMonthWithUser', () => {
     (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
       from: fromMock,
     } as never;
+    return { eqMock1, eqMock2, eqMock3, orderMock, limitMock };
+  }
 
-    const rows = await salesReportYtdRepository.findByTenantYearMonthWithUser('t1', 2026, 5);
+  it('returns the single latest row when one exists', async () => {
+    const { eqMock1, eqMock2, eqMock3, limitMock } = stub([
+      {
+        id: 'r1', user_id: 'u1', year: 2026, month: 5,
+        ace: 1, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+        created_at: '2026-06-01',
+      },
+    ]);
 
-    expect(fromMock).toHaveBeenCalledWith('sales_report_ytd');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe('Alice');
-    expect(rows[0].agent_code).toBe('A1');
+    const out = await salesReportYtdRepository.findLatestYtdForUserYear('t1', 'u1', 2026);
+
+    expect(eqMock1).toHaveBeenCalledWith('tenant_id', 't1');
+    expect(eqMock2).toHaveBeenCalledWith('user_id', 'u1');
+    expect(eqMock3).toHaveBeenCalledWith('year', 2026);
+    expect(limitMock).toHaveBeenCalledWith(1);
+    expect(out?.id).toBe('r1');
+  });
+
+  it('returns null when no row exists', async () => {
+    stub([]);
+    const out = await salesReportYtdRepository.findLatestYtdForUserYear('t1', 'u1', 2026);
+    expect(out).toBeNull();
+  });
+
+  it('throws RepositoryError when supabase returns an error', async () => {
+    stub(null, { message: 'boom' });
+    await expect(
+      salesReportYtdRepository.findLatestYtdForUserYear('t1', 'u1', 2026),
+    ).rejects.toThrow('SalesReportYtdRepository.findLatestYtdForUserYear failed');
   });
 });

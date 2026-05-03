@@ -417,6 +417,47 @@ class UserRepository {
       handleRepositoryError('UserRepository.findByAgentCodes', error);
     }
   }
+
+  /**
+   * Resolves a set of user IDs to `{ id, name, agent_code }` triples using the
+   * service-role client (bypasses RLS). Used by the sales-report read API to
+   * decorate aggregated YTD rows with the agent's display name + code.
+   */
+  async findIdNameAgentCodeByIds(
+    userIds: string[],
+  ): Promise<{ id: string; name: string; agent_code: string | null }[]> {
+    try {
+      if (userIds.length === 0) return [];
+
+      const { data, error } = await (
+        supabaseService as unknown as {
+          adminClient: {
+            from: (t: string) => {
+              select: (s: string) => {
+                in: (
+                  c: string,
+                  v: unknown[],
+                ) => Promise<{
+                  data:
+                    | { id: string; name: string; agent_code: string | null }[]
+                    | null;
+                  error: { message: string } | null;
+                }>;
+              };
+            };
+          };
+        }
+      ).adminClient
+        .from('users')
+        .select('id, name, agent_code')
+        .in('id', userIds);
+
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    } catch (error) {
+      handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
+    }
+  }
 }
 
 /******************************************************************************

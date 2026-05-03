@@ -17,6 +17,8 @@ export type SalesReportMtdFycRow =
                             Domain interfaces (Service/Controller)
 ******************************************************************************/
 
+export type UploadStatus = 'success' | 'partial' | 'failed';
+
 export interface IUploadBatch {
   id: string;
   tenant_id: string;
@@ -30,7 +32,68 @@ export interface IUploadBatch {
   month: number;
   file_name: string;
   rows_loaded: number;
+  rows_skipped: number;
+  status: UploadStatus;
   created_at: string;
+}
+
+/**
+ * Per-agent annual sales-report rollup. Combines the latest YTD snapshot of
+ * the year with monthly arrays sourced from `sales_report_mtd` (ACE/NOC) and
+ * the `sales_report_mtd_fyc` view (FYC/FYCt MTD derived via LAG()).
+ *
+ * `imported_at` is the `sales_report_ytd.created_at` of the latest YTD row,
+ * surfaced as a more meaningful name for FE consumers.
+ */
+export interface ISalesReport {
+  id: string;
+  agent_id: string;
+  agent_code: string;
+  agent_name: string;
+  year: number;
+  imported_at: string;
+  ace_ytd: number;
+  noc_ytd: number;
+  fyct_ytd: number;
+  fyct_pct: number;
+  mdrt_shortage_fyct: number;
+  fyc_ytd: number;
+  fyc_pct: number;
+  mdrt_shortage_fyc: number;
+  /** 12-element array, index 0 = January, index 11 = December. */
+  month_ace: number[];
+  /** 12-element array, index 0 = January, index 11 = December. */
+  month_noc: number[];
+  /** 12-element array, index 0 = January, index 11 = December. */
+  month_fyct: number[];
+  /** 12-element array, index 0 = January, index 11 = December. */
+  month_fyc: number[];
+}
+
+/**
+ * Audit list entry for past uploads. `uploader_name` is `users.name` joined via
+ * `upload_batches.uploaded_by`; null when the upload was manual-mode (no JWT).
+ * `imported_at` maps from `upload_batches.created_at` for FE-friendly naming.
+ */
+export interface IUploadAuditEntry {
+  id: string;
+  year: number;
+  month: number;
+  file_name: string;
+  rows_loaded: number;
+  rows_skipped: number;
+  status: UploadStatus;
+  uploader_name: string | null;
+  imported_at: string;
+}
+
+export interface IPaginatedUploadAudit {
+  data: IUploadAuditEntry[];
+  meta: {
+    page: number;
+    pageSize: number;
+    total: number;
+  };
 }
 
 export interface IUploadResult {
@@ -38,40 +101,6 @@ export interface IUploadResult {
   processed: number;
   skipped: number;
   errors: { agentCode: string; reason: string }[];
-}
-
-export interface IGroupSummary {
-  fyct_ytd: number;
-  fyc_ytd: number;
-  ace_ytd: number;
-  noc_ytd: number;
-  fyc_pct_avg: number;
-  fyct_pct_avg: number;
-  agent_count: number;
-  noc_per_agent: number;
-}
-
-export interface IGroupAgent {
-  user_id: string;
-  name: string;
-  agent_code: string;
-  fyct: number;
-  fyc: number;
-  fyc_pct: number;
-  ace: number;
-  noc: number;
-  mdrt_shortage_fyc: number;
-}
-
-export interface IGroupReport {
-  summary: IGroupSummary;
-  agents: IGroupAgent[];
-}
-
-export interface IGroupTrendPoint {
-  month: number;
-  fyc_mtd: number;
-  fyct_mtd: number;
 }
 
 /******************************************************************************
