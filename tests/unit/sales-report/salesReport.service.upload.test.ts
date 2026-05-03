@@ -30,6 +30,10 @@ jest.mock('@src/services/salesPoints.service', () => ({
   __esModule: true,
   default: { awardForBatch: jest.fn() },
 }));
+jest.mock('@sentry/node', () => ({
+  __esModule: true,
+  captureException: jest.fn(),
+}));
 
 const baseEtl: IEtlResult = {
   source: 'May2026.xlsx',
@@ -304,6 +308,19 @@ describe('SalesReportService.uploadReport — points awarding hand-off', () => {
 
     expect(result.batchId).toBe('batch-pts2');
     expect(result.processed).toBe(2);
+
+    // Defense-in-depth: the outer swallow must also surface to Sentry so a
+    // regression at either layer is queryable as an issue.
+    const Sentry = jest.requireMock('@sentry/node') as {
+      captureException: jest.Mock;
+    };
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    const args = Sentry.captureException.mock.calls[0];
+    expect(args[0]).toBeInstanceOf(Error);
+    expect(args[1]).toMatchObject({
+      tags: { critical: 'sales_points_awarding' },
+      extra: expect.objectContaining({ batchId: 'batch-pts2' }),
+    });
   });
 });
 

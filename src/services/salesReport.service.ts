@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/node';
+
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository, {
   YtdRollupRow,
@@ -193,7 +195,13 @@ class SalesReportService {
         );
       } catch (pointsError) {
         // Already logged by salesPointsService; swallow defensively in case a
-        // future change makes the inner method throw again.
+        // future change makes the inner method throw again. Surface to Sentry
+        // here too — mirrors the inner swallow's instrumentation so a
+        // regression at either layer is queryable as an issue.
+        Sentry.captureException(pointsError, {
+          tags: { critical: 'sales_points_awarding' },
+          extra: { batchId: batch.id },
+        });
         loggingService.error(
           'SalesReportService.uploadReport — points awarding step failed (swallowed)',
           pointsError,
