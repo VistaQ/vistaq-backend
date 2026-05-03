@@ -907,7 +907,7 @@ export type Database = {
           month: number
           rows_loaded: number
           tenant_id: string
-          uploaded_by: string
+          uploaded_by: string | null
           year: number
         }
         Insert: {
@@ -917,7 +917,7 @@ export type Database = {
           month: number
           rows_loaded?: number
           tenant_id: string
-          uploaded_by: string
+          uploaded_by?: string | null
           year: number
         }
         Update: {
@@ -927,7 +927,7 @@ export type Database = {
           month?: number
           rows_loaded?: number
           tenant_id?: string
-          uploaded_by?: string
+          uploaded_by?: string | null
           year?: number
         }
         Relationships: [
@@ -1204,3 +1204,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
