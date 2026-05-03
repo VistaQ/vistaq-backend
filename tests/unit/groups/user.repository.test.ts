@@ -33,6 +33,8 @@ jest.mock('@src/services/supabase.service', () => ({
     adminInsert: jest.fn(),
     adminUpdate: jest.fn(),
     adminDelete: jest.fn(),
+    adminSelectIn: jest.fn(),
+    adminSelectInIn: jest.fn(),
     userInsert: jest.fn(),
     userSelect: jest.fn(),
     userUpdate: jest.fn(),
@@ -44,6 +46,8 @@ jest.mock('@src/services/supabase.service', () => ({
     adminInsert: jest.fn(),
     adminUpdate: jest.fn(),
     adminDelete: jest.fn(),
+    adminSelectIn: jest.fn(),
+    adminSelectInIn: jest.fn(),
     userInsert: jest.fn(),
     userSelect: jest.fn(),
     userUpdate: jest.fn(),
@@ -213,6 +217,60 @@ describe('UserRepository.updateGroupIdForUsers', () => {
 
     await expect(
       userRepository.updateGroupIdForUsers([USER_ID_1, USER_ID_2], GROUP_ID, USER_TOKEN),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
+});
+
+/******************************************************************************
+  Test suite — UserRepository.findByAgentCodes
+******************************************************************************/
+
+describe('UserRepository.findByAgentCodes', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('returns id+agent_code for matching agents via adminSelectIn', async () => {
+    (
+      supabaseService as unknown as { adminSelectIn: jest.Mock }
+    ).adminSelectIn = jest.fn().mockResolvedValue({
+      data: [
+        { id: 'u1', agent_code: 'A1' },
+        { id: 'u2', agent_code: 'A2' },
+      ],
+      error: null,
+    });
+
+    const result = await userRepository.findByAgentCodes('t1', ['A1', 'A2']);
+
+    expect(
+      (supabaseService as unknown as { adminSelectIn: jest.Mock }).adminSelectIn,
+    ).toHaveBeenCalledWith(
+      'users',
+      'id, agent_code',
+      'agent_code',
+      ['A1', 'A2'],
+      { tenant_id: 't1' },
+    );
+    expect(result).toEqual([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+  });
+
+  it('returns [] when given an empty agentCodes array (no DB call)', async () => {
+    const result = await userRepository.findByAgentCodes('t1', []);
+    expect(result).toEqual([]);
+  });
+
+  it('throws RepositoryError on error response', async () => {
+    (
+      supabaseService as unknown as { adminSelectIn: jest.Mock }
+    ).adminSelectIn = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'query failed' },
+    });
+
+    await expect(
+      userRepository.findByAgentCodes('t1', ['A1']),
     ).rejects.toBeInstanceOf(RepositoryError);
   });
 });

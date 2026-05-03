@@ -29,6 +29,10 @@ const EnvVars = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  EtlServiceUrl: process.env.ETL_SERVICE_URL || '',
+  InternalApiKey: process.env.INTERNAL_API_KEY || '',
+  ReportFileMaxBytes: Number(process.env.REPORT_FILE_MAX_BYTES || 10 * 1024 * 1024),
+  BackendBaseUrl: process.env.BACKEND_BASE_URL || '',
 };
 
 if (!EnvVars.SupabaseUrl.trim()) {
@@ -49,6 +53,18 @@ if (!EnvVars.FrontendResetPasswordUrl.trim()) {
   throw new Error(
     'Missing required environment variable: FRONTEND_RESET_PASSWORD_URL',
   );
+}
+
+if (!EnvVars.EtlServiceUrl.trim()) {
+  throw new Error('Missing required environment variable: ETL_SERVICE_URL');
+}
+
+if (!EnvVars.InternalApiKey.trim()) {
+  throw new Error('Missing required environment variable: INTERNAL_API_KEY');
+}
+
+if (!EnvVars.BackendBaseUrl.trim()) {
+  throw new Error('Missing required environment variable: BACKEND_BASE_URL');
 }
 
 if (

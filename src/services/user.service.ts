@@ -44,11 +44,11 @@ interface ICreateUserParams {
 class UserService {
   private async enrichWithManagedGroupIds(
     users: IUser[],
-    token: string,
   ): Promise<IUserWithManagedGroups[]> {
     try {
       const userIds = users.map((u) => u.id);
-      const managedGroupMap = await userRepository.findManagedGroupIdsByUserIds(userIds, token);
+      const managedGroupMap =
+        await userRepository.findManagedGroupIdsByUserIds(userIds);
       return users.map((user) => ({
         ...user,
         managed_group_ids: managedGroupMap.get(user.id) ?? [],
@@ -61,7 +61,7 @@ class UserService {
   async getUsers(token: string): Promise<IUserWithManagedGroups[]> {
     try {
       const users = await userRepository.findAll(token);
-      return await this.enrichWithManagedGroupIds(users, token);
+      return await this.enrichWithManagedGroupIds(users);
     } catch (error) {
       return handleServiceError('UserService.getUsers', error);
     }
@@ -71,7 +71,7 @@ class UserService {
     try {
       const user = await userRepository.findById(userId, token);
       if (!user) return null;
-      const [enriched] = await this.enrichWithManagedGroupIds([user], token);
+      const [enriched] = await this.enrichWithManagedGroupIds([user]);
       return enriched;
     } catch (error) {
       return handleServiceError('UserService.getUserById', error);

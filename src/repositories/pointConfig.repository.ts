@@ -73,6 +73,38 @@ class PointConfigRepository {
     }
   }
 
+  /**
+   * Admin variant: returns every point_configs row for a tenant + category.
+   * Used by background flows (e.g. sales-points awarding after a sales-report
+   * ingest) which run without a user JWT — manual ingests authenticate via
+   * INTERNAL_API_KEY rather than a Bearer token, so the user-scoped helpers
+   * can't be used.
+   */
+  async findByTenantAndCategoryAdmin(
+    tenantId: string,
+    category: string,
+  ): Promise<IPointConfig[]> {
+    try {
+      const response = await supabaseService.adminSelect(
+        'point_configs',
+        '*',
+        { tenant_id: tenantId, category } as Partial<PointConfigsRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as PointConfigsRow[];
+      return rows.map((row) => this.mapRowToPointConfig(row));
+    } catch (error) {
+      return handleRepositoryError(
+        'PointConfigRepository.findByTenantAndCategoryAdmin',
+        error,
+      );
+    }
+  }
+
   async findByTenantAndActivity(
     tenantId: string,
     activity: string,

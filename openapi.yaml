@@ -32,8 +32,12 @@ tags:
     description: Gamification agent points endpoints
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
+  - name: Sales Reports
+    description: Sales report ingestion, per-agent year rollups, and upload audit endpoints
   - name: Public
     description: Public endpoints that do not require authentication
+  - name: Internal
+    description: Service-to-service operations (cron, retention cleanup) authenticated via INTERNAL_API_KEY rather than user JWTs
 
 ################################################################################
 # Paths
@@ -3605,6 +3609,530 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # SALES REPORTS
+  ##############################################################################
+
+  /reports/upload:
+    post:
+      tags: [Sales Reports]
+      summary: Ingest a sales report ETL result
+      description: >
+        Persists a pre-shaped ETL result produced by the upstream ETL pipeline.
+        Creates a row in `upload_batches` for audit, then bulk-upserts a YTD
+        snapshot for the report month and MTD ACE/NOC rows for every month
+        present in `rowData`. Re-uploading the same `(tenant_id, year, month)`
+        is last-writer-wins on YTD/MTD; both batch rows are retained.
+        Manager-only (`group_leader`, `master_trainer`, or `admin`).
+        `tenant_id` and `uploaded_by` are derived from the JWT and are not
+        accepted from the request body.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadReportRequest'
+      responses:
+        '200':
+          description: >
+            Upload completed. Partial success is allowed: rows that failed
+            validation or whose `agentCode` did not resolve to a user are
+            reported in the `errors` array, while the rest are persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadReportResponse'
+        '400':
+          description: Validation failed (Zod schema mismatch or invalid ETL data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/ingest:
+    post:
+      tags: [Sales Reports]
+      summary: Manual ETL ingest (interim — INTERNAL_API_KEY auth, NOT user JWT)
+      description: >
+        Manual-mode endpoint used while the production HTTP-hosted ETL is
+        being built. The ETL author runs the local Python pipeline on their
+        laptop and POSTs the resulting `etl_result` here directly. Skips the
+        `report_jobs` lifecycle and Storage round-trip entirely; just persists
+        the same audit + YTD/MTD rows that `/reports/upload` does.
+
+        Authenticated with `Authorization: Bearer <INTERNAL_API_KEY>` (the same
+        shared secret the ETL uses for `/reports/jobs/{reference}/complete`).
+        Because there is no JWT, `tenant_id` is supplied in the request body
+        and `uploaded_by` is intentionally recorded as NULL. The
+        consecutive-month guard (409) is inherited from the shared service
+        layer.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestReportRequest'
+      responses:
+        '200':
+          description: >
+            Upload completed. Partial success is allowed: rows whose
+            `agentCode` did not resolve to a user are reported in `errors`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadReportResponse'
+        '400':
+          description: Validation failed (Zod schema mismatch or invalid ETL data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or wrong internal key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports:
+    get:
+      tags: [Sales Reports]
+      summary: Per-agent year rollup for the tenant (role-scoped)
+      description: >
+        Returns one `SalesReport` per agent for the given year. Each entry
+        combines the agent's latest YTD snapshot with monthly arrays for
+        ACE/NOC (from `sales_report_mtd`) and FYC/FYCt (from the
+        `sales_report_mtd_fyc` view, which derives MTD values from YTD via
+        `LAG()`). Tenant-scoped from the JWT.
+
+        The response is additionally filtered to the caller's permitted scope:
+
+        * `admin`, `master_trainer` — see all agents in the tenant.
+        * `trainer` — see only agents whose `users.group_id` is in the set of
+          groups the trainer manages via `group_trainers`. A trainer with
+          zero managed groups receives an empty array (200, not 403).
+        * `group_leader` — see only agents whose `users.group_id` matches the
+          caller's own `users.group_id`. A group_leader with no `group_id`
+          receives an empty array.
+        * `agent` — receives 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+      responses:
+        '200':
+          description: Array of per-agent year rollups for the tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesReportListResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller's role is not entitled to this endpoint (e.g. agent).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports/me:
+    get:
+      tags: [Sales Reports]
+      summary: Caller's own year rollup
+      description: >
+        Returns the calling user's `SalesReport` for the given year. Available
+        to any authenticated user — no role gate. Returns 404 when the user
+        has no YTD row for that year (e.g. they were not part of any upload
+        yet).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+      responses:
+        '200':
+          description: The caller's per-agent year rollup.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesReportSingleResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No sales report exists for the calling user in that year.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: No sales report for this year
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports/uploads:
+    get:
+      tags: [Sales Reports]
+      summary: Paginated audit list of past uploads
+      description: >
+        Returns past `upload_batches` rows for the tenant, sorted most-recent
+        first. Each row reports its `rows_loaded`, `rows_skipped`, derived
+        `status` (`success` | `partial` | `failed`), and the uploader's
+        display name. `uploader_name` is `null` for manual-mode uploads
+        (POST `/api/reports/ingest`) where there is no JWT to attribute.
+
+        Available to any of the four manager-tier roles (`admin`,
+        `master_trainer`, `trainer`, `group_leader`) — the audit list is
+        tenant-wide because uploads are not group-bound (every xlsx covers
+        the whole tenant). `agent` receives 403.
+
+        NOTE: Failed uploads that never created an `upload_batches` row
+        (e.g. validation rejected the payload before persistence) do not
+        appear in this list. They are visible only in error logs and
+        `report_jobs` (async path only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated audit entries with `meta` for pagination state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadAuditListResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/jobs:
+    post:
+      tags: [Sales Reports]
+      summary: Create an async report-upload job
+      description: >
+        Accepts a raw xlsx file, stores it in Supabase Storage, creates a
+        `report_jobs` row, and kicks off the external ETL service. Returns
+        immediately with a human-readable `reference` identifier
+        (`SALES-REPORT-YYYYMMDDHHMMSSsss`). Manager-only.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, reportYear, reportMonth]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The raw .xlsx file
+                reportYear:
+                  type: integer
+                  minimum: 2000
+                  maximum: 2100
+                reportMonth:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+      responses:
+        '202':
+          description: Job accepted; processing asynchronously
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      reference:
+                        type: string
+                        pattern: '^SALES-REPORT-\d{17}$'
+                        example: SALES-REPORT-20260502143022873
+        '400': { description: Missing file, invalid year/month, or file too large }
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Caller is not a manager }
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/jobs/{reference}:
+    get:
+      tags: [Sales Reports]
+      summary: Poll the status of a report-upload job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+      responses:
+        '200':
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJobResponse'
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Job belongs to another tenant or caller is not a manager }
+        '404': { description: Job not found }
+
+  /reports/jobs/{reference}/complete:
+    post:
+      tags: [Sales Reports]
+      summary: ETL callback (internal-key auth, NOT user JWT)
+      description: >
+        Called by the Python ETL service when processing finishes. Authenticated
+        with `Authorization: Bearer <INTERNAL_API_KEY>`. Triggers persistence
+        on success or marks the job failed on error.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EtlCallbackBody'
+      responses:
+        '204': { description: Callback accepted }
+        '400': { description: Validation failed }
+        '401': { description: Missing or wrong internal key }
+        '404': { description: Job not found }
+
+  /reports/jobs/{reference}/retry:
+    post:
+      tags: [Sales Reports]
+      summary: Retry a failed report job
+      description: >
+        Re-kicks the ETL using the file already in Storage. Only allowed when
+        the job is in `failed` status. Manager-only, tenant-scoped.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+      responses:
+        '202':
+          description: Retry kicked off
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      reference:
+                        type: string
+                        pattern: '^SALES-REPORT-\d{17}$'
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Caller is not a manager or job belongs to another tenant }
+        '404': { description: Job not found }
+        '409': { description: Job is not in failed status }
+
+  ##############################################################################
+  # INTERNAL
+  ##############################################################################
+
+  /internal/cleanup-old-report-files:
+    post:
+      tags: [Internal]
+      summary: Retention cleanup for raw report files (INTERNAL_API_KEY auth)
+      description: >
+        Deletes raw xlsx files in the `reports-raw` Storage bucket attached to
+        completed `report_jobs` whose `created_at` is older than 30 days, then
+        clears the `report_jobs.storage_path` for those rows so the same files
+        are not re-queued on subsequent runs. The audit row itself is retained.
+
+        Authenticated with `Authorization: Bearer <INTERNAL_API_KEY>`. Designed
+        to be invoked by an external scheduler (Vercel Cron, GitHub Actions,
+        etc.) once per day. Replaces an earlier pg_cron-based approach which
+        deleted only `storage.objects` metadata rows and orphaned the file
+        bytes — this endpoint goes through the Storage HTTP admin API which
+        actually removes the backing bytes.
+
+        The endpoint never throws on per-chunk failures. `failedCount > 0`
+        indicates a partial failure and the next run will retry the affected
+        files (they retain their `storage_path`).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cleanup completed (possibly with per-chunk failures, see response).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      deletedCount:
+                        type: integer
+                        minimum: 0
+                        description: Number of report-job files successfully removed from Storage.
+                      failedCount:
+                        type: integer
+                        minimum: 0
+                        description: Number of report-job files that failed to remove and remain queued for the next run.
+        '401': { description: Missing or wrong internal key }
+        '500':
+          description: Internal server error (unexpected — per-chunk failures are reported in the 200 body, not surfaced as 500).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -4688,3 +5216,442 @@ components:
           items:
             type: object
           example: []
+
+    ##########################################################################
+    # Sales Reports
+    ##########################################################################
+
+    EtlResultObject:
+      type: object
+      required:
+        - source
+        - created_at
+        - rows_loaded
+        - months_detected
+        - records
+      description: >
+        ETL pipeline output as produced by the upstream `dynamic_excel_etl`
+        template — the raw artifact, untouched by the caller. The intent
+        metadata `report_year` / `report_month` lives one level up on the
+        request body, not inside this object. Extra top-level fields
+        (`success`, `etl_version`, `template_name`, `upload_id`,
+        `output_excel`, `json_output`, `log_file`, `errors_found`,
+        `columns_detected`, `layout_detected`, `errors`) are accepted and
+        ignored.
+      properties:
+        source:
+          type: string
+          description: Filename or identifier of the original report.
+          example: tests/samples/Book2_ytd_and_months_uploaded.xlsx
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp the ETL pipeline produced this result. Informational only — not used to derive year/month.
+          example: '2026-04-29T16:01:33.114596+00:00'
+        rows_loaded:
+          type: integer
+          minimum: 0
+          description: Number of rows the ETL pipeline read from the source.
+          example: 67
+        months_detected:
+          type: array
+          minItems: 1
+          description: >
+            Uppercase English month names whose ACE/NOC columns are present
+            in the source. Informational only — used by the FE for
+            column-coverage display, not by the backend to derive the
+            report month.
+          items:
+            type: string
+            enum:
+              - JANUARY
+              - FEBRUARY
+              - MARCH
+              - APRIL
+              - MAY
+              - JUNE
+              - JULY
+              - AUGUST
+              - SEPTEMBER
+              - OCTOBER
+              - NOVEMBER
+              - DECEMBER
+        records:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [agentCode, rowData]
+            description: >
+              Per-agent record. Extra fields like `agentName` are accepted
+              and ignored.
+            properties:
+              agentCode:
+                type: string
+                description: The agent code from the source row; resolved server-side to a `users.id`.
+                example: T66701C
+              rowData:
+                type: object
+                description: >
+                  Open-ended bag of column-name → value pairs. Recognised
+                  numeric keys include the YTD totals (`'ACE (YTD)'`,
+                  `'NOC (YTD)'`, `'FYCT (YTD)'`, `'% FYCT (YTD)'`,
+                  `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`, `'% FYC (YTD)'`,
+                  `'MDRT SHORTAGE FYC'`) and per-month MTD pairs
+                  (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.). String keys
+                  like `'AGENT CODE'` and `'AGENT NAME'` (which the ETL
+                  may include as duplicates of the outer fields) are
+                  accepted and ignored. Missing or non-numeric values
+                  default to 0.
+                additionalProperties: true
+
+    UploadReportRequest:
+      type: object
+      required: [report_year, report_month, etlResult]
+      additionalProperties: false
+      description: >
+        Sync upload body. `report_year` / `report_month` are caller-supplied
+        intent metadata that sit alongside the raw ETL artifact rather than
+        inside it.
+      properties:
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 5
+        etlResult:
+          $ref: '#/components/schemas/EtlResultObject'
+
+    IngestReportRequest:
+      type: object
+      required: [tenant_id, report_year, report_month, etl_result]
+      additionalProperties: false
+      description: >
+        Manual-mode ingest body. Field names use snake_case to mirror the
+        ETL JSON style (the ETL author POSTs this directly from a Python
+        `requests.post(...)` call). `report_year` / `report_month` are
+        siblings of `etl_result` — admin tells the ETL author what month
+        the file covers out-of-band; the ETL itself is unaware of them.
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          description: >
+            Tenant the records belong to. Supplied to the ETL author by an
+            admin out-of-band (Slack/email) — there is no JWT to derive it
+            from in manual mode.
+          example: 00000000-0000-0000-0000-000000000001
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 5
+        etl_result:
+          $ref: '#/components/schemas/EtlResultObject'
+
+    UploadReportResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          required: [batchId, processed, skipped, errors]
+          properties:
+            batchId:
+              type: string
+              format: uuid
+              example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+            processed:
+              type: integer
+              description: Count of agent rows that were successfully persisted.
+              example: 63
+            skipped:
+              type: integer
+              description: Count of agent rows that were skipped (e.g. unmatched agentCode).
+              example: 2
+            errors:
+              type: array
+              items:
+                type: object
+                required: [agentCode, reason]
+                properties:
+                  agentCode:
+                    type: string
+                    example: T12345A
+                  reason:
+                    type: string
+                    example: User not found
+
+    SalesReport:
+      type: object
+      description: >
+        Per-agent annual sales-report rollup. Combines the latest YTD snapshot
+        of the year with monthly arrays. `id` is the `sales_report_ytd.id` of
+        the latest month for that agent. `agent_id` is the public `users.id`.
+        `imported_at` is the most recent time this YTD snapshot was written
+        or overwritten — corrective re-uploads of the same (tenant, user,
+        year, month) advance this without changing `created_at`. The four
+        `month_*` arrays are 12-element, index 0 = January, index 11 =
+        December; missing months are 0.
+      required:
+        - id
+        - agent_id
+        - agent_code
+        - agent_name
+        - year
+        - imported_at
+        - ace_ytd
+        - noc_ytd
+        - fyct_ytd
+        - fyct_pct
+        - mdrt_shortage_fyct
+        - fyc_ytd
+        - fyc_pct
+        - mdrt_shortage_fyc
+        - month_ace
+        - month_noc
+        - month_fyct
+        - month_fyc
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        agent_code:
+          type: string
+          example: T75040K
+        agent_name:
+          type: string
+          example: MELISSA ADLINA
+        year:
+          type: integer
+          example: 2026
+        imported_at:
+          type: string
+          format: date-time
+          description: >
+            Most recent time this YTD snapshot was written or overwritten.
+            Sourced from `sales_report_ytd.updated_at`; advances on every
+            corrective re-upload while `created_at` stays fixed.
+          example: 2026-04-29T16:01:33.000Z
+        ace_ytd:
+          type: number
+          example: 620000
+        noc_ytd:
+          type: integer
+          example: 18
+        fyct_ytd:
+          type: number
+          example: 295000
+        fyct_pct:
+          type: number
+          example: 0.0132
+        mdrt_shortage_fyct:
+          type: number
+          example: 393112.13
+        fyc_ytd:
+          type: number
+          example: 1222.11
+        fyc_pct:
+          type: number
+          example: 0.0092
+        mdrt_shortage_fyc:
+          type: number
+          example: 131577.89
+        month_ace:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 9118.64, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_noc:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_fyct:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 5287.87, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_fyc:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 1222.11, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    SalesReportListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalesReport'
+
+    SalesReportSingleResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/SalesReport'
+
+    UploadAuditEntry:
+      type: object
+      description: >
+        Audit row for a past upload batch. `imported_at` maps from
+        `upload_batches.created_at`. `uploader_name` is null when the upload
+        was manual-mode (no JWT).
+      required:
+        - id
+        - year
+        - month
+        - file_name
+        - rows_loaded
+        - rows_skipped
+        - status
+        - uploader_name
+        - imported_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+          example: 2026
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          example: 3
+        file_name:
+          type: string
+          example: input.xlsx
+        rows_loaded:
+          type: integer
+          example: 65
+        rows_skipped:
+          type: integer
+          example: 2
+        status:
+          type: string
+          enum: [success, partial, failed]
+          example: partial
+        uploader_name:
+          type: string
+          nullable: true
+          example: Jane Doe
+        imported_at:
+          type: string
+          format: date-time
+          example: 2026-04-29T16:01:33.000Z
+
+    UploadAuditListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadAuditEntry'
+        meta:
+          type: object
+          required: [page, pageSize, total]
+          properties:
+            page:
+              type: integer
+              example: 1
+            pageSize:
+              type: integer
+              example: 50
+            total:
+              type: integer
+              example: 12
+
+    ReportJobObject:
+      type: object
+      description: >
+        Report-job record. The `reference` field is the public-facing,
+        human-readable identifier used in URLs, ETL payloads, callbacks,
+        and polling. The internal UUID `id` is intentionally omitted from
+        external responses.
+      properties:
+        reference:
+          type: string
+          pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+        tenant_id: { type: string, format: uuid }
+        uploaded_by: { type: string, format: uuid }
+        storage_path: { type: string }
+        file_name: { type: string }
+        report_year: { type: integer }
+        report_month: { type: integer, minimum: 1, maximum: 12 }
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        result:
+          type: object
+          nullable: true
+          description: IUploadResult on success
+        error_message:
+          type: string
+          nullable: true
+        attempts: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ReportJobResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/ReportJobObject' }
+
+    EtlCallbackBody:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+        etl_result:
+          type: object
+          description: Required when status=success. Full etl_result.json shape.
+        error:
+          type: string
+          description: Required when status=failed
