@@ -8,6 +8,10 @@ import {
   InvalidEtlResultError,
   NonConsecutiveUploadError,
 } from '@src/models/errors/salesReport.errors';
+import loggingService from '@src/services/logging.service';
+import salesPointsService, {
+  IAgentResolution,
+} from '@src/services/salesPoints.service';
 import {
   IEtlResult,
   IEtlRowData,
@@ -105,6 +109,7 @@ class SalesReportService {
       const ytdRows: SalesReportYtdIns[] = [];
       const mtdRows: SalesReportMtdIns[] = [];
       const errors: IUploadResult['errors'] = [];
+      const agentResolutions: IAgentResolution[] = [];
 
       for (const record of etlResult.records) {
         const userId = userIdByCode.get(record.agentCode);
@@ -112,6 +117,7 @@ class SalesReportService {
           errors.push({ agentCode: record.agentCode, reason: 'User not found' });
           continue;
         }
+        agentResolutions.push({ user_id: userId, agent_code: record.agentCode });
 
         const r = record.rowData;
         ytdRows.push({
@@ -168,6 +174,31 @@ class SalesReportService {
         rows_skipped: skipped,
         status,
       });
+
+      // 8. Award sales-completion points based on the just-uploaded MTD data.
+      //    The points service is non-throwing by design — it logs failures
+      //    and swallows them so a points hiccup never fails the upload. We
+      //    additionally wrap the call here as a defense-in-depth guard: the
+      //    persistence above is the critical contract, points are downstream.
+      try {
+        await salesPointsService.awardForBatch(
+          {
+            ...batch,
+            rows_loaded: processed,
+            rows_skipped: skipped,
+            status,
+          },
+          agentResolutions,
+        );
+      } catch (pointsError) {
+        // Already logged by salesPointsService; swallow defensively in case a
+        // future change makes the inner method throw again.
+        loggingService.error(
+          'SalesReportService.uploadReport — points awarding step failed (swallowed)',
+          pointsError,
+          { batchId: batch.id },
+        );
+      }
 
       return {
         batchId: batch.id,

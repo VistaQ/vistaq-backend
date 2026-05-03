@@ -1,4 +1,5 @@
 import salesReportService from '@src/services/salesReport.service';
+import salesPointsService from '@src/services/salesPoints.service';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
@@ -24,6 +25,10 @@ jest.mock('@src/repositories/salesReportYtd.repository', () => ({
 jest.mock('@src/repositories/salesReportMtd.repository', () => ({
   __esModule: true,
   default: { bulkUpsert: jest.fn() },
+}));
+jest.mock('@src/services/salesPoints.service', () => ({
+  __esModule: true,
+  default: { awardForBatch: jest.fn() },
 }));
 
 const baseEtl: IEtlResult = {
@@ -228,6 +233,77 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
     expect(mtdRow.month).toBe(1);
     expect(mtdRow.ace).toBe(15);
     expect(mtdRow.noc).toBe(1);
+  });
+});
+
+describe('SalesReportService.uploadReport — points awarding hand-off', () => {
+  it('invokes salesPointsService.awardForBatch with the batch + resolved agents after persistence', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
+      id: 'batch-pts', tenant_id: 't1', uploaded_by: 'u-mgr',
+      year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
+      rows_skipped: 0, status: 'success', created_at: 'now',
+    });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+
+    await salesReportService.uploadReport({
+      etlResult: baseEtl,
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 5,
+    });
+
+    expect(salesPointsService.awardForBatch).toHaveBeenCalledTimes(1);
+    const [batchArg, resolutionsArg] = (
+      salesPointsService.awardForBatch as jest.Mock
+    ).mock.calls[0];
+
+    expect(batchArg).toMatchObject({
+      id: 'batch-pts',
+      tenant_id: 't1',
+      year: 2026,
+      month: 5,
+      rows_loaded: 2,
+      rows_skipped: 0,
+      status: 'success',
+    });
+    expect(resolutionsArg).toEqual([
+      { user_id: 'u1', agent_code: 'A1' },
+      { user_id: 'u2', agent_code: 'A2' },
+    ]);
+  });
+
+  it('does not propagate errors thrown by the points service (upload still succeeds)', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
+      id: 'batch-pts2', tenant_id: 't1', uploaded_by: 'u-mgr',
+      year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
+      rows_skipped: 0, status: 'success', created_at: 'now',
+    });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+    // The real service is non-throwing, but stub it as throwing here to prove
+    // the upload path doesn't depend on points succeeding.
+    (salesPointsService.awardForBatch as jest.Mock).mockRejectedValue(
+      new Error('points blew up'),
+    );
+
+    const result = await salesReportService.uploadReport({
+      etlResult: baseEtl,
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 5,
+    });
+
+    expect(result.batchId).toBe('batch-pts2');
+    expect(result.processed).toBe(2);
   });
 });
 
