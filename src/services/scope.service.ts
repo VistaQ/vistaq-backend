@@ -26,12 +26,6 @@ export interface IResolveScopeParams {
   userId: string;
   tenantId: string;
   role: string;
-  /**
-   * Bearer token of the calling user. Used by the trainer path so the
-   * `group_trainers` lookup runs through the RLS-context client and matches
-   * what the caller is permitted to see at the database level.
-   */
-  userToken: string;
 }
 
 /******************************************************************************
@@ -46,17 +40,14 @@ class ScopeService {
    */
   async resolveSalesReportScope(params: IResolveScopeParams): Promise<Scope> {
     try {
-      const { userId, role, userToken } = params;
+      const { userId, role } = params;
 
       if (role === 'admin' || role === 'master_trainer') {
         return { type: 'all' };
       }
 
       if (role === 'trainer') {
-        const map = await userRepository.findManagedGroupIdsByUserIds(
-          [userId],
-          userToken,
-        );
+        const map = await userRepository.findManagedGroupIdsByUserIds([userId]);
         const groupIds = map.get(userId) ?? [];
         return { type: 'group_ids', groupIds };
       }

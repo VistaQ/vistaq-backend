@@ -175,7 +175,6 @@ class SalesReportController {
         userId: req.user!.id,
         tenantId: req.user!.tenant_id,
         role: req.user!.role,
-        userToken: req.headers['authorization']!.slice(7),
       });
 
       if (scope.type === 'forbidden') {

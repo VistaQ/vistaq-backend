@@ -15,7 +15,6 @@ describe('ScopeService.resolveSalesReportScope', () => {
   const baseParams = {
     userId: 'u1',
     tenantId: 't1',
-    userToken: 'tok',
   };
 
   it('returns { type: "all" } for admin without any DB call', async () => {
@@ -53,7 +52,6 @@ describe('ScopeService.resolveSalesReportScope', () => {
     expect(out).toEqual({ type: 'group_ids', groupIds: ['g1', 'g2'] });
     expect(userRepository.findManagedGroupIdsByUserIds).toHaveBeenCalledWith(
       ['u1'],
-      'tok',
     );
   });
 
