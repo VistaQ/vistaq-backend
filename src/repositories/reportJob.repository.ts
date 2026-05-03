@@ -1,6 +1,28 @@
 import supabaseService from '@src/services/supabase.service';
-import { IReportJob, ReportJobIns, ReportJobRow } from '@src/types/reportJob.types';
+import { Database } from '@src/types/database.types';
+import {
+  IReportJob,
+  ReportJobIns,
+  ReportJobRow,
+} from '@src/types/reportJob.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { generateJobReference } from '@src/utils/generateJobReference';
+
+type Json = Database['public']['Tables']['report_jobs']['Update']['result'];
+
+/**
+ * Postgres `unique_violation` SQLSTATE — surfaced by PostgREST on the
+ * `error.code` field when an insert hits a UNIQUE constraint (e.g. two
+ * uploads in the same millisecond colliding on `report_jobs.reference`).
+ */
+const UNIQUE_VIOLATION_CODE = '23505';
+
+/**
+ * Insert payload accepted by the repository. The reference is generated
+ * inside `insertJob` so the caller doesn't have to coordinate retry tokens
+ * — see `insertJob` for the collision-retry contract.
+ */
+type ReportJobInsWithoutReference = Omit<ReportJobIns, 'reference'>;
 
 class ReportJobRepository {
   private mapRow(row: ReportJobRow): IReportJob {
@@ -23,13 +45,50 @@ class ReportJobRepository {
     };
   }
 
-  async insertJob(data: ReportJobIns): Promise<IReportJob> {
+  /**
+   * Inserts a new `report_jobs` row, generating a fresh `reference` per
+   * attempt. Two concurrent uploads in the same millisecond can collide on
+   * the `reference` UNIQUE constraint (`generateJobReference()` resolves to
+   * the millisecond); on a `23505` violation we retry exactly once with a
+   * freshly-generated reference. Two retries failing is astronomically
+   * unlikely and propagates as a regular repository error.
+   *
+   * The caller does NOT supply a reference — passing one would defeat the
+   * retry. If a `reference` field is present on `data` it is silently
+   * stripped.
+   */
+  async insertJob(data: ReportJobInsWithoutReference): Promise<IReportJob> {
     try {
-      const response = await supabaseService.adminInsert('report_jobs', data);
-      if (response.error || !response.data?.[0]) {
-        throw new Error(response.error?.message ?? 'No row returned');
+      const MAX_ATTEMPTS = 2;
+      let lastError: { message: string; code?: string } | null = null;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const reference = generateJobReference();
+        const response = await supabaseService.adminInsert('report_jobs', {
+          ...data,
+          reference,
+        });
+
+        if (!response.error && response.data?.[0]) {
+          return this.mapRow(response.data[0] as ReportJobRow);
+        }
+
+        lastError = response.error as { message: string; code?: string } | null;
+
+        // Retry only on unique_violation; any other failure is terminal.
+        if (
+          attempt < MAX_ATTEMPTS - 1 &&
+          lastError?.code === UNIQUE_VIOLATION_CODE
+        ) {
+          continue;
+        }
+
+        break;
       }
-      return this.mapRow(response.data[0] as ReportJobRow);
+
+      throw new Error(
+        lastError?.message ?? 'Reference collision could not be resolved',
+      );
     } catch (error) {
       handleRepositoryError('ReportJobRepository.insertJob', error);
     }
@@ -37,9 +96,15 @@ class ReportJobRepository {
 
   async findByReference(reference: string): Promise<IReportJob | null> {
     try {
-      const response = await supabaseService.adminSelect('report_jobs', '*', { reference });
+      const response = await supabaseService.adminSelect(
+        'report_jobs',
+        '*',
+        { reference },
+      );
       if (response.error) throw new Error(response.error.message);
-      const row = (response.data ?? [])[0] as ReportJobRow | undefined;
+      const row = (response.data ?? [])[0] as unknown as
+        | ReportJobRow
+        | undefined;
       return row ? this.mapRow(row) : null;
     } catch (error) {
       handleRepositoryError('ReportJobRepository.findByReference', error);
@@ -59,11 +124,20 @@ class ReportJobRepository {
     }
   }
 
-  async markCompleted(id: string, batchId: string, result: unknown): Promise<void> {
+  async markCompleted(
+    id: string,
+    batchId: string,
+    result: unknown,
+  ): Promise<void> {
     try {
       const response = await supabaseService.adminUpdate(
         'report_jobs',
-        { status: 'completed', batch_id: batchId, result, error_message: null },
+        {
+          status: 'completed',
+          batch_id: batchId,
+          result: result as Json,
+          error_message: null,
+        },
         { id },
       );
       if (response.error) throw new Error(response.error.message);

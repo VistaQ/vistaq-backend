@@ -75,8 +75,12 @@ describe('ReportJobService.createJob', () => {
     expect(reportJobRepository.insertJob).toHaveBeenCalledWith(expect.objectContaining({
       tenant_id: 't1', uploaded_by: 'u1', file_name: 'May.xlsx',
       report_year: 2026, report_month: 5,
-      reference: expect.stringMatching(/^SALES-REPORT-\d{17}$/),
     }));
+    // Reference is generated INSIDE the repository (so the millisecond-level
+    // collision retry stays self-contained); the service must not pre-pass one.
+    expect(
+      (reportJobRepository.insertJob as jest.Mock).mock.calls[0][0].reference,
+    ).toBeUndefined();
 
     // ETL kickoff is fire-and-forget; allow microtasks to flush
     await new Promise((resolve) => setImmediate(resolve));

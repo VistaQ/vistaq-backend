@@ -16,7 +16,6 @@ import {
 import { IEtlResult } from '@src/types/salesReport.types';
 import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { generateJobReference } from '@src/utils/generateJobReference';
 import loggingService from '@src/services/logging.service';
 
 const REPORTS_BUCKET = 'reports-raw';
@@ -57,16 +56,15 @@ class ReportJobService {
         throw new Error(`Storage upload failed: ${upload.error.message}`);
       }
 
-      // 2. Insert job row (status defaults to 'pending'). Reference is the
-      // public-facing identifier; computed fresh per call so the timestamp
-      // matches when the row was created, not when the module was loaded.
-      const reference = generateJobReference();
+      // 2. Insert job row (status defaults to 'pending'). The repository
+      // generates the public-facing `reference` and retries once on a
+      // millisecond-level UNIQUE collision (two uploads in the same
+      // millisecond from different requests).
       const job = await reportJobRepository.insertJob({
         tenant_id: params.tenantId,
         uploaded_by: params.uploadedBy,
         storage_path: storagePath,
         file_name: params.fileName,
-        reference,
         report_year: params.reportYear,
         report_month: params.reportMonth,
       });

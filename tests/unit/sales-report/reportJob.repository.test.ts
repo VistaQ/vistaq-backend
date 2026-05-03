@@ -1,5 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
 import reportJobRepository from '@src/repositories/reportJob.repository';
+import { generateJobReference } from '@src/utils/generateJobReference';
 
 jest.mock('@src/services/supabase.service', () => ({
   __esModule: true,
@@ -8,6 +9,12 @@ jest.mock('@src/services/supabase.service', () => ({
     adminUpdate: jest.fn(),
     adminSelect: jest.fn(),
   },
+}));
+
+jest.mock('@src/utils/generateJobReference', () => ({
+  __esModule: true,
+  generateJobReference: jest.fn(),
+  default: jest.fn(),
 }));
 
 beforeEach(() => jest.resetAllMocks());
@@ -22,7 +29,10 @@ const mockJobRow = {
 };
 
 describe('ReportJobRepository.insertJob', () => {
-  it('returns the inserted job row mapped to IReportJob (including reference)', async () => {
+  it('generates a reference and returns the inserted job row mapped to IReportJob', async () => {
+    (generateJobReference as jest.Mock).mockReturnValue(
+      'SALES-REPORT-20260502143022873',
+    );
     (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
       data: [mockJobRow],
       error: null,
@@ -33,7 +43,6 @@ describe('ReportJobRepository.insertJob', () => {
       uploaded_by: 'u1',
       storage_path: 'reports-raw/j1.xlsx',
       file_name: 'May.xlsx',
-      reference: 'SALES-REPORT-20260502143022873',
       report_year: 2026,
       report_month: 5,
     });
@@ -51,7 +60,73 @@ describe('ReportJobRepository.insertJob', () => {
     expect(job.status).toBe('pending');
   });
 
+  it('retries once with a fresh reference on a unique_violation (23505)', async () => {
+    (generateJobReference as jest.Mock)
+      .mockReturnValueOnce('SALES-REPORT-COLLIDE')
+      .mockReturnValueOnce('SALES-REPORT-FRESH');
+    (supabaseService.adminInsert as jest.Mock)
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'duplicate key', code: '23505' },
+      })
+      .mockResolvedValueOnce({
+        data: [{ ...mockJobRow, reference: 'SALES-REPORT-FRESH' }],
+        error: null,
+      });
+
+    const job = await reportJobRepository.insertJob({
+      tenant_id: 't1',
+      uploaded_by: 'u1',
+      storage_path: 'p',
+      file_name: 'f',
+      report_year: 2026,
+      report_month: 5,
+    });
+
+    expect(supabaseService.adminInsert).toHaveBeenCalledTimes(2);
+    // Second call uses the fresh reference, NOT the colliding one.
+    expect(
+      (supabaseService.adminInsert as jest.Mock).mock.calls[1][1].reference,
+    ).toBe('SALES-REPORT-FRESH');
+    expect(job.reference).toBe('SALES-REPORT-FRESH');
+  });
+
+  it('does not retry on non-collision errors (any other error code)', async () => {
+    (generateJobReference as jest.Mock).mockReturnValue('SALES-REPORT-X');
+    (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'fk fail', code: '23503' },
+    });
+
+    await expect(
+      reportJobRepository.insertJob({
+        tenant_id: 't1', uploaded_by: 'u1',
+        storage_path: 'p', file_name: 'f',
+        report_year: 2026, report_month: 5,
+      }),
+    ).rejects.toThrow('ReportJobRepository.insertJob failed');
+    expect(supabaseService.adminInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the original error after exhausting retries on repeated collisions', async () => {
+    (generateJobReference as jest.Mock).mockReturnValue('SALES-REPORT-X');
+    (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'duplicate key', code: '23505' },
+    });
+
+    await expect(
+      reportJobRepository.insertJob({
+        tenant_id: 't1', uploaded_by: 'u1',
+        storage_path: 'p', file_name: 'f',
+        report_year: 2026, report_month: 5,
+      }),
+    ).rejects.toThrow('ReportJobRepository.insertJob failed');
+    expect(supabaseService.adminInsert).toHaveBeenCalledTimes(2);
+  });
+
   it('throws RepositoryError on error response', async () => {
+    (generateJobReference as jest.Mock).mockReturnValue('SALES-REPORT-X');
     (supabaseService.adminInsert as jest.Mock).mockResolvedValue({
       data: null,
       error: { message: 'fk fail' },
@@ -60,7 +135,6 @@ describe('ReportJobRepository.insertJob', () => {
       reportJobRepository.insertJob({
         tenant_id: 't1', uploaded_by: 'u1',
         storage_path: 'p', file_name: 'f',
-        reference: 'SALES-REPORT-20260502143022873',
         report_year: 2026, report_month: 5,
       }),
     ).rejects.toThrow('ReportJobRepository.insertJob failed');
