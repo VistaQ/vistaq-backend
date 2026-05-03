@@ -3729,13 +3729,24 @@ paths:
   /sales-reports:
     get:
       tags: [Sales Reports]
-      summary: Per-agent year rollup for the tenant
+      summary: Per-agent year rollup for the tenant (role-scoped)
       description: >
-        Returns one `SalesReport` per agent in the tenant for the given year.
-        Each entry combines the agent's latest YTD snapshot with monthly
-        arrays for ACE/NOC (from `sales_report_mtd`) and FYC/FYCt
-        (from the `sales_report_mtd_fyc` view, which derives MTD values from
-        YTD via `LAG()`). Tenant-scoped from the JWT. Manager-only.
+        Returns one `SalesReport` per agent for the given year. Each entry
+        combines the agent's latest YTD snapshot with monthly arrays for
+        ACE/NOC (from `sales_report_mtd`) and FYC/FYCt (from the
+        `sales_report_mtd_fyc` view, which derives MTD values from YTD via
+        `LAG()`). Tenant-scoped from the JWT.
+
+        The response is additionally filtered to the caller's permitted scope:
+
+        * `admin`, `master_trainer` — see all agents in the tenant.
+        * `trainer` — see only agents whose `users.group_id` is in the set of
+          groups the trainer manages via `group_trainers`. A trainer with
+          zero managed groups receives an empty array (200, not 403).
+        * `group_leader` — see only agents whose `users.group_id` matches the
+          caller's own `users.group_id`. A group_leader with no `group_id`
+          receives an empty array.
+        * `agent` — receives 403.
       security:
         - bearerAuth: []
       parameters:
@@ -3767,7 +3778,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Caller is not a manager.
+          description: Caller's role is not entitled to this endpoint (e.g. agent).
           content:
             application/json:
               schema:
@@ -3843,6 +3854,11 @@ paths:
         `status` (`success` | `partial` | `failed`), and the uploader's
         display name. `uploader_name` is `null` for manual-mode uploads
         (POST `/api/reports/ingest`) where there is no JWT to attribute.
+
+        Available to any of the four manager-tier roles (`admin`,
+        `master_trainer`, `trainer`, `group_leader`) — the audit list is
+        tenant-wide because uploads are not group-bound (every xlsx covers
+        the whole tenant). `agent` receives 403.
 
         NOTE: Failed uploads that never created an `upload_batches` row
         (e.g. validation rejected the payload before persistence) do not
