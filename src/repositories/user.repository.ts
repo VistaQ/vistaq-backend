@@ -462,14 +462,14 @@ class UserRepository {
         inFilters.push({ column: 'group_id', values: groupIds });
       }
 
-      const { data, error } = await supabaseService.adminSelectInIn(
+      const response = await supabaseService.adminSelectInIn(
         'users',
         'id, name, agent_code',
         inFilters,
       );
 
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as {
+      if (response.error) throw new Error(response.error.message);
+      return (response.data ?? []) as unknown as {
         id: string;
         name: string;
         agent_code: string | null;

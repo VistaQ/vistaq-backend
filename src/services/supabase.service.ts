@@ -12,6 +12,19 @@ import { emitDbMetrics } from '@src/utils/sentry.metrics';
 ******************************************************************************/
 
 /**
+ * Shared response shape for the typed admin select wrappers. Mirrors the
+ * fields returned by the Supabase JS client's `PostgrestResponse`. Concrete
+ * row types are recovered at the repository layer via `as unknown as RowType[]`.
+ */
+type AdminSelectResponse = {
+  data: unknown[] | null;
+  error: { message: string } | null;
+  count: number | null;
+  status: number;
+  statusText: string;
+};
+
+/**
  * Centralised service for all Supabase database interactions.
  *
  * Repositories must never instantiate the Supabase client directly — all
@@ -1822,7 +1835,7 @@ class SupabaseService {
     column: string & keyof Database['public']['Tables'][T]['Row'],
     values: unknown[],
     filters?: Partial<Database['public']['Tables'][T]['Row']>,
-  ) {
+  ): Promise<AdminSelectResponse> {
     return this.withSpan(
       'db.query',
       'SupabaseService.adminSelectIn',
@@ -1894,7 +1907,7 @@ class SupabaseService {
     filters: Partial<Database['public']['Tables'][T]['Row']>,
     order: { column: string; ascending: boolean },
     limit?: number,
-  ) {
+  ): Promise<AdminSelectResponse> {
     return this.withSpan(
       'db.query',
       'SupabaseService.adminSelectOrdered',
@@ -1971,7 +1984,7 @@ class SupabaseService {
     filters: Partial<Database['public']['Tables'][T]['Row']>,
     order: { column: string; ascending: boolean },
     pagination: { from: number; to: number },
-  ) {
+  ): Promise<AdminSelectResponse> {
     return this.withSpan(
       'db.query',
       'SupabaseService.adminSelectPaginated',
@@ -2044,7 +2057,7 @@ class SupabaseService {
     columns: string,
     inFilters: { column: string; values: unknown[] }[],
     eqFilters?: Partial<Database['public']['Tables'][T]['Row']>,
-  ) {
+  ): Promise<AdminSelectResponse> {
     return this.withSpan(
       'db.query',
       'SupabaseService.adminSelectInIn',
@@ -2119,7 +2132,7 @@ class SupabaseService {
     table: string,
     selectString: string,
     filters: Record<string, unknown>,
-  ) {
+  ): Promise<AdminSelectResponse> {
     return this.withSpan(
       'db.query',
       'SupabaseService.adminSelectWithJoin',
@@ -2190,7 +2203,7 @@ class SupabaseService {
     selectString: string,
     inFilters: { column: string; values: unknown[] }[],
     eqFilters?: Record<string, unknown>,
-  ) {
+  ): Promise<AdminSelectResponse> {
     return this.withSpan(
       'db.query',
       'SupabaseService.adminSelectWithJoinIn',
