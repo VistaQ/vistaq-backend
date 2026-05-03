@@ -30,8 +30,10 @@ const EnvVars = {
     .map((s) => s.trim())
     .filter(Boolean),
   EtlServiceUrl: process.env.ETL_SERVICE_URL || '',
-  InternalApiKey: process.env.INTERNAL_API_KEY || '',
-  ReportFileMaxBytes: Number(process.env.REPORT_FILE_MAX_BYTES || 10 * 1024 * 1024),
+  InternalApiKey: process.env.ETL_API_KEY || '',
+  ReportFileMaxBytes: Number(
+    process.env.REPORT_FILE_MAX_BYTES || 10 * 1024 * 1024,
+  ),
   BackendBaseUrl: process.env.BACKEND_BASE_URL || '',
 };
 
@@ -60,7 +62,7 @@ if (!EnvVars.EtlServiceUrl.trim()) {
 }
 
 if (!EnvVars.InternalApiKey.trim()) {
-  throw new Error('Missing required environment variable: INTERNAL_API_KEY');
+  throw new Error('Missing required environment variable: ETL_API_KEY');
 }
 
 if (!EnvVars.BackendBaseUrl.trim()) {

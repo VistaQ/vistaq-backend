@@ -11,7 +11,7 @@ const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json'
 
 const GL_EMAIL = manifest.users.mdrt_stars_leader.email;
 const GL_PASSWORD = manifest.password;
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'dev-internal-key-rotate-me';
+const INTERNAL_KEY = process.env.ETL_API_KEY ?? 'dev-internal-key-rotate-me';
 
 let glToken: string | null = null;
 

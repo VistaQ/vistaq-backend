@@ -4,12 +4,18 @@ import { Database } from '@src/types/database.types';
                             Raw row types (Repository-only)
 ******************************************************************************/
 
-export type UploadBatchRow   = Database['public']['Tables']['upload_batches']['Row'];
-export type UploadBatchIns   = Database['public']['Tables']['upload_batches']['Insert'];
-export type SalesReportYtdRow = Database['public']['Tables']['sales_report_ytd']['Row'];
-export type SalesReportYtdIns = Database['public']['Tables']['sales_report_ytd']['Insert'];
-export type SalesReportMtdRow = Database['public']['Tables']['sales_report_mtd']['Row'];
-export type SalesReportMtdIns = Database['public']['Tables']['sales_report_mtd']['Insert'];
+export type UploadBatchRow =
+  Database['public']['Tables']['upload_batches']['Row'];
+export type UploadBatchIns =
+  Database['public']['Tables']['upload_batches']['Insert'];
+export type SalesReportYtdRow =
+  Database['public']['Tables']['sales_report_ytd']['Row'];
+export type SalesReportYtdIns =
+  Database['public']['Tables']['sales_report_ytd']['Insert'];
+export type SalesReportMtdRow =
+  Database['public']['Tables']['sales_report_mtd']['Row'];
+export type SalesReportMtdIns =
+  Database['public']['Tables']['sales_report_mtd']['Insert'];
 export type SalesReportMtdFycRow =
   Database['public']['Views']['sales_report_mtd_fyc']['Row'];
 
@@ -24,7 +30,7 @@ export interface IUploadBatch {
   tenant_id: string;
   /**
    * Nullable: manual ETL ingests (POST /api/reports/ingest) authenticate via
-   * INTERNAL_API_KEY rather than a user JWT, so there is no uploader to
+   * ETL_API_KEY rather than a user JWT, so there is no uploader to
    * attribute. Standard JWT-authenticated uploads always populate this field.
    */
   uploaded_by: string | null;
@@ -134,6 +140,16 @@ export interface IEtlResult {
 }
 
 export const MONTH_MAP: Record<string, number> = {
-  JANUARY: 1, FEBRUARY: 2, MARCH: 3, APRIL: 4, MAY: 5, JUNE: 6,
-  JULY: 7, AUGUST: 8, SEPTEMBER: 9, OCTOBER: 10, NOVEMBER: 11, DECEMBER: 12,
+  JANUARY: 1,
+  FEBRUARY: 2,
+  MARCH: 3,
+  APRIL: 4,
+  MAY: 5,
+  JUNE: 6,
+  JULY: 7,
+  AUGUST: 8,
+  SEPTEMBER: 9,
+  OCTOBER: 10,
+  NOVEMBER: 11,
+  DECEMBER: 12,
 };

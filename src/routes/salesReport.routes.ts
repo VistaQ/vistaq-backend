@@ -61,7 +61,7 @@ export const uploadReportSchema = z
 
 // Manual-mode wrapper for POST /reports/ingest. Body fields use snake_case to
 // mirror the ETL JSON style; `tenant_id` is supplied in the body because this
-// endpoint is authenticated via INTERNAL_API_KEY (no JWT to derive it from).
+// endpoint is authenticated via ETL_API_KEY (no JWT to derive it from).
 export const ingestReportSchema = z
   .object({
     // Accept any UUID-shaped string (8-4-4-4-12 hex). Zod's strict `.uuid()`
@@ -97,7 +97,7 @@ router.post(
 );
 
 // Manual-mode ingest: ETL author POSTs an etl_result directly while the
-// production HTTP-hosted ETL is being built. INTERNAL_API_KEY-authenticated,
+// production HTTP-hosted ETL is being built. ETL_API_KEY-authenticated,
 // no report_jobs row, no Storage round-trip. The async flow at /reports/jobs
 // continues to work unchanged for the JWT path.
 router.post(

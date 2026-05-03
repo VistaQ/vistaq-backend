@@ -9,7 +9,7 @@ import salesReportYtdRepository from '@src/repositories/salesReportYtd.repositor
 
   Manual-mode endpoint: while the production HTTP-hosted ETL is being built,
   the ETL author runs the pipeline locally and POSTs the result directly to
-  this endpoint. Authenticated via INTERNAL_API_KEY (no JWT, no report_jobs row).
+  this endpoint. Authenticated via ETL_API_KEY (no JWT, no report_jobs row).
 ******************************************************************************/
 
 const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json')) as {
@@ -23,7 +23,7 @@ const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json'
 };
 
 const TENANT_ID = manifest.tenantId;
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'dev-internal-key-rotate-me';
+const INTERNAL_KEY = process.env.ETL_API_KEY ?? 'dev-internal-key-rotate-me';
 
 /******************************************************************************
   Fixture builder
