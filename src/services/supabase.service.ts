@@ -1880,6 +1880,378 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // Admin Select Ordered (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table using the service role client, applies
+   * `.eq()` filters, orders by a column, and optionally limits the result.
+   * Bypasses RLS.
+   */
+  async adminSelectOrdered<T extends keyof Database['public']['Tables']>(
+    table: T,
+    columns: string,
+    filters: Partial<Database['public']['Tables'][T]['Row']>,
+    order: { column: string; ascending: boolean },
+    limit?: number,
+  ) {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectOrdered',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectOrdered called', {
+            table,
+            columns,
+            order: order.column,
+            limit,
+          });
+
+          let query = this.adminClient.from(table).select(columns);
+
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          let ordered = query.order(order.column, {
+            ascending: order.ascending,
+          });
+          if (limit !== undefined) {
+            ordered = ordered.limit(limit);
+          }
+
+          const response = await ordered;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectOrdered query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminSelectOrdered failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Admin select ordered operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Select Paginated (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table using the service role client with
+   * `.eq()` filters, ordering, and a `range(from, to)` window. Returns the
+   * total matching count via PostgREST's `count: 'exact'`. Bypasses RLS.
+   */
+  async adminSelectPaginated<T extends keyof Database['public']['Tables']>(
+    table: T,
+    columns: string,
+    filters: Partial<Database['public']['Tables'][T]['Row']>,
+    order: { column: string; ascending: boolean },
+    pagination: { from: number; to: number },
+  ) {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectPaginated',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectPaginated called', {
+            table,
+            columns,
+            from: pagination.from,
+            to: pagination.to,
+          });
+
+          let query = this.adminClient
+            .from(table)
+            .select(columns, { count: 'exact' });
+
+          for (const column of Object.keys(filters) as (string &
+            keyof typeof filters)[]) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query
+            .order(order.column, { ascending: order.ascending })
+            .range(pagination.from, pagination.to);
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectPaginated query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminSelectPaginated failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Admin select paginated operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Select InIn (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table where multiple columns each match any
+   * value in their respective list. Optional `.eq()` filters are applied as
+   * well. Bypasses RLS.
+   */
+  async adminSelectInIn<T extends keyof Database['public']['Tables']>(
+    table: T,
+    columns: string,
+    inFilters: { column: string; values: unknown[] }[],
+    eqFilters?: Partial<Database['public']['Tables'][T]['Row']>,
+  ) {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectInIn',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectInIn called', {
+            table,
+            columns,
+            inColumns: inFilters.map((f) => f.column),
+          });
+
+          let query = this.adminClient.from(table).select(columns);
+
+          if (eqFilters) {
+            for (const column of Object.keys(eqFilters) as (string &
+              keyof typeof eqFilters)[]) {
+              const value = eqFilters[column];
+              if (value !== undefined) {
+                query = query.eq(column, value as never);
+              }
+            }
+          }
+
+          for (const filter of inFilters) {
+            query = query.in(filter.column, filter.values as never[]);
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectInIn query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminSelectInIn failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Admin select-in-in operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Select With Join (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table or view using a free-form PostgREST
+   * select string (e.g. `"id, fyct, users!inner(name, agent_code)"`) with
+   * `.eq()` filters. Bypasses RLS. Use when the embedded relationship select
+   * is the only way to express the join in a single round trip, or when the
+   * source is a view (not in `Database['public']['Tables']`).
+   */
+  async adminSelectWithJoin(
+    table: string,
+    selectString: string,
+    filters: Record<string, unknown>,
+  ) {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectWithJoin',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectWithJoin called', {
+            table,
+            selectString,
+          });
+
+          // The dynamic table name forces us to bypass the typed `.from(T)`
+          // signature; `as never` is the standard escape hatch the wrapper
+          // uses elsewhere for variadic RPC names.
+          let query = this.adminClient
+            .from(table as never)
+            .select(selectString);
+
+          for (const column of Object.keys(filters)) {
+            const value = filters[column];
+            if (value !== undefined) {
+              query = query.eq(column, value as never);
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectWithJoin query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminSelectWithJoin failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Admin select with join operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Select With Join + In (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Variant of `adminSelectWithJoin` that additionally applies one or more
+   * `.in()` filters. Bypasses RLS. Used for queries against views whose row
+   * type is not in `Database['public']['Tables']`.
+   */
+  async adminSelectWithJoinIn(
+    table: string,
+    selectString: string,
+    inFilters: { column: string; values: unknown[] }[],
+    eqFilters?: Record<string, unknown>,
+  ) {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectWithJoinIn',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectWithJoinIn called', {
+            table,
+            selectString,
+            inColumns: inFilters.map((f) => f.column),
+          });
+
+          let query = this.adminClient
+            .from(table as never)
+            .select(selectString);
+
+          if (eqFilters) {
+            for (const column of Object.keys(eqFilters)) {
+              const value = eqFilters[column];
+              if (value !== undefined) {
+                query = query.eq(column, value as never);
+              }
+            }
+          }
+
+          for (const filter of inFilters) {
+            query = query.in(filter.column, filter.values as never[]);
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectWithJoinIn query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminSelectWithJoinIn failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Admin select with join+in operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Admin Delete (RLS-bypassing)
   // ---------------------------------------------------------------------------
 
