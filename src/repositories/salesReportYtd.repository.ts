@@ -140,6 +140,63 @@ class SalesReportYtdRepository {
   }
 
   /**
+   * Returns every YTD row for the given tenant + year + months, restricted to
+   * the supplied user list. Used by the sales-points awarding service to look
+   * up FYCT YTD values for both the current month and the previous month in a
+   * single query (FYCT MTD = current.fyct - previous.fyct).
+   *
+   * Returns just the columns the awarding flow needs: `user_id`, `month`,
+   * `fyct`. Empty user list short-circuits to `[]`.
+   */
+  async findFyctByTenantYearMonths(
+    tenantId: string,
+    year: number,
+    months: number[],
+    userIds: string[],
+  ): Promise<{ user_id: string; month: number; fyct: number }[]> {
+    try {
+      if (userIds.length === 0 || months.length === 0) return [];
+
+      let q = (
+        supabaseService as unknown as {
+          adminClient: { from: (t: string) => unknown };
+        }
+      ).adminClient
+        .from('sales_report_ytd');
+
+      q = (q as { select: (s: string) => unknown }).select(
+        'user_id, month, fyct',
+      );
+      q = (q as { eq: (c: string, v: unknown) => unknown }).eq(
+        'tenant_id',
+        tenantId,
+      );
+      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('year', year);
+      q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
+        'month',
+        months,
+      );
+      q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
+        'user_id',
+        userIds,
+      );
+
+      const { data, error } = (await q) as {
+        data: { user_id: string; month: number; fyct: number }[] | null;
+        error: { message: string } | null;
+      };
+
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    } catch (error) {
+      handleRepositoryError(
+        'SalesReportYtdRepository.findFyctByTenantYearMonths',
+        error,
+      );
+    }
+  }
+
+  /**
    * Returns the LATEST YTD row for a single user in the given tenant + year,
    * or null if the user has no YTD row for that year yet.
    */

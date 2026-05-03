@@ -85,6 +85,57 @@ class SalesReportMtdRepository {
   }
 
   /**
+   * Returns every MTD row for a tenant + year + month, restricted to the
+   * supplied user list. Used by the sales-points awarding service to look up
+   * each agent's MTD ACE/NOC for the just-uploaded month in a single query.
+   * Returns `[]` when `userIds` is empty.
+   */
+  async findAceNocByTenantYearMonth(
+    tenantId: string,
+    year: number,
+    month: number,
+    userIds: string[],
+  ): Promise<MtdMonthlyRow[]> {
+    try {
+      if (userIds.length === 0) return [];
+
+      let q = (
+        supabaseService as unknown as {
+          adminClient: { from: (t: string) => unknown };
+        }
+      ).adminClient
+        .from('sales_report_mtd');
+
+      q = (q as { select: (s: string) => unknown }).select(
+        'user_id, month, ace, noc',
+      );
+      q = (q as { eq: (c: string, v: unknown) => unknown }).eq(
+        'tenant_id',
+        tenantId,
+      );
+      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('year', year);
+      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('month', month);
+      q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
+        'user_id',
+        userIds,
+      );
+
+      const { data, error } = (await q) as {
+        data: MtdMonthlyRow[] | null;
+        error: { message: string } | null;
+      };
+
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    } catch (error) {
+      handleRepositoryError(
+        'SalesReportMtdRepository.findAceNocByTenantYearMonth',
+        error,
+      );
+    }
+  }
+
+  /**
    * Returns every `sales_report_mtd_fyc` view row for a tenant + year. Used to
    * populate the per-agent `month_fyc[12]` and `month_fyct[12]` arrays.
    *

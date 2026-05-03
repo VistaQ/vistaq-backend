@@ -43,6 +43,56 @@ class UploadBatchRepository {
     };
   }
 
+  /**
+   * Returns the IDs of every `upload_batches` row for the given tenant + year
+   * + month, EXCLUDING the supplied `excludeBatchId`. Used by the sales-points
+   * reversal step to find prior batches whose point_transactions need offset
+   * entries when a month is re-uploaded for corrections.
+   */
+  async findPriorBatchIdsForPeriod(
+    tenantId: string,
+    year: number,
+    month: number,
+    excludeBatchId: string,
+  ): Promise<string[]> {
+    try {
+      const { data, error } = await (
+        supabaseService as unknown as {
+          adminClient: {
+            from: (t: string) => {
+              select: (s: string) => {
+                eq: (c: string, v: unknown) => {
+                  eq: (c: string, v: unknown) => {
+                    eq: (c: string, v: unknown) => {
+                      neq: (c: string, v: unknown) => Promise<{
+                        data: { id: string }[] | null;
+                        error: { message: string } | null;
+                      }>;
+                    };
+                  };
+                };
+              };
+            };
+          };
+        }
+      ).adminClient
+        .from('upload_batches')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('year', year)
+        .eq('month', month)
+        .neq('id', excludeBatchId);
+
+      if (error) throw new Error(error.message);
+      return (data ?? []).map((r) => r.id);
+    } catch (error) {
+      handleRepositoryError(
+        'UploadBatchRepository.findPriorBatchIdsForPeriod',
+        error,
+      );
+    }
+  }
+
   async insertBatch(data: UploadBatchIns): Promise<IUploadBatch> {
     try {
       const response = await supabaseService.adminInsert('upload_batches', data);
