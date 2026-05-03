@@ -21,7 +21,11 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 ******************************************************************************/
 
 export interface IUploadReportReq extends IBaseReq {
-  body: { etlResult: IEtlResult };
+  body: {
+    report_year: number;
+    report_month: number;
+    etlResult: IEtlResult;
+  };
 }
 
 export interface IUploadReportRes extends IBaseRes {
@@ -36,7 +40,12 @@ export interface IUploadReportRes extends IBaseRes {
  * unattributed (null).
  */
 export interface IIngestReportReq extends IBaseReq {
-  body: { tenant_id: string; etl_result: IEtlResult };
+  body: {
+    tenant_id: string;
+    report_year: number;
+    report_month: number;
+    etl_result: IEtlResult;
+  };
 }
 
 export interface IIngestReportRes extends IBaseRes {
@@ -84,6 +93,8 @@ class SalesReportController {
         etlResult: req.body.etlResult,
         tenantId: req.user!.tenant_id,
         uploadedBy: req.user!.id,
+        reportYear: req.body.report_year,
+        reportMonth: req.body.report_month,
       });
 
       const responseBody: IUploadReportRes = { success: true, data: result };
@@ -111,6 +122,8 @@ class SalesReportController {
         etlResult: req.body.etl_result,
         tenantId: req.body.tenant_id,
         uploadedBy: null,
+        reportYear: req.body.report_year,
+        reportMonth: req.body.report_month,
       });
 
       const responseBody: IIngestReportRes = { success: true, data: result };

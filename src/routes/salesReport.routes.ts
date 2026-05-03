@@ -48,14 +48,15 @@ const etlResultSchema = z.object({
   created_at: z.iso.datetime({ offset: true }),
   rows_loaded: z.number().int().nonnegative(),
   months_detected: z.array(z.enum(MONTH_NAMES)).min(1),
-  report_year: z.number().int().min(2000).max(2100),
-  report_month: z.number().int().min(1).max(12),
   records: z.array(etlRecordSchema).min(1),
 });
 
-// Outer wrapper stays strict — the only valid top-level key is `etlResult`.
+// Outer wrapper carries the caller-supplied intent (year/month) alongside
+// the raw ETL artifact, so the pipeline output stays untouched.
 export const uploadReportSchema = z
   .object({
+    report_year: z.number().int().min(2000).max(2100),
+    report_month: z.number().int().min(1).max(12),
     etlResult: etlResultSchema,
   })
   .strict();
@@ -74,6 +75,8 @@ export const ingestReportSchema = z
       .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
         message: 'Invalid UUID',
       }),
+    report_year: z.number().int().min(2000).max(2100),
+    report_month: z.number().int().min(1).max(12),
     etl_result: etlResultSchema,
   })
   .strict();

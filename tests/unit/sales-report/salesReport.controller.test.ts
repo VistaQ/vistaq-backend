@@ -18,15 +18,17 @@ jest.mock('@src/services/salesReport.service', () => ({
 
 const mkReq = (role: string): IUploadReportReq => ({
   user: { id: 'u-mgr', tenant_id: 't1', role },
-  body: { etlResult: {
-    source: 's',
-    created_at: '2026-06-01T00:00:00Z',
-    rows_loaded: 0,
-    months_detected: ['MAY'],
+  body: {
     report_year: 2026,
     report_month: 5,
-    records: [{ agentCode: 'A1', rowData: {} }],
-  } },
+    etlResult: {
+      source: 's',
+      created_at: '2026-06-01T00:00:00Z',
+      rows_loaded: 0,
+      months_detected: ['MAY'],
+      records: [{ agentCode: 'A1', rowData: {} }],
+    },
+  },
 } as unknown as IUploadReportReq);
 
 const mkRes = () => {
@@ -87,13 +89,13 @@ describe('SalesReportController.upload', () => {
 const mkIngestReq = (overrides: Partial<IIngestReportReq['body']> = {}): IIngestReportReq => ({
   body: {
     tenant_id: 't1',
+    report_year: 2026,
+    report_month: 5,
     etl_result: {
       source: 's',
       created_at: '2026-06-01T00:00:00Z',
       rows_loaded: 0,
       months_detected: ['MAY'],
-      report_year: 2026,
-      report_month: 5,
       records: [{ agentCode: 'A1', rowData: {} }],
     },
     ...overrides,
@@ -111,7 +113,12 @@ describe('SalesReportController.ingest', () => {
     await salesReportController.ingest(mkIngestReq(), res, next);
 
     expect(salesReportService.uploadReport).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: 't1', uploadedBy: null }),
+      expect.objectContaining({
+        tenantId: 't1',
+        uploadedBy: null,
+        reportYear: 2026,
+        reportMonth: 5,
+      }),
     );
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({
