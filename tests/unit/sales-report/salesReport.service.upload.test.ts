@@ -31,8 +31,6 @@ const baseEtl: IEtlResult = {
   created_at: '2026-06-01T00:00:00Z',
   rows_loaded: 2,
   months_detected: ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY'],
-  report_year: 2026,
-  report_month: 5,
   records: [
     {
       agentCode: 'A1',
@@ -74,6 +72,8 @@ describe('SalesReportService.uploadReport — happy path', () => {
       etlResult: baseEtl,
       tenantId: 't1',
       uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 5,
     });
 
     expect(result.batchId).toBe('batch-1');
@@ -114,6 +114,8 @@ describe('SalesReportService.uploadReport — manual mode (null uploadedBy)', ()
       etlResult: baseEtl,
       tenantId: 't1',
       uploadedBy: null,
+      reportYear: 2026,
+      reportMonth: 5,
     });
 
     expect(result.batchId).toBe('batch-manual');
@@ -134,6 +136,7 @@ describe('SalesReportService.uploadReport — unmatched agent', () => {
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl, tenantId: 't1', uploadedBy: 'u-mgr',
+      reportYear: 2026, reportMonth: 5,
     });
 
     expect(result.processed).toBe(1);
@@ -149,6 +152,8 @@ describe('SalesReportService.uploadReport — input errors', () => {
       etlResult: { ...baseEtl, records: [] },
       tenantId: 't1',
       uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 5,
     })).rejects.toThrow(InvalidEtlResultError);
   });
 });
@@ -181,6 +186,7 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
 
     await salesReportService.uploadReport({
       etlResult: etl, tenantId: 't1', uploadedBy: 'u-mgr',
+      reportYear: 2026, reportMonth: 5,
     });
 
     const ytdRow = (salesReportYtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0][0];
@@ -200,9 +206,11 @@ describe('SalesReportService.uploadReport — consecutive-month guard', () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
 
     await expect(salesReportService.uploadReport({
-      etlResult: { ...baseEtl, report_year: 2026, report_month: 4 },
+      etlResult: baseEtl,
       tenantId: 't1',
       uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 4,
     })).rejects.toBeInstanceOf(NonConsecutiveUploadError);
 
     expect(uploadBatchRepository.insertBatch).not.toHaveBeenCalled();
@@ -217,9 +225,11 @@ describe('SalesReportService.uploadReport — consecutive-month guard', () => {
     ]);
 
     const result = await salesReportService.uploadReport({
-      etlResult: { ...baseEtl, report_year: 2026, report_month: 8 },
+      etlResult: baseEtl,
       tenantId: 't1',
       uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 8,
     });
 
     expect(result.batchId).toBe('batch-x');

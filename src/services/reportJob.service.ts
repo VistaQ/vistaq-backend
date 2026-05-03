@@ -13,6 +13,7 @@ import {
   ICreateJobParams,
   IReportJob,
 } from '@src/types/reportJob.types';
+import { IEtlResult } from '@src/types/salesReport.types';
 import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { generateJobReference } from '@src/utils/generateJobReference';
@@ -94,15 +95,15 @@ class ReportJobService {
         throw new Error('etlResult required when status=success');
       }
 
-      // Reuse the existing persistence layer; idempotent on (tenant, user, year, month)
+      // Reuse the existing persistence layer; idempotent on (tenant, user, year, month).
+      // Year/month live on the report_jobs row (captured at upload time) and are
+      // passed as siblings of etlResult — the ETL itself is unaware of them.
       const result = await salesReportService.uploadReport({
-        etlResult: {
-          ...(params.etlResult as Record<string, unknown>),
-          report_year: job.report_year,
-          report_month: job.report_month,
-        } as never,
+        etlResult: params.etlResult as IEtlResult,
         tenantId: job.tenant_id,
         uploadedBy: job.uploaded_by,
+        reportYear: job.report_year,
+        reportMonth: job.report_month,
       });
 
       await reportJobRepository.markCompleted(job.id, result.batchId, result);

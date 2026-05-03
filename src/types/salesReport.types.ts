@@ -101,10 +101,6 @@ export interface IEtlResult {
   created_at: string;
   rows_loaded: number;
   months_detected: string[];
-  /** Year the report covers (e.g. 2026). Authoritative — supplied by the caller, not derived. */
-  report_year: number;
-  /** Calendar month the report covers, 1-12. Authoritative — supplied by the caller, not derived. */
-  report_month: number;
   records: IEtlRecord[];
 }
 

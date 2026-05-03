@@ -171,11 +171,14 @@ describe('ReportJobService.completeJob — success path', () => {
       'SALES-REPORT-20260502143022873',
     );
     expect(salesReportService.uploadReport).toHaveBeenCalledWith({
-      etlResult: expect.objectContaining({
-        source: 's', records: [], report_year: 2026, report_month: 5,
-      }),
+      etlResult: expect.objectContaining({ source: 's', records: [] }),
       tenantId: 't1', uploadedBy: 'u1',
+      reportYear: 2026, reportMonth: 5,
     });
+    // Year/month must be siblings of etlResult, never nested inside it.
+    const callArg = (salesReportService.uploadReport as jest.Mock).mock.calls[0][0];
+    expect(callArg.etlResult.report_year).toBeUndefined();
+    expect(callArg.etlResult.report_month).toBeUndefined();
     expect(reportJobRepository.markCompleted).toHaveBeenCalledWith(
       'j1', 'b1',
       expect.objectContaining({ batchId: 'b1', processed: 5 }),

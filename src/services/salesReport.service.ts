@@ -27,6 +27,17 @@ interface IUploadParams {
    * Standard JWT-authenticated uploads always pass the user id.
    */
   uploadedBy: string | null;
+  /**
+   * Calendar year the report covers (e.g. 2026). Caller-supplied intent —
+   * lives as a sibling of `etlResult` so the raw ETL pipeline output stays
+   * untouched. Already validated by the route's Zod schema.
+   */
+  reportYear: number;
+  /**
+   * Calendar month the report covers, 1-12. Caller-supplied intent — see
+   * `reportYear`. Already validated by the route's Zod schema.
+   */
+  reportMonth: number;
 }
 
 // rowData values are unknown — the ETL emits numbers, strings, and nulls.
@@ -44,17 +55,16 @@ function readRowData(r: IEtlRowData, key: string): number {
 class SalesReportService {
   async uploadReport(params: IUploadParams): Promise<IUploadResult> {
     try {
-      const { etlResult, tenantId, uploadedBy } = params;
+      const { etlResult, tenantId, uploadedBy, reportYear, reportMonth } = params;
 
       // 1. Validate input
       if (!etlResult.records?.length) {
         throw new InvalidEtlResultError('etlResult.records must be non-empty');
       }
 
-      // 2. Year/month come straight from the caller — Zod has already validated
-      //    they are integers in the right ranges.
-      const reportYear = etlResult.report_year;
-      const reportMonth = etlResult.report_month;
+      // 2. Year/month come straight from the caller as separate params —
+      //    they live as siblings of etlResult, never inside it. The route's
+      //    Zod schema has already validated they are integers in range.
 
       // 2a. Defense-in-depth guard: enforce consecutive-month uploads.
       const latest = await salesReportYtdRepository.findLatestUploadedMonth(
