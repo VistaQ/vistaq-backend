@@ -7,6 +7,7 @@ import salesReportController, {
   IUploadReportReq,
 } from '@src/controllers/salesReport.controller';
 import salesReportService from '@src/services/salesReport.service';
+import scopeService from '@src/services/scope.service';
 import {
   InvalidEtlResultError,
   NonConsecutiveUploadError,
@@ -21,6 +22,12 @@ jest.mock('@src/services/salesReport.service', () => ({
     getYearReports: jest.fn(),
     getMyYearReport: jest.fn(),
     getUploadAudit: jest.fn(),
+  },
+}));
+jest.mock('@src/services/scope.service', () => ({
+  __esModule: true,
+  default: {
+    resolveSalesReportScope: jest.fn(),
   },
 }));
 
@@ -163,21 +170,25 @@ describe('SalesReportController.ingest', () => {
 
 const mkGetYearReq = (role: string): IGetYearReportsReq => ({
   user: { id: 'u-mgr', tenant_id: 't1', role },
+  headers: { authorization: 'Bearer faketoken' },
   query: { year: '2026' },
 } as unknown as IGetYearReportsReq);
 
 describe('SalesReportController.getYearReports', () => {
-  it('returns 200 with the array of reports', async () => {
+  it('returns 200 with the array of reports for admin (scope: all)', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'all',
+    });
     (salesReportService.getYearReports as jest.Mock).mockResolvedValue([
       { id: 'r1', agent_id: 'u1' },
     ]);
     const res = mkRes();
     const next = jest.fn() as NextFunction;
 
-    await salesReportController.getYearReports(mkGetYearReq('group_leader'), res, next);
+    await salesReportController.getYearReports(mkGetYearReq('admin'), res, next);
 
     expect(salesReportService.getYearReports).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026,
+      tenantId: 't1', year: 2026, scope: { type: 'all' },
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({
@@ -186,7 +197,94 @@ describe('SalesReportController.getYearReports', () => {
     });
   });
 
+  it('returns 200 with all rows for master_trainer (scope: all)', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'all',
+    });
+    (salesReportService.getYearReports as jest.Mock).mockResolvedValue([
+      { id: 'r1' }, { id: 'r2' },
+    ]);
+    const res = mkRes();
+    const next = jest.fn() as NextFunction;
+
+    await salesReportController.getYearReports(mkGetYearReq('master_trainer'), res, next);
+
+    expect(salesReportService.getYearReports).toHaveBeenCalledWith({
+      tenantId: 't1', year: 2026, scope: { type: 'all' },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+  });
+
+  it('returns 200 with empty data for trainer with no managed groups', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'group_ids', groupIds: [],
+    });
+    (salesReportService.getYearReports as jest.Mock).mockResolvedValue([]);
+    const res = mkRes();
+    const next = jest.fn() as NextFunction;
+
+    await salesReportController.getYearReports(mkGetYearReq('trainer'), res, next);
+
+    expect(salesReportService.getYearReports).toHaveBeenCalledWith({
+      tenantId: 't1', year: 2026, scope: { type: 'group_ids', groupIds: [] },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
+  });
+
+  it('returns 200 with filtered data for trainer with groups', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'group_ids', groupIds: ['g1', 'g2'],
+    });
+    (salesReportService.getYearReports as jest.Mock).mockResolvedValue([
+      { id: 'r1' },
+    ]);
+    const res = mkRes();
+    const next = jest.fn() as NextFunction;
+
+    await salesReportController.getYearReports(mkGetYearReq('trainer'), res, next);
+
+    expect(salesReportService.getYearReports).toHaveBeenCalledWith({
+      tenantId: 't1', year: 2026, scope: { type: 'group_ids', groupIds: ['g1', 'g2'] },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+  });
+
+  it('returns 200 with single-group filter for group_leader with a group', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'group_ids', groupIds: ['g-leader'],
+    });
+    (salesReportService.getYearReports as jest.Mock).mockResolvedValue([
+      { id: 'r1' },
+    ]);
+    const res = mkRes();
+    const next = jest.fn() as NextFunction;
+
+    await salesReportController.getYearReports(mkGetYearReq('group_leader'), res, next);
+
+    expect(salesReportService.getYearReports).toHaveBeenCalledWith({
+      tenantId: 't1', year: 2026, scope: { type: 'group_ids', groupIds: ['g-leader'] },
+    });
+  });
+
+  it('returns 200 + empty data for group_leader without a group', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'group_ids', groupIds: [],
+    });
+    (salesReportService.getYearReports as jest.Mock).mockResolvedValue([]);
+    const res = mkRes();
+    const next = jest.fn() as NextFunction;
+
+    await salesReportController.getYearReports(mkGetYearReq('group_leader'), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
+  });
+
   it('returns 403 for non-manager roles', async () => {
+    (scopeService.resolveSalesReportScope as jest.Mock).mockResolvedValue({
+      type: 'forbidden',
+    });
     const res = mkRes();
     const next = jest.fn() as unknown as NextFunction;
 
@@ -295,4 +393,21 @@ describe('SalesReportController.getUploadAudit', () => {
     expect(err.status).toBe(HttpStatusCodes.FORBIDDEN);
     expect(salesReportService.getUploadAudit).not.toHaveBeenCalled();
   });
+
+  it.each(['admin', 'master_trainer', 'trainer', 'group_leader'])(
+    'returns 200 for %s (audit is tenant-wide for all 4 manager-tier roles)',
+    async (role) => {
+      (salesReportService.getUploadAudit as jest.Mock).mockResolvedValue({
+        data: [],
+        meta: { page: 1, pageSize: 50, total: 0 },
+      });
+      const res = mkRes();
+      const next = jest.fn() as NextFunction;
+
+      await salesReportController.getUploadAudit(mkAuditReq(role), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+      expect(salesReportService.getUploadAudit).toHaveBeenCalled();
+    },
+  );
 });

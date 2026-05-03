@@ -7,6 +7,7 @@ import {
 } from '@src/models/errors/salesReport.errors';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import salesReportService from '@src/services/salesReport.service';
+import scopeService from '@src/services/scope.service';
 import {
   IEtlResult,
   IPaginatedUploadAudit,
@@ -85,7 +86,20 @@ export interface IGetUploadAuditRes extends IBaseRes {
                             SalesReportController
 ******************************************************************************/
 
-const ALLOWED_ROLES = ['admin', 'master_trainer', 'group_leader'];
+// Roles permitted to upload a sales report. Upload remains gated on
+// `group_leader` and the two senior manager roles — trainers have read access
+// (audit + scoped per-agent rollup) but are not entitled to publish data.
+const UPLOAD_ALLOWED_ROLES = ['admin', 'master_trainer', 'group_leader'];
+
+// Roles permitted to view the tenant-wide upload-audit list. Uploads are not
+// group-bound (every xlsx covers the whole tenant), so any of the four
+// manager-tier roles can see the audit. `agent` continues to get 403.
+const AUDIT_ALLOWED_ROLES = [
+  'admin',
+  'master_trainer',
+  'trainer',
+  'group_leader',
+];
 
 class SalesReportController {
   async upload(
@@ -94,7 +108,7 @@ class SalesReportController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      if (!ALLOWED_ROLES.includes(req.user!.role)) {
+      if (!UPLOAD_ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
@@ -157,7 +171,14 @@ class SalesReportController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      if (!ALLOWED_ROLES.includes(req.user!.role)) {
+      const scope = await scopeService.resolveSalesReportScope({
+        userId: req.user!.id,
+        tenantId: req.user!.tenant_id,
+        role: req.user!.role,
+        userToken: req.headers['authorization']!.slice(7),
+      });
+
+      if (scope.type === 'forbidden') {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
@@ -166,6 +187,7 @@ class SalesReportController {
       const data = await salesReportService.getYearReports({
         tenantId: req.user!.tenant_id,
         year,
+        scope,
       });
 
       const responseBody: IGetYearReportsRes = { success: true, data };
@@ -216,7 +238,7 @@ class SalesReportController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      if (!ALLOWED_ROLES.includes(req.user!.role)) {
+      if (!AUDIT_ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
