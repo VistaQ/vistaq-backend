@@ -5,6 +5,8 @@ jest.mock('@src/services/supabase.service', () => ({
   __esModule: true,
   default: {
     adminInsert: jest.fn(),
+    adminSelectInIn: jest.fn(),
+    adminRpc: jest.fn(),
   },
 }));
 
@@ -74,31 +76,7 @@ describe('PointTransactionRepository.bulkInsert', () => {
 describe('PointTransactionRepository.findBySubjectIds', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  /**
-   * Builds a chained-builder mock for:
-   *   from('point_transactions').select(s).eq().eq().in().in() → { data, error }
-   */
-  function stubChain(
-    response: {
-      data: unknown[] | null;
-      error: { message: string } | null;
-    },
-  ) {
-    const inMock2 = jest.fn().mockResolvedValue(response);
-    const inMock1 = jest.fn().mockReturnValue({ in: inMock2 });
-    const eqMock2 = jest.fn().mockReturnValue({ in: inMock1 });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
-
-    return { fromMock, selectMock, eqMock1, eqMock2, inMock1, inMock2 };
-  }
-
-  it('returns rows scoped to tenant + subject_ids + activities', async () => {
+  it('returns rows scoped to tenant + subject_ids + activities via adminSelectInIn', async () => {
     const rows = [
       {
         id: 'pt1',
@@ -111,7 +89,7 @@ describe('PointTransactionRepository.findBySubjectIds', () => {
         created_at: '2026-05-01T00:00:00Z',
       },
     ];
-    const { fromMock, eqMock1, eqMock2, inMock1, inMock2 } = stubChain({
+    (supabaseService.adminSelectInIn as jest.Mock).mockResolvedValue({
       data: rows,
       error: null,
     });
@@ -122,40 +100,93 @@ describe('PointTransactionRepository.findBySubjectIds', () => {
       ['sales_noc', 'sales_ace'],
     );
 
-    expect(fromMock).toHaveBeenCalledWith('point_transactions');
-    expect(eqMock1).toHaveBeenCalledWith('tenant_id', 't1');
-    expect(eqMock2).toHaveBeenCalledWith('subject_type', 'upload_batch');
-    expect(inMock1).toHaveBeenCalledWith('subject_id', ['b1']);
-    expect(inMock2).toHaveBeenCalledWith('activity', ['sales_noc', 'sales_ace']);
+    expect(supabaseService.adminSelectInIn).toHaveBeenCalledWith(
+      'point_transactions',
+      expect.stringContaining('id, tenant_id'),
+      [
+        { column: 'subject_id', values: ['b1'] },
+        { column: 'activity', values: ['sales_noc', 'sales_ace'] },
+      ],
+      { tenant_id: 't1', subject_type: 'upload_batch' },
+    );
     expect(result).toEqual(rows);
   });
 
   it('returns [] when subjectIds is empty (no DB call)', async () => {
-    const { fromMock } = stubChain({ data: [], error: null });
     const result = await pointTransactionRepository.findBySubjectIds(
       't1',
       [],
       ['sales_noc'],
     );
     expect(result).toEqual([]);
-    expect(fromMock).not.toHaveBeenCalled();
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
   });
 
   it('returns [] when activities is empty (no DB call)', async () => {
-    const { fromMock } = stubChain({ data: [], error: null });
     const result = await pointTransactionRepository.findBySubjectIds(
       't1',
       ['b1'],
       [],
     );
     expect(result).toEqual([]);
-    expect(fromMock).not.toHaveBeenCalled();
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
   });
 
   it('throws RepositoryError on error response', async () => {
-    stubChain({ data: null, error: { message: 'boom' } });
+    (supabaseService.adminSelectInIn as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'boom' },
+    });
     await expect(
       pointTransactionRepository.findBySubjectIds('t1', ['b1'], ['sales_noc']),
     ).rejects.toThrow('PointTransactionRepository.findBySubjectIds failed');
+  });
+});
+
+describe('PointTransactionRepository.awardWithReversal', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('forwards the lock-protected reversal+insert to the award_sales_points_for_batch RPC', async () => {
+    (supabaseService.adminRpc as jest.Mock).mockResolvedValue({ data: null, error: null });
+
+    await pointTransactionRepository.awardWithReversal({
+      tenantId: 't1',
+      year: 2026,
+      month: 5,
+      batchId: 'batch-new',
+      activities: ['sales_noc', 'sales_fyct', 'sales_ace'],
+      awards: [
+        { user_id: 'u1', activity: 'sales_noc', points: 120, subject_id: 'batch-new' },
+      ],
+    });
+
+    expect(supabaseService.adminRpc).toHaveBeenCalledWith(
+      'award_sales_points_for_batch',
+      {
+        p_tenant_id: 't1',
+        p_year: 2026,
+        p_month: 5,
+        p_batch_id: 'batch-new',
+        p_activities: ['sales_noc', 'sales_fyct', 'sales_ace'],
+        p_awards: [
+          { user_id: 'u1', activity: 'sales_noc', points: 120, subject_id: 'batch-new' },
+        ],
+      },
+    );
+  });
+
+  it('rethrows as RepositoryError when the RPC fails', async () => {
+    (supabaseService.adminRpc as jest.Mock).mockRejectedValue(new Error('lock timeout'));
+
+    await expect(
+      pointTransactionRepository.awardWithReversal({
+        tenantId: 't1',
+        year: 2026,
+        month: 5,
+        batchId: 'b',
+        activities: ['sales_noc'],
+        awards: [],
+      }),
+    ).rejects.toThrow('PointTransactionRepository.awardWithReversal failed');
   });
 });

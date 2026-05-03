@@ -33,6 +33,8 @@ jest.mock('@src/services/supabase.service', () => ({
     adminInsert: jest.fn(),
     adminUpdate: jest.fn(),
     adminDelete: jest.fn(),
+    adminSelectIn: jest.fn(),
+    adminSelectInIn: jest.fn(),
     userInsert: jest.fn(),
     userSelect: jest.fn(),
     userUpdate: jest.fn(),
@@ -44,6 +46,8 @@ jest.mock('@src/services/supabase.service', () => ({
     adminInsert: jest.fn(),
     adminUpdate: jest.fn(),
     adminDelete: jest.fn(),
+    adminSelectIn: jest.fn(),
+    adminSelectInIn: jest.fn(),
     userInsert: jest.fn(),
     userSelect: jest.fn(),
     userUpdate: jest.fn(),
@@ -224,26 +228,28 @@ describe('UserRepository.updateGroupIdForUsers', () => {
 describe('UserRepository.findByAgentCodes', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it('returns id+agent_code for matching agents in tenant', async () => {
-    const inMock = jest.fn().mockResolvedValue({
+  it('returns id+agent_code for matching agents via adminSelectIn', async () => {
+    (
+      supabaseService as unknown as { adminSelectIn: jest.Mock }
+    ).adminSelectIn = jest.fn().mockResolvedValue({
       data: [
         { id: 'u1', agent_code: 'A1' },
         { id: 'u2', agent_code: 'A2' },
       ],
       error: null,
     });
-    const eqMock = jest.fn().mockReturnValue({ in: inMock });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
 
     const result = await userRepository.findByAgentCodes('t1', ['A1', 'A2']);
 
-    expect(fromMock).toHaveBeenCalledWith('users');
-    expect(eqMock).toHaveBeenCalledWith('tenant_id', 't1');
-    expect(inMock).toHaveBeenCalledWith('agent_code', ['A1', 'A2']);
+    expect(
+      (supabaseService as unknown as { adminSelectIn: jest.Mock }).adminSelectIn,
+    ).toHaveBeenCalledWith(
+      'users',
+      'id, agent_code',
+      'agent_code',
+      ['A1', 'A2'],
+      { tenant_id: 't1' },
+    );
     expect(result).toEqual([
       { id: 'u1', agent_code: 'A1' },
       { id: 'u2', agent_code: 'A2' },
@@ -256,16 +262,12 @@ describe('UserRepository.findByAgentCodes', () => {
   });
 
   it('throws RepositoryError on error response', async () => {
-    const inMock = jest.fn().mockResolvedValue({
+    (
+      supabaseService as unknown as { adminSelectIn: jest.Mock }
+    ).adminSelectIn = jest.fn().mockResolvedValue({
       data: null,
       error: { message: 'query failed' },
     });
-    const eqMock = jest.fn().mockReturnValue({ in: inMock });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
 
     await expect(
       userRepository.findByAgentCodes('t1', ['A1']),

@@ -322,15 +322,20 @@ class UserRepository {
     }
   }
 
+  /**
+   * Admin-mode lookup of `group_trainers` rows for the supplied trainer ids.
+   * Returns a `trainer_id → group_ids[]` map. The caller has already been
+   * authenticated by the JWT-verifying middleware, so RLS adds no security
+   * value here; routing through the admin client keeps scope-resolution
+   * paths consistent with `findGroupIdById`.
+   */
   async findManagedGroupIdsByUserIds(
     userIds: string[],
-    userToken: string,
   ): Promise<Map<string, string[]>> {
     try {
       if (userIds.length === 0) return new Map();
 
-      const response = await supabaseService.userSelectIn(
-        userToken,
+      const response = await supabaseService.adminSelectIn(
         'group_trainers',
         'group_id,trainer_id',
         'trainer_id',
@@ -393,26 +398,16 @@ class UserRepository {
     try {
       if (agentCodes.length === 0) return [];
 
-      const { data, error } = await (
-        supabaseService as unknown as {
-          adminClient: {
-            from: (t: string) => {
-              select: (s: string) => {
-                eq: (c: string, v: unknown) => {
-                  in: (c: string, v: unknown[]) => Promise<{ data: { id: string; agent_code: string }[] | null; error: { message: string } | null }>;
-                };
-              };
-            };
-          };
-        }
-      ).adminClient
-        .from('users')
-        .select('id, agent_code')
-        .eq('tenant_id', tenantId)
-        .in('agent_code', agentCodes);
+      const { data, error } = await supabaseService.adminSelectIn(
+        'users',
+        'id, agent_code',
+        'agent_code',
+        agentCodes,
+        { tenant_id: tenantId } as Partial<UsersRow>,
+      );
 
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []) as unknown as { id: string; agent_code: string }[];
     } catch (error) {
       handleRepositoryError('UserRepository.findByAgentCodes', error);
     }
@@ -462,33 +457,23 @@ class UserRepository {
       if (userIds.length === 0) return [];
       if (groupIds !== undefined && groupIds.length === 0) return [];
 
-      let q = (
-        supabaseService as unknown as {
-          adminClient: { from: (t: string) => unknown };
-        }
-      ).adminClient
-        .from('users');
-
-      q = (q as { select: (s: string) => unknown }).select(
-        'id, name, agent_code',
-      );
-      q = (q as { in: (c: string, v: unknown[]) => unknown }).in('id', userIds);
+      const inFilters = [{ column: 'id', values: userIds }];
       if (groupIds !== undefined) {
-        q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
-          'group_id',
-          groupIds,
-        );
+        inFilters.push({ column: 'group_id', values: groupIds });
       }
 
-      const { data, error } = (await q) as {
-        data:
-          | { id: string; name: string; agent_code: string | null }[]
-          | null;
-        error: { message: string } | null;
-      };
+      const { data, error } = await supabaseService.adminSelectInIn(
+        'users',
+        'id, name, agent_code',
+        inFilters,
+      );
 
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []) as unknown as {
+        id: string;
+        name: string;
+        agent_code: string | null;
+      }[];
     } catch (error) {
       handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
     }
