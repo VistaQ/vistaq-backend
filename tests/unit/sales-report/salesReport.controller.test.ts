@@ -1,5 +1,8 @@
 import { NextFunction, Response } from 'express';
-import salesReportController, { IUploadReportReq } from '@src/controllers/salesReport.controller';
+import salesReportController, {
+  IIngestReportReq,
+  IUploadReportReq,
+} from '@src/controllers/salesReport.controller';
 import salesReportService from '@src/services/salesReport.service';
 import {
   InvalidEtlResultError,
@@ -79,4 +82,66 @@ describe('SalesReportController.upload', () => {
     expect(err.message).toMatch(/^Cannot upload 2026-04/);
   });
 
+});
+
+const mkIngestReq = (overrides: Partial<IIngestReportReq['body']> = {}): IIngestReportReq => ({
+  body: {
+    tenant_id: 't1',
+    etl_result: {
+      source: 's',
+      created_at: '2026-06-01T00:00:00Z',
+      rows_loaded: 0,
+      months_detected: ['MAY'],
+      report_year: 2026,
+      report_month: 5,
+      records: [{ agentCode: 'A1', rowData: {} }],
+    },
+    ...overrides,
+  },
+} as unknown as IIngestReportReq);
+
+describe('SalesReportController.ingest', () => {
+  it('returns 200 + result on success and forwards uploadedBy: null to the service', async () => {
+    (salesReportService.uploadReport as jest.Mock).mockResolvedValue({
+      batchId: 'b1', processed: 1, skipped: 0, errors: [],
+    });
+    const res = mkRes();
+    const next = jest.fn() as NextFunction;
+
+    await salesReportController.ingest(mkIngestReq(), res, next);
+
+    expect(salesReportService.uploadReport).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 't1', uploadedBy: null }),
+    );
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: expect.objectContaining({ batchId: 'b1' }),
+    });
+  });
+
+  it('maps InvalidEtlResultError to 400', async () => {
+    (salesReportService.uploadReport as jest.Mock).mockRejectedValue(new InvalidEtlResultError());
+    const res = mkRes();
+    const next = jest.fn() as unknown as NextFunction;
+
+    await salesReportController.ingest(mkIngestReq(), res, next);
+
+    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    expect(err.status).toBe(HttpStatusCodes.BAD_REQUEST);
+  });
+
+  it('maps NonConsecutiveUploadError to 409 Conflict', async () => {
+    (salesReportService.uploadReport as jest.Mock).mockRejectedValue(
+      new NonConsecutiveUploadError('Cannot upload 2026-04. Latest uploaded is 2026-02; next must be 3.'),
+    );
+    const res = mkRes();
+    const next = jest.fn() as unknown as NextFunction;
+
+    await salesReportController.ingest(mkIngestReq(), res, next);
+
+    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    expect(err.status).toBe(HttpStatusCodes.CONFLICT);
+    expect(err.message).toMatch(/^Cannot upload 2026-04/);
+  });
 });

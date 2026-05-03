@@ -4,9 +4,11 @@ import { z } from 'zod';
 import salesReportController, {
   IGetGroupReq,
   IGetGroupTrendReq,
+  IIngestReportReq,
   IUploadReportReq,
 } from '@src/controllers/salesReport.controller';
 import { authenticate } from '@src/middleware/auth';
+import { internalKey } from '@src/middleware/internalKey';
 import { validate } from '@src/middleware/validate';
 
 /******************************************************************************
@@ -58,6 +60,24 @@ export const uploadReportSchema = z
   })
   .strict();
 
+// Manual-mode wrapper for POST /reports/ingest. Body fields use snake_case to
+// mirror the ETL JSON style; `tenant_id` is supplied in the body because this
+// endpoint is authenticated via INTERNAL_API_KEY (no JWT to derive it from).
+export const ingestReportSchema = z
+  .object({
+    // Accept any UUID-shaped string (8-4-4-4-12 hex). Zod's strict `.uuid()`
+    // rejects the seeded fixture tenant id `00000000-0000-0000-0000-000000000001`
+    // because its version nibble is 0; this regex accepts the canonical shape
+    // and lets Postgres' uuid type do the final validation.
+    tenant_id: z
+      .string()
+      .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+        message: 'Invalid UUID',
+      }),
+    etl_result: etlResultSchema,
+  })
+  .strict();
+
 /******************************************************************************
                             Router
 ******************************************************************************/
@@ -70,6 +90,18 @@ router.post(
   validate(uploadReportSchema),
   (req, res, next) =>
     salesReportController.upload(req as unknown as IUploadReportReq, res, next),
+);
+
+// Manual-mode ingest: ETL author POSTs an etl_result directly while the
+// production HTTP-hosted ETL is being built. INTERNAL_API_KEY-authenticated,
+// no report_jobs row, no Storage round-trip. The async flow at /reports/jobs
+// continues to work unchanged for the JWT path.
+router.post(
+  '/ingest',
+  internalKey,
+  validate(ingestReportSchema),
+  (req, res, next) =>
+    salesReportController.ingest(req as unknown as IIngestReportReq, res, next),
 );
 
 router.get('/group', authenticate, (req, res, next) => {

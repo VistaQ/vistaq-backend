@@ -29,6 +29,21 @@ export interface IUploadReportRes extends IBaseRes {
   data: IUploadResult;
 }
 
+/**
+ * Manual-mode ingest from the local ETL script. Body fields use snake_case to
+ * mirror the ETL JSON style. Authenticated by INTERNAL_API_KEY (no JWT), so
+ * `tenant_id` is supplied in the body and `uploaded_by` is intentionally
+ * unattributed (null).
+ */
+export interface IIngestReportReq extends IBaseReq {
+  body: { tenant_id: string; etl_result: IEtlResult };
+}
+
+export interface IIngestReportRes extends IBaseRes {
+  success: boolean;
+  data: IUploadResult;
+}
+
 export interface IGetGroupReq extends IBaseReq {
   query: { year: string; month: string };
 }
@@ -83,6 +98,33 @@ class SalesReportController {
         return;
       }
       return handleControllerError('SalesReportController.upload', error, next);
+    }
+  }
+
+  async ingest(
+    req: IIngestReportReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const result = await salesReportService.uploadReport({
+        etlResult: req.body.etl_result,
+        tenantId: req.body.tenant_id,
+        uploadedBy: null,
+      });
+
+      const responseBody: IIngestReportRes = { success: true, data: result };
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof InvalidEtlResultError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+      if (error instanceof NonConsecutiveUploadError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
+        return;
+      }
+      return handleControllerError('SalesReportController.ingest', error, next);
     }
   }
 
