@@ -2,8 +2,6 @@ import express from 'express';
 import { z } from 'zod';
 
 import salesReportController, {
-  IGetGroupReq,
-  IGetGroupTrendReq,
   IIngestReportReq,
   IUploadReportReq,
 } from '@src/controllers/salesReport.controller';
@@ -106,52 +104,5 @@ router.post(
   (req, res, next) =>
     salesReportController.ingest(req as unknown as IIngestReportReq, res, next),
 );
-
-router.get('/group', authenticate, (req, res, next) => {
-  // Lightweight inline query validation: year/month must parse as integers in valid ranges
-  const year = Number(req.query.year);
-  const month = Number(req.query.month);
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    res
-      .status(400)
-      .json({
-        message: 'Validation failed',
-        errors: [{ path: ['year'], message: 'Invalid year' }],
-      });
-    return;
-  }
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    res
-      .status(400)
-      .json({
-        message: 'Validation failed',
-        errors: [{ path: ['month'], message: 'Invalid month' }],
-      });
-    return;
-  }
-  return salesReportController.getGroup(
-    req as unknown as IGetGroupReq,
-    res,
-    next,
-  );
-});
-
-router.get('/group/trend', authenticate, (req, res, next) => {
-  const year = Number(req.query.year);
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    res
-      .status(400)
-      .json({
-        message: 'Validation failed',
-        errors: [{ path: ['year'], message: 'Invalid year' }],
-      });
-    return;
-  }
-  return salesReportController.getGroupTrend(
-    req as unknown as IGetGroupTrendReq,
-    res,
-    next,
-  );
-});
 
 export default router;

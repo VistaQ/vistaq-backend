@@ -1,5 +1,7 @@
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
-import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
+import salesReportYtdRepository, {
+  YtdRollupRow,
+} from '@src/repositories/salesReportYtd.repository';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
 import {
@@ -9,12 +11,13 @@ import {
 import {
   IEtlResult,
   IEtlRowData,
-  IGroupReport,
-  IGroupTrendPoint,
+  IPaginatedUploadAudit,
+  ISalesReport,
   IUploadResult,
   MONTH_MAP,
   SalesReportMtdIns,
   SalesReportYtdIns,
+  UploadStatus,
 } from '@src/types/salesReport.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -148,14 +151,24 @@ class SalesReportService {
         salesReportMtdRepository.bulkUpsert(mtdRows),
       ]);
 
-      // 7. Update rows_loaded with the actual processed count
+      // 7. Update batch summary with the actual processed/skipped counts and
+      //    a derived status: every-row-failed → 'failed', mixed → 'partial',
+      //    clean → 'success'.
       const processed = ytdRows.length;
-      await uploadBatchRepository.updateRowsLoaded(batch.id, processed);
+      const skipped = errors.length;
+      const status: UploadStatus =
+        processed === 0 ? 'failed' : skipped > 0 ? 'partial' : 'success';
+
+      await uploadBatchRepository.updateBatchSummary(batch.id, {
+        rows_loaded: processed,
+        rows_skipped: skipped,
+        status,
+      });
 
       return {
         batchId: batch.id,
         processed,
-        skipped: errors.length,
+        skipped,
         errors,
       };
     } catch (error) {
@@ -169,51 +182,162 @@ class SalesReportService {
     }
   }
 
-  async getGroupSummary(p: {
+  /**
+   * Manager-only: returns one `ISalesReport` per agent in the tenant for the
+   * given year. Each entry combines the agent's latest YTD snapshot with
+   * monthly arrays for ACE/NOC (from `sales_report_mtd`) and FYC/FYCt
+   * (from the `sales_report_mtd_fyc` view).
+   *
+   * Implementation: 4 flat indexed queries (latest YTD per user, all MTD rows,
+   * all MTD-FYC view rows, users for the matched ids), then assembly in JS.
+   */
+  async getYearReports(p: {
     tenantId: string;
     year: number;
-    month: number;
-  }): Promise<IGroupReport> {
+  }): Promise<ISalesReport[]> {
     try {
-      const agents = await salesReportYtdRepository.findByTenantYearMonthWithUser(
-        p.tenantId,
-        p.year,
-        p.month,
+      const ytdRows =
+        await salesReportYtdRepository.findLatestYtdPerUserByTenantYear(
+          p.tenantId,
+          p.year,
+        );
+
+      if (ytdRows.length === 0) return [];
+
+      const userIds = ytdRows.map((r) => r.user_id);
+
+      const [mtdRows, fycRows, users] = await Promise.all([
+        salesReportMtdRepository.findAceNocByTenantYear(p.tenantId, p.year),
+        salesReportMtdRepository.findFycByTenantYear(p.tenantId, p.year),
+        userRepository.findIdNameAgentCodeByIds(userIds),
+      ]);
+
+      const userById = new Map(users.map((u) => [u.id, u]));
+
+      return ytdRows.map((ytd) =>
+        this.assembleSalesReport(ytd, p.year, mtdRows, fycRows, userById),
       );
-
-      const sorted = [...agents].sort((a, b) => b.fyc - a.fyc);
-
-      const agentCount = sorted.length;
-      const sum = (k: keyof typeof sorted[number]) =>
-        sorted.reduce((acc, a) => acc + Number(a[k] as number), 0);
-
-      const fyct_ytd = sum('fyct');
-      const fyc_ytd = sum('fyc');
-      const ace_ytd = sum('ace');
-      const noc_ytd = sum('noc');
-      const fyc_pct_avg = agentCount > 0 ? sum('fyc_pct') / agentCount : 0;
-      // fyct_pct is not currently selected — defaulting to 0 until we surface it.
-      const fyct_pct_avg = 0;
-      const noc_per_agent = agentCount > 0 ? noc_ytd / agentCount : 0;
-
-      return {
-        summary: {
-          fyct_ytd, fyc_ytd, ace_ytd, noc_ytd,
-          fyc_pct_avg, fyct_pct_avg, agent_count: agentCount, noc_per_agent,
-        },
-        agents: sorted,
-      };
     } catch (error) {
-      return handleServiceError('SalesReportService.getGroupSummary', error);
+      return handleServiceError('SalesReportService.getYearReports', error);
     }
   }
 
-  async getGroupTrend(p: { tenantId: string; year: number }): Promise<IGroupTrendPoint[]> {
+  /**
+   * Returns the calling user's own `ISalesReport` for the year, or null when
+   * the user has no YTD row yet (controller maps null → 404).
+   */
+  async getMyYearReport(p: {
+    tenantId: string;
+    userId: string;
+    year: number;
+  }): Promise<ISalesReport | null> {
     try {
-      return await salesReportMtdRepository.aggregateTrendByYear(p.tenantId, p.year);
+      const ytd = await salesReportYtdRepository.findLatestYtdForUserYear(
+        p.tenantId,
+        p.userId,
+        p.year,
+      );
+      if (!ytd) return null;
+
+      const [mtdRows, fycRows, users] = await Promise.all([
+        salesReportMtdRepository.findAceNocByTenantYear(p.tenantId, p.year, [
+          p.userId,
+        ]),
+        salesReportMtdRepository.findFycByTenantYear(p.tenantId, p.year, [
+          p.userId,
+        ]),
+        userRepository.findIdNameAgentCodeByIds([p.userId]),
+      ]);
+
+      const userById = new Map(users.map((u) => [u.id, u]));
+      return this.assembleSalesReport(ytd, p.year, mtdRows, fycRows, userById);
     } catch (error) {
-      return handleServiceError('SalesReportService.getGroupTrend', error);
+      return handleServiceError('SalesReportService.getMyYearReport', error);
     }
+  }
+
+  /**
+   * Manager-only: paginated audit list of upload batches for a tenant + year,
+   * sorted most-recent-first.
+   */
+  async getUploadAudit(p: {
+    tenantId: string;
+    year: number;
+    page: number;
+    pageSize: number;
+  }): Promise<IPaginatedUploadAudit> {
+    try {
+      return await uploadBatchRepository.findPaginatedAuditByTenant(
+        p.tenantId,
+        p.year,
+        p.page,
+        p.pageSize,
+      );
+    } catch (error) {
+      return handleServiceError('SalesReportService.getUploadAudit', error);
+    }
+  }
+
+  /**
+   * Builds a single `ISalesReport` by combining a YTD snapshot with monthly
+   * MTD arrays. Pulled out for reuse between the list and /me endpoints.
+   */
+  private assembleSalesReport(
+    ytd: YtdRollupRow,
+    year: number,
+    mtdRows: { user_id: string; month: number; ace: number; noc: number }[],
+    fycRows: {
+      user_id: string;
+      month: number;
+      fyc_mtd: number;
+      fyct_mtd: number;
+    }[],
+    userById: Map<
+      string,
+      { id: string; name: string; agent_code: string | null }
+    >,
+  ): ISalesReport {
+    const monthAce = new Array<number>(12).fill(0);
+    const monthNoc = new Array<number>(12).fill(0);
+    const monthFyc = new Array<number>(12).fill(0);
+    const monthFyct = new Array<number>(12).fill(0);
+
+    for (const row of mtdRows) {
+      if (row.user_id !== ytd.user_id) continue;
+      if (row.month < 1 || row.month > 12) continue;
+      monthAce[row.month - 1] = Number(row.ace);
+      monthNoc[row.month - 1] = Number(row.noc);
+    }
+
+    for (const row of fycRows) {
+      if (row.user_id !== ytd.user_id) continue;
+      if (row.month < 1 || row.month > 12) continue;
+      monthFyc[row.month - 1] = Number(row.fyc_mtd);
+      monthFyct[row.month - 1] = Number(row.fyct_mtd);
+    }
+
+    const user = userById.get(ytd.user_id);
+
+    return {
+      id: ytd.id,
+      agent_id: ytd.user_id,
+      agent_code: user?.agent_code ?? '',
+      agent_name: user?.name ?? '',
+      year,
+      imported_at: ytd.created_at,
+      ace_ytd: Number(ytd.ace),
+      noc_ytd: Number(ytd.noc),
+      fyct_ytd: Number(ytd.fyct),
+      fyct_pct: Number(ytd.fyct_pct),
+      mdrt_shortage_fyct: Number(ytd.mdrt_shortage_fyct),
+      fyc_ytd: Number(ytd.fyc),
+      fyc_pct: Number(ytd.fyc_pct),
+      mdrt_shortage_fyc: Number(ytd.mdrt_shortage_fyc),
+      month_ace: monthAce,
+      month_noc: monthNoc,
+      month_fyct: monthFyct,
+      month_fyc: monthFyc,
+    };
   }
 }
 

@@ -11,7 +11,7 @@ import {
 
 jest.mock('@src/repositories/uploadBatch.repository', () => ({
   __esModule: true,
-  default: { insertBatch: jest.fn(), updateRowsLoaded: jest.fn() },
+  default: { insertBatch: jest.fn(), updateBatchSummary: jest.fn() },
 }));
 jest.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
@@ -93,7 +93,11 @@ describe('SalesReportService.uploadReport — happy path', () => {
     // A1 has JANUARY + MAY MTD; A2 has none → total = 2
     expect(mtdRows).toHaveLength(2);
 
-    expect(uploadBatchRepository.updateRowsLoaded).toHaveBeenCalledWith('batch-1', 2);
+    expect(uploadBatchRepository.updateBatchSummary).toHaveBeenCalledWith('batch-1', {
+      rows_loaded: 2,
+      rows_skipped: 0,
+      status: 'success',
+    });
   });
 });
 
@@ -142,7 +146,33 @@ describe('SalesReportService.uploadReport — unmatched agent', () => {
     expect(result.processed).toBe(1);
     expect(result.skipped).toBe(1);
     expect(result.errors).toEqual([{ agentCode: 'A2', reason: 'User not found' }]);
-    expect(uploadBatchRepository.updateRowsLoaded).toHaveBeenCalledWith('batch-1', 1);
+    expect(uploadBatchRepository.updateBatchSummary).toHaveBeenCalledWith('batch-1', {
+      rows_loaded: 1,
+      rows_skipped: 1,
+      status: 'partial',
+    });
+  });
+});
+
+describe('SalesReportService.uploadReport — failed (no rows match any user)', () => {
+  it('marks the batch as failed when zero rows are processed', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-fail' });
+    // No matched users at all → every record becomes a skip → processed = 0.
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([]);
+
+    const result = await salesReportService.uploadReport({
+      etlResult: baseEtl, tenantId: 't1', uploadedBy: 'u-mgr',
+      reportYear: 2026, reportMonth: 5,
+    });
+
+    expect(result.processed).toBe(0);
+    expect(result.skipped).toBe(2);
+    expect(uploadBatchRepository.updateBatchSummary).toHaveBeenCalledWith('batch-fail', {
+      rows_loaded: 0,
+      rows_skipped: 2,
+      status: 'failed',
+    });
   });
 });
 

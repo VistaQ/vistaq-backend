@@ -9,8 +9,8 @@ import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import salesReportService from '@src/services/salesReport.service';
 import {
   IEtlResult,
-  IGroupReport,
-  IGroupTrendPoint,
+  IPaginatedUploadAudit,
+  ISalesReport,
   IUploadResult,
 } from '@src/types/salesReport.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
@@ -53,22 +53,32 @@ export interface IIngestReportRes extends IBaseRes {
   data: IUploadResult;
 }
 
-export interface IGetGroupReq extends IBaseReq {
-  query: { year: string; month: string };
-}
-
-export interface IGetGroupRes extends IBaseRes {
-  success: boolean;
-  data: IGroupReport;
-}
-
-export interface IGetGroupTrendReq extends IBaseReq {
+export interface IGetYearReportsReq extends IBaseReq {
   query: { year: string };
 }
 
-export interface IGetGroupTrendRes extends IBaseRes {
+export interface IGetYearReportsRes extends IBaseRes {
   success: boolean;
-  data: IGroupTrendPoint[];
+  data: ISalesReport[];
+}
+
+export interface IGetMyYearReportReq extends IBaseReq {
+  query: { year: string };
+}
+
+export interface IGetMyYearReportRes extends IBaseRes {
+  success: boolean;
+  data: ISalesReport;
+}
+
+export interface IGetUploadAuditReq extends IBaseReq {
+  query: { year: string; page?: string; pageSize?: string };
+}
+
+export interface IGetUploadAuditRes extends IBaseRes {
+  success: boolean;
+  data: IPaginatedUploadAudit['data'];
+  meta: IPaginatedUploadAudit['meta'];
 }
 
 /******************************************************************************
@@ -141,8 +151,8 @@ class SalesReportController {
     }
   }
 
-  async getGroup(
-    req: IGetGroupReq,
+  async getYearReports(
+    req: IGetYearReportsReq,
     res: Response,
     next: NextFunction,
   ): Promise<void> {
@@ -153,26 +163,55 @@ class SalesReportController {
       }
 
       const year = Number(req.query.year);
-      const month = Number(req.query.month);
-      const data = await salesReportService.getGroupSummary({
+      const data = await salesReportService.getYearReports({
         tenantId: req.user!.tenant_id,
         year,
-        month,
       });
 
-      const responseBody: IGetGroupRes = { success: true, data };
+      const responseBody: IGetYearReportsRes = { success: true, data };
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError(
-        'SalesReportController.getGroup',
+        'SalesReportController.getYearReports',
         error,
         next,
       );
     }
   }
 
-  async getGroupTrend(
-    req: IGetGroupTrendReq,
+  async getMyYearReport(
+    req: IGetMyYearReportReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const year = Number(req.query.year);
+      const data = await salesReportService.getMyYearReport({
+        tenantId: req.user!.tenant_id,
+        userId: req.user!.id,
+        year,
+      });
+
+      if (!data) {
+        res
+          .status(HttpStatusCodes.NOT_FOUND)
+          .json({ message: 'No sales report for this year' });
+        return;
+      }
+
+      const responseBody: IGetMyYearReportRes = { success: true, data };
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError(
+        'SalesReportController.getMyYearReport',
+        error,
+        next,
+      );
+    }
+  }
+
+  async getUploadAudit(
+    req: IGetUploadAuditReq,
     res: Response,
     next: NextFunction,
   ): Promise<void> {
@@ -183,16 +222,26 @@ class SalesReportController {
       }
 
       const year = Number(req.query.year);
-      const data = await salesReportService.getGroupTrend({
+      const page = req.query.page !== undefined ? Number(req.query.page) : 1;
+      const pageSize =
+        req.query.pageSize !== undefined ? Number(req.query.pageSize) : 50;
+
+      const result = await salesReportService.getUploadAudit({
         tenantId: req.user!.tenant_id,
         year,
+        page,
+        pageSize,
       });
 
-      const responseBody: IGetGroupTrendRes = { success: true, data };
+      const responseBody: IGetUploadAuditRes = {
+        success: true,
+        data: result.data,
+        meta: result.meta,
+      };
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError(
-        'SalesReportController.getGroupTrend',
+        'SalesReportController.getUploadAudit',
         error,
         next,
       );

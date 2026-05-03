@@ -2,13 +2,12 @@ import path from 'path';
 import request from 'supertest';
 
 import app from '@src/app';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 
 /******************************************************************************
-  Integration — GET /api/reports/group
+  Integration — GET /api/sales-reports?year=
 ******************************************************************************/
 
-// Credentials are sourced from the seed manifest written by scripts/bootstrap.js.
-// Run `npx supabase db reset && node scripts/bootstrap.js` to regenerate.
 const manifest = require(path.join(__dirname, '../../scripts/seed-manifest.json')) as {
   tenantSlug: string;
   password: string;
@@ -22,12 +21,7 @@ const TENANT_SLUG = manifest.tenantSlug;
 const GL_EMAIL = manifest.users.mdrt_stars_leader.email;
 const GL_PASSWORD = manifest.password;
 
-/** JWT obtained in beforeAll */
 let glToken: string | null = null;
-
-/******************************************************************************
-  Fixture builder — mirrors salesReport.upload.test.ts
-******************************************************************************/
 
 const fixtureEtl = (agentCodes: string[]) => ({
   source: 'IntegrationTest.xlsx',
@@ -51,10 +45,6 @@ const fixtureEtl = (agentCodes: string[]) => ({
   })),
 });
 
-/******************************************************************************
-  beforeAll — log in and seed data so group report has rows
-******************************************************************************/
-
 beforeAll(async () => {
   const loginRes = await request(app)
     .post('/api/auth/login')
@@ -65,69 +55,74 @@ beforeAll(async () => {
     glToken = loginRes.body.data.token as string;
   }
 
-  // Upload seed data so the group report has rows to return.
-  // AG009 and AG010 are seeded agents in the demo-agency tenant with year 2026 / month 5 (MAY).
   if (glToken) {
+    // Force the consecutive-month guard to pass regardless of DB state.
+    const spy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(null);
     await request(app)
       .post('/api/reports/upload')
       .set('Authorization', `Bearer ${glToken}`)
-      .send({ etlResult: fixtureEtl(['AG009', 'AG010']) });
+      .send({
+        report_year: 2026,
+        report_month: 5,
+        etlResult: fixtureEtl(['AG009', 'AG010']),
+      });
+    spy.mockRestore();
   }
 }, 30000);
 
-/******************************************************************************
-  Happy path
-******************************************************************************/
-
-describe('GET /api/reports/group — happy path', () => {
-  it('returns 200 with summary + agents sorted by fyc DESC', async () => {
+describe('GET /api/sales-reports — happy path', () => {
+  it('returns 200 with an array of SalesReport objects shaped for the FE', async () => {
     if (!glToken) throw new Error('Could not log in as group_leader; check seed data');
 
     const res = await request(app)
-      .get('/api/reports/group?year=2026&month=5')
+      .get('/api/sales-reports?year=2026')
       .set('Authorization', `Bearer ${glToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveProperty('summary');
-    expect(res.body.data).toHaveProperty('agents');
+    expect(Array.isArray(res.body.data)).toBe(true);
 
-    // Verify sort order: agents must be ordered by fyc descending
-    const agents = res.body.data.agents as { fyc: number }[];
-    for (let i = 1; i < agents.length; i++) {
-      expect(agents[i - 1].fyc).toBeGreaterThanOrEqual(agents[i].fyc);
+    if (res.body.data.length > 0) {
+      const r = res.body.data[0];
+      expect(r).toHaveProperty('id');
+      expect(r).toHaveProperty('agent_id');
+      expect(r).toHaveProperty('agent_code');
+      expect(r).toHaveProperty('agent_name');
+      expect(r).toHaveProperty('year', 2026);
+      expect(r).toHaveProperty('imported_at');
+      expect(Array.isArray(r.month_ace)).toBe(true);
+      expect(r.month_ace).toHaveLength(12);
+      expect(Array.isArray(r.month_noc)).toBe(true);
+      expect(r.month_noc).toHaveLength(12);
+      expect(Array.isArray(r.month_fyc)).toBe(true);
+      expect(r.month_fyc).toHaveLength(12);
+      expect(Array.isArray(r.month_fyct)).toBe(true);
+      expect(r.month_fyct).toHaveLength(12);
     }
   });
 });
 
-/******************************************************************************
-  Guards
-******************************************************************************/
-
-describe('GET /api/reports/group — guards', () => {
+describe('GET /api/sales-reports — guards', () => {
   it('returns 401 without Authorization header', async () => {
-    const res = await request(app).get('/api/reports/group?year=2026&month=5');
-
+    const res = await request(app).get('/api/sales-reports?year=2026');
     expect(res.status).toBe(401);
   });
 
   it('returns 400 when year is missing', async () => {
     if (!glToken) throw new Error('Could not log in as group_leader');
-
     const res = await request(app)
-      .get('/api/reports/group?month=5')
+      .get('/api/sales-reports')
       .set('Authorization', `Bearer ${glToken}`);
-
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when month is out of range', async () => {
+  it('returns 400 when year is out of range', async () => {
     if (!glToken) throw new Error('Could not log in as group_leader');
-
     const res = await request(app)
-      .get('/api/reports/group?year=2026&month=13')
+      .get('/api/sales-reports?year=1999')
       .set('Authorization', `Bearer ${glToken}`);
-
     expect(res.status).toBe(400);
   });
 });
