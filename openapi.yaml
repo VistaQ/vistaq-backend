@@ -36,6 +36,8 @@ tags:
     description: Sales report ingestion, per-agent year rollups, and upload audit endpoints
   - name: Public
     description: Public endpoints that do not require authentication
+  - name: Internal
+    description: Service-to-service operations (cron, retention cleanup) authenticated via INTERNAL_API_KEY rather than user JWTs
 
 ################################################################################
 # Paths
@@ -4076,6 +4078,60 @@ paths:
         '403': { description: Caller is not a manager or job belongs to another tenant }
         '404': { description: Job not found }
         '409': { description: Job is not in failed status }
+
+  ##############################################################################
+  # INTERNAL
+  ##############################################################################
+
+  /internal/cleanup-old-report-files:
+    post:
+      tags: [Internal]
+      summary: Retention cleanup for raw report files (INTERNAL_API_KEY auth)
+      description: >
+        Deletes raw xlsx files in the `reports-raw` Storage bucket attached to
+        completed `report_jobs` whose `created_at` is older than 30 days, then
+        clears the `report_jobs.storage_path` for those rows so the same files
+        are not re-queued on subsequent runs. The audit row itself is retained.
+
+        Authenticated with `Authorization: Bearer <INTERNAL_API_KEY>`. Designed
+        to be invoked by an external scheduler (Vercel Cron, GitHub Actions,
+        etc.) once per day. Replaces an earlier pg_cron-based approach which
+        deleted only `storage.objects` metadata rows and orphaned the file
+        bytes — this endpoint goes through the Storage HTTP admin API which
+        actually removes the backing bytes.
+
+        The endpoint never throws on per-chunk failures. `failedCount > 0`
+        indicates a partial failure and the next run will retry the affected
+        files (they retain their `storage_path`).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cleanup completed (possibly with per-chunk failures, see response).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      deletedCount:
+                        type: integer
+                        minimum: 0
+                        description: Number of report-job files successfully removed from Storage.
+                      failedCount:
+                        type: integer
+                        minimum: 0
+                        description: Number of report-job files that failed to remove and remain queued for the next run.
+        '401': { description: Missing or wrong internal key }
+        '500':
+          description: Internal server error (unexpected — per-chunk failures are reported in the 200 body, not surfaced as 500).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 ################################################################################
 # Components

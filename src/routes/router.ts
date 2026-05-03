@@ -8,6 +8,7 @@ import dashboardRoutes from '@src/routes/dashboard.routes';
 import leaderboardRoutes from '@src/routes/leaderboard.routes';
 import eventRoutes from '@src/routes/event.routes';
 import groupRoutes from '@src/routes/group.routes';
+import internalRoutes from '@src/routes/internal.routes';
 import pointActivityTypeRoutes from '@src/routes/pointActivityType.routes';
 import pointConfigRoutes from '@src/routes/pointConfig.routes';
 import prospectRoutes from '@src/routes/prospect.routes';
@@ -39,5 +40,6 @@ router.use('/agent-points', agentPointsRoutes);
 router.use('/sales-reports', salesReportReadRoutes);
 router.use('/reports/jobs', reportJobRoutes);
 router.use('/reports', salesReportRoutes);
+router.use('/internal', internalRoutes);
 
 export default router;
