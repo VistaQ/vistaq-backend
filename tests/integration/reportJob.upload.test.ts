@@ -109,7 +109,7 @@ describe('POST /api/reports/jobs — guards', () => {
   });
 });
 
-describe('POST /api/reports/jobs — consecutive-month guard', () => {
+describe('POST /api/reports/jobs — skip-ahead guard', () => {
   let latestSpy: jest.SpyInstance;
 
   beforeAll(() => {
@@ -122,7 +122,7 @@ describe('POST /api/reports/jobs — consecutive-month guard', () => {
     latestSpy.mockRestore();
   });
 
-  it('returns 409 when reportMonth is non-consecutive', async () => {
+  it('returns 409 when reportMonth skips ahead', async () => {
     if (!glToken) throw new Error('login failed');
     if (!fs.existsSync(sampleXlsx)) throw new Error('sample_report.xlsx not present');
 
@@ -135,5 +135,104 @@ describe('POST /api/reports/jobs — consecutive-month guard', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/^Cannot upload 2026-04/);
+    expect(res.body.message).toMatch(/cannot skip ahead/);
+    expect(res.body.message).toMatch(/next allowed is 2026-03/);
+  });
+});
+
+describe('POST /api/reports/jobs — re-upload corrections allowed', () => {
+  let latestSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    // Pretend month=5 is the latest already uploaded; re-uploading month=5
+    // (correction) and month=2 (historical correction) must both be accepted.
+    latestSpy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(5);
+  });
+
+  afterAll(() => {
+    latestSpy.mockRestore();
+  });
+
+  it('accepts re-upload of the latest month with 202', async () => {
+    if (!glToken) throw new Error('login failed');
+    if (!fs.existsSync(sampleXlsx)) throw new Error('sample_report.xlsx not present');
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(
+      (input: string | Request | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+            ? input.href
+            : input.url;
+        if (url.includes('localhost:8000')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ accepted: true }),
+            text: async () => JSON.stringify({ accepted: true }),
+          } as Response);
+        }
+        return originalFetch(input, init);
+      },
+    ) as never;
+
+    try {
+      const res = await request(app)
+        .post('/api/reports/jobs')
+        .set('Authorization', `Bearer ${glToken}`)
+        .field('reportYear', '2026')
+        .field('reportMonth', '5')
+        .attach('file', sampleXlsx);
+
+      expect(res.status).toBe(202);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.reference).toMatch(/^SALES-REPORT-\d{17}$/);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('accepts re-upload of an earlier month with 202 (historical correction)', async () => {
+    if (!glToken) throw new Error('login failed');
+    if (!fs.existsSync(sampleXlsx)) throw new Error('sample_report.xlsx not present');
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(
+      (input: string | Request | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+            ? input.href
+            : input.url;
+        if (url.includes('localhost:8000')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ accepted: true }),
+            text: async () => JSON.stringify({ accepted: true }),
+          } as Response);
+        }
+        return originalFetch(input, init);
+      },
+    ) as never;
+
+    try {
+      const res = await request(app)
+        .post('/api/reports/jobs')
+        .set('Authorization', `Bearer ${glToken}`)
+        .field('reportYear', '2026')
+        .field('reportMonth', '2')
+        .attach('file', sampleXlsx);
+
+      expect(res.status).toBe(202);
+      expect(res.body.success).toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

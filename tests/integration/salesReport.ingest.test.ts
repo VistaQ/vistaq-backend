@@ -207,7 +207,7 @@ describe('POST /api/reports/ingest — happy path', () => {
   Consecutive-month guard
 ******************************************************************************/
 
-describe('POST /api/reports/ingest — consecutive-month guard', () => {
+describe('POST /api/reports/ingest — skip-ahead guard', () => {
   let latestSpy: jest.SpyInstance;
 
   beforeAll(() => {
@@ -220,7 +220,7 @@ describe('POST /api/reports/ingest — consecutive-month guard', () => {
     latestSpy.mockRestore();
   });
 
-  it('returns 409 when reportMonth is non-consecutive', async () => {
+  it('returns 409 when reportMonth skips ahead', async () => {
     const res = await request(app)
       .post('/api/reports/ingest')
       .set('Authorization', `Bearer ${INTERNAL_KEY}`)
@@ -233,5 +233,62 @@ describe('POST /api/reports/ingest — consecutive-month guard', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/^Cannot upload 2026-04/);
+    expect(res.body.message).toMatch(/cannot skip ahead/);
+    expect(res.body.message).toMatch(/next allowed is 2026-03/);
+  });
+});
+
+/******************************************************************************
+  Re-upload corrections — must succeed
+******************************************************************************/
+
+describe('POST /api/reports/ingest — re-upload corrections allowed', () => {
+  let latestSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    // Pretend month=5 is the latest already uploaded.
+    latestSpy = jest
+      .spyOn(salesReportYtdRepository, 'findLatestUploadedMonth')
+      .mockResolvedValue(5);
+  });
+
+  afterAll(() => {
+    latestSpy.mockRestore();
+  });
+
+  it('accepts re-upload of the latest month with 200 (data correction)', async () => {
+    const seededAgentCodes = ['AG009', 'AG010'];
+    const res = await request(app)
+      .post('/api/reports/ingest')
+      .set('Authorization', `Bearer ${INTERNAL_KEY}`)
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 5,
+        etl_result: fixtureEtl(seededAgentCodes),
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.batchId).toEqual(expect.any(String));
+    expect(res.body.data.processed).toBe(seededAgentCodes.length);
+  });
+
+  it('accepts re-upload of an earlier month with 200 (historical correction)', async () => {
+    const seededAgentCodes = ['AG009', 'AG010'];
+    const res = await request(app)
+      .post('/api/reports/ingest')
+      .set('Authorization', `Bearer ${INTERNAL_KEY}`)
+      .send({
+        tenant_id: TENANT_ID,
+        report_year: 2026,
+        report_month: 2,
+        etl_result: fixtureEtl(seededAgentCodes),
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.batchId).toEqual(expect.any(String));
+    expect(res.body.data.processed).toBe(seededAgentCodes.length);
   });
 });

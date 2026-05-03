@@ -105,7 +105,7 @@ describe('ReportJobService.createJob', () => {
     expect(job.id).toBe('j1');
   });
 
-  it('rejects non-consecutive month with NonConsecutiveUploadError', async () => {
+  it('rejects skip-ahead month with NonConsecutiveUploadError', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
 
     await expect(
@@ -118,6 +118,54 @@ describe('ReportJobService.createJob', () => {
 
     expect(supabaseService.uploadToStorage).not.toHaveBeenCalled();
     expect(reportJobRepository.insertJob).not.toHaveBeenCalled();
+  });
+
+  it('skip-ahead error message names the next allowed month and permits earlier months', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
+
+    await expect(
+      reportJobService.createJob({
+        tenantId: 't1', uploadedBy: 'u1',
+        fileBuffer: Buffer.from('x'), fileName: 'Apr.xlsx',
+        reportYear: 2026, reportMonth: 4,
+      }),
+    ).rejects.toThrow(
+      'Cannot upload 2026-04. Latest uploaded is 2026-02; cannot skip ahead — next allowed is 2026-03 or any earlier month.',
+    );
+  });
+
+  it('accepts re-upload of the latest month (data correction)', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(5);
+    (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
+    (reportJobRepository.insertJob as jest.Mock).mockResolvedValue(fakeJob);
+    (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
+    (etlService.kickoff as jest.Mock).mockResolvedValue(undefined);
+
+    const job = await reportJobService.createJob({
+      tenantId: 't1', uploadedBy: 'u1',
+      fileBuffer: Buffer.from('x'), fileName: 'May.xlsx',
+      reportYear: 2026, reportMonth: 5,
+    });
+
+    expect(job.id).toBe('j1');
+    expect(reportJobRepository.insertJob).toHaveBeenCalled();
+  });
+
+  it('accepts re-upload of a past month (historical correction)', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(5);
+    (supabaseService.uploadToStorage as jest.Mock).mockResolvedValue({ data: { path: 'p' }, error: null });
+    (reportJobRepository.insertJob as jest.Mock).mockResolvedValue({ ...fakeJob, report_month: 2 });
+    (supabaseService.createSignedDownloadUrl as jest.Mock).mockResolvedValue('https://signed/');
+    (etlService.kickoff as jest.Mock).mockResolvedValue(undefined);
+
+    const job = await reportJobService.createJob({
+      tenantId: 't1', uploadedBy: 'u1',
+      fileBuffer: Buffer.from('x'), fileName: 'Feb.xlsx',
+      reportYear: 2026, reportMonth: 2,
+    });
+
+    expect(job.id).toBe('j1');
+    expect(reportJobRepository.insertJob).toHaveBeenCalled();
   });
 
   it('accepts the next consecutive month', async () => {

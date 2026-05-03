@@ -231,8 +231,8 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
   });
 });
 
-describe('SalesReportService.uploadReport — consecutive-month guard', () => {
-  it('rejects non-consecutive month with NonConsecutiveUploadError', async () => {
+describe('SalesReportService.uploadReport — skip-ahead guard', () => {
+  it('rejects skip-ahead month with NonConsecutiveUploadError', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
 
     await expect(salesReportService.uploadReport({
@@ -244,6 +244,60 @@ describe('SalesReportService.uploadReport — consecutive-month guard', () => {
     })).rejects.toBeInstanceOf(NonConsecutiveUploadError);
 
     expect(uploadBatchRepository.insertBatch).not.toHaveBeenCalled();
+  });
+
+  it('skip-ahead error message names the next allowed month and permits earlier months', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(2);
+
+    await expect(salesReportService.uploadReport({
+      etlResult: baseEtl,
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 4,
+    })).rejects.toThrow(
+      'Cannot upload 2026-04. Latest uploaded is 2026-02; cannot skip ahead — next allowed is 2026-03 or any earlier month.',
+    );
+  });
+
+  it('accepts re-upload of the latest month (data correction)', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(5);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-redo' });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+
+    const result = await salesReportService.uploadReport({
+      etlResult: baseEtl,
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 5,
+    });
+
+    expect(result.batchId).toBe('batch-redo');
+    expect(uploadBatchRepository.insertBatch).toHaveBeenCalled();
+  });
+
+  it('accepts re-upload of a past month (historical correction)', async () => {
+    (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(5);
+    (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({ id: 'batch-past' });
+    (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([
+      { id: 'u1', agent_code: 'A1' },
+      { id: 'u2', agent_code: 'A2' },
+    ]);
+
+    const result = await salesReportService.uploadReport({
+      etlResult: baseEtl,
+      tenantId: 't1',
+      uploadedBy: 'u-mgr',
+      reportYear: 2026,
+      reportMonth: 2,
+    });
+
+    expect(result.batchId).toBe('batch-past');
+    expect(uploadBatchRepository.insertBatch).toHaveBeenCalled();
   });
 
   it('accepts when no prior YTD row exists', async () => {
