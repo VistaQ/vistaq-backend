@@ -906,6 +906,8 @@ export type Database = {
           id: string
           month: number
           rows_loaded: number
+          rows_skipped: number
+          status: string
           tenant_id: string
           uploaded_by: string | null
           year: number
@@ -916,6 +918,8 @@ export type Database = {
           id?: string
           month: number
           rows_loaded?: number
+          rows_skipped?: number
+          status?: string
           tenant_id: string
           uploaded_by?: string | null
           year: number
@@ -926,6 +930,8 @@ export type Database = {
           id?: string
           month?: number
           rows_loaded?: number
+          rows_skipped?: number
+          status?: string
           tenant_id?: string
           uploaded_by?: string | null
           year?: number
