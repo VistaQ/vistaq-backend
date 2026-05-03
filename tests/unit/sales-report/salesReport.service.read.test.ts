@@ -49,7 +49,7 @@ describe('SalesReportService.getYearReports', () => {
       { id: 'u1', name: 'MELISSA ADLINA', agent_code: 'T75040K' },
     ]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026 });
+    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
 
     expect(out).toHaveLength(1);
     const r = out[0];
@@ -70,13 +70,63 @@ describe('SalesReportService.getYearReports', () => {
   it('returns empty array when no agents have YTD rows for the year', async () => {
     (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026 });
+    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
 
     expect(out).toEqual([]);
     // Other repos must not be called when there are no users to decorate.
     expect(salesReportMtdRepository.findAceNocByTenantYear).not.toHaveBeenCalled();
     expect(salesReportMtdRepository.findFycByTenantYear).not.toHaveBeenCalled();
     expect(userRepository.findIdNameAgentCodeByIds).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits to [] without DB calls when scope.groupIds is empty', async () => {
+    const out = await salesReportService.getYearReports({
+      tenantId: 't1',
+      year: 2026,
+      scope: { type: 'group_ids', groupIds: [] },
+    });
+
+    expect(out).toEqual([]);
+    expect(salesReportYtdRepository.findLatestYtdPerUserByTenantYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findAceNocByTenantYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findFycByTenantYear).not.toHaveBeenCalled();
+    expect(userRepository.findIdNameAgentCodeByIds).not.toHaveBeenCalled();
+  });
+
+  it('passes groupIds through to userRepository and drops out-of-scope YTD rows', async () => {
+    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+      {
+        id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
+        ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+        created_at: '2026-04-29T16:01:33.000Z',
+      },
+      {
+        id: 'ytd-u2', user_id: 'u2', year: 2026, month: 3,
+        ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+        created_at: '2026-04-29T16:01:33.000Z',
+      },
+    ]);
+    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    // Only u1 matches the supplied groupIds — u2 is filtered out at the user query.
+    (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
+      { id: 'u1', name: 'Alice', agent_code: 'A1' },
+    ]);
+
+    const out = await salesReportService.getYearReports({
+      tenantId: 't1',
+      year: 2026,
+      scope: { type: 'group_ids', groupIds: ['g1', 'g2'] },
+    });
+
+    expect(userRepository.findIdNameAgentCodeByIds).toHaveBeenCalledWith(
+      ['u1', 'u2'],
+      ['g1', 'g2'],
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].agent_id).toBe('u1');
   });
 
   it('falls back to empty agent_name/agent_code when the user row is missing', async () => {
@@ -92,7 +142,7 @@ describe('SalesReportService.getYearReports', () => {
     (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026 });
+    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
 
     expect(out[0].agent_name).toBe('');
     expect(out[0].agent_code).toBe('');

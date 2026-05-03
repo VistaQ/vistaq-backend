@@ -12,6 +12,7 @@ import loggingService from '@src/services/logging.service';
 import salesPointsService, {
   IAgentResolution,
 } from '@src/services/salesPoints.service';
+import { Scope } from '@src/services/scope.service';
 import {
   IEtlResult,
   IEtlRowData,
@@ -225,12 +226,26 @@ class SalesReportService {
    *
    * Implementation: 4 flat indexed queries (latest YTD per user, all MTD rows,
    * all MTD-FYC view rows, users for the matched ids), then assembly in JS.
+   *
+   * The `scope` parameter applies role-based filtering:
+   * - `{ type: 'all' }` — no extra filter (admin / master_trainer)
+   * - `{ type: 'group_ids', groupIds: [] }` — short-circuits to `[]`
+   * - `{ type: 'group_ids', groupIds: [...] }` — restricts the result to
+   *   agents whose `users.group_id` is in the supplied list. Agents that
+   *   don't survive the filter are dropped from the assembled result.
    */
   async getYearReports(p: {
     tenantId: string;
     year: number;
+    scope: Scope;
   }): Promise<ISalesReport[]> {
     try {
+      // Empty group_ids scope means caller has no permitted agents — short
+      // circuit before any DB call.
+      if (p.scope.type === 'group_ids' && p.scope.groupIds.length === 0) {
+        return [];
+      }
+
       const ytdRows =
         await salesReportYtdRepository.findLatestYtdPerUserByTenantYear(
           p.tenantId,
@@ -240,16 +255,25 @@ class SalesReportService {
       if (ytdRows.length === 0) return [];
 
       const userIds = ytdRows.map((r) => r.user_id);
+      const groupIds =
+        p.scope.type === 'group_ids' ? p.scope.groupIds : undefined;
 
       const [mtdRows, fycRows, users] = await Promise.all([
         salesReportMtdRepository.findAceNocByTenantYear(p.tenantId, p.year),
         salesReportMtdRepository.findFycByTenantYear(p.tenantId, p.year),
-        userRepository.findIdNameAgentCodeByIds(userIds),
+        userRepository.findIdNameAgentCodeByIds(userIds, groupIds),
       ]);
 
       const userById = new Map(users.map((u) => [u.id, u]));
 
-      return ytdRows.map((ytd) =>
+      // When a group filter is in effect, drop YTD rows for users that didn't
+      // survive the user query — they fall outside the caller's scope.
+      const visibleYtdRows =
+        groupIds === undefined
+          ? ytdRows
+          : ytdRows.filter((r) => userById.has(r.user_id));
+
+      return visibleYtdRows.map((ytd) =>
         this.assembleSalesReport(ytd, p.year, mtdRows, fycRows, userById),
       );
     } catch (error) {
