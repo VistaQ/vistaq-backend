@@ -1819,15 +1819,19 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
-  // Admin Delete (RLS-bypassing)
+  // Admin Select In (RLS-bypassing)
   // ---------------------------------------------------------------------------
 
   /**
-   * Deletes rows from the given table that match the provided filters using the service role
-   * client, bypassing RLS.
+   * Fetches rows from the given table where `column` matches any value in
+   * `values` using the service role client, bypassing RLS. Optionally narrows
+   * further with `.eq()` filters.
    *
-   * @param table   - The table to delete from.
-   * @param filters - Key/value pairs used to identify rows to delete.
+   * @param table   - The table to select from.
+   * @param columns - The columns to return (defaults to '*').
+   * @param column  - The column to filter on with `IN`.
+   * @param values  - The list of values to match against `column`.
+   * @param filters - Optional key/value pairs applied as additional `.eq()` filters.
    */
   async adminSelectIn<T extends keyof Database['public']['Tables']>(
     table: T,
@@ -1885,6 +1889,87 @@ class SupabaseService {
           });
           throw new SupabaseServiceError(
             'Admin select in operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin Select Less Than (RLS-bypassing)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches rows from the given table where `column < value` using the
+   * service role client, bypassing RLS. Optionally narrows further with
+   * `.eq()` filters. Useful for retention-style queries (e.g. records
+   * older than a cutoff timestamp).
+   *
+   * @param table   - The table to select from.
+   * @param columns - The columns to return (defaults to '*').
+   * @param column  - The column to apply the `<` comparison to.
+   * @param value   - The upper-bound value (exclusive).
+   * @param filters - Optional key/value pairs applied as additional `.eq()` filters.
+   */
+  async adminSelectLessThan<T extends keyof Database['public']['Tables']>(
+    table: T,
+    columns = '*',
+    column: string & keyof Database['public']['Tables'][T]['Row'],
+    value: unknown,
+    filters?: Partial<Database['public']['Tables'][T]['Row']>,
+  ): Promise<AdminSelectResponse> {
+    return this.withSpan(
+      'db.query',
+      'SupabaseService.adminSelectLessThan',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'select',
+        'db.collection.name': table as string,
+        'db.client_type': 'admin',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.adminSelectLessThan called', {
+            table,
+            columns,
+            column,
+          });
+
+          let query = this.adminClient
+            .from(table)
+            .select(columns)
+            .lt(column, value as never);
+
+          if (filters) {
+            for (const filterColumn of Object.keys(filters) as (string &
+              keyof typeof filters)[]) {
+              const filterValue = filters[filterColumn];
+              if (filterValue !== undefined) {
+                query = query.eq(filterColumn, filterValue as never);
+              }
+            }
+          }
+
+          const response = await query;
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.adminSelectLessThan query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error(
+            'SupabaseService.adminSelectLessThan failed',
+            error,
+            { table },
+          );
+          throw new SupabaseServiceError(
+            'Admin select less-than operation failed in SupabaseService',
             error,
           );
         }
