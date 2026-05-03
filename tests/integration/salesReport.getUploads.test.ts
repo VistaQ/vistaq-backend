@@ -21,9 +21,11 @@ const TENANT_SLUG = manifest.tenantSlug;
 const PASSWORD = manifest.password;
 const GL_EMAIL = manifest.users.mdrt_stars_leader.email;
 const AGENT_EMAIL = manifest.users.mdrt_stars_agent.email;
+const TRAINER_EMAIL = manifest.users.mdrt_stars_trainer.email;
 
 let glToken: string | null = null;
 let agentToken: string | null = null;
+let trainerToken: string | null = null;
 
 const fixtureEtl = (agentCodes: string[]) => ({
   source: 'AuditTest.xlsx',
@@ -56,6 +58,14 @@ beforeAll(async () => {
     .send({ email: AGENT_EMAIL, password: PASSWORD });
   if (agentLogin.status === 200 && agentLogin.body?.data?.token) {
     agentToken = agentLogin.body.data.token as string;
+  }
+
+  const trainerLogin = await request(app)
+    .post('/api/auth/login')
+    .set('X-Tenant-Slug', TENANT_SLUG)
+    .send({ email: TRAINER_EMAIL, password: PASSWORD });
+  if (trainerLogin.status === 200 && trainerLogin.body?.data?.token) {
+    trainerToken = trainerLogin.body.data.token as string;
   }
 
   // Seed at least one upload row so the audit list is non-empty.
@@ -131,6 +141,16 @@ describe('GET /api/sales-reports/uploads — guards', () => {
       .get('/api/sales-reports/uploads?year=2026')
       .set('Authorization', `Bearer ${agentToken}`);
     expect(res.status).toBe(403);
+  });
+
+  it('returns 200 when caller is a trainer (audit list is tenant-wide for managers)', async () => {
+    if (!trainerToken) throw new Error('Could not log in as trainer');
+    const res = await request(app)
+      .get('/api/sales-reports/uploads?year=2026')
+      .set('Authorization', `Bearer ${trainerToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
   });
 
   it('returns 400 when year is missing', async () => {
