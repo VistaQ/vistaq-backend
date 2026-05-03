@@ -1,6 +1,9 @@
 import supabaseService from '@src/services/supabase.service';
 import { SalesReportYtdIns } from '@src/types/salesReport.types';
+import { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+
+type SalesReportYtdRow = Database['public']['Tables']['sales_report_ytd']['Row'];
 
 /**
  * Subset of `sales_report_ytd` columns the read API needs. Repo-local; the
@@ -20,10 +23,18 @@ export interface YtdRollupRow {
   fyc_pct: number;
   mdrt_shortage_fyc: number;
   created_at: string;
+  /**
+   * Most recent time this YTD snapshot row was written or overwritten.
+   * Re-uploads of the same (tenant, user, year, month) advance this via the
+   * `set_updated_at` trigger while preserving `created_at`. The read API
+   * surfaces this as `imported_at` so callers see when the snapshot last
+   * changed, not when it was first imported.
+   */
+  updated_at: string;
 }
 
 const ROLLUP_COLUMNS =
-  'id, user_id, year, month, ace, noc, fyct, fyct_pct, mdrt_shortage_fyct, fyc, fyc_pct, mdrt_shortage_fyc, created_at';
+  'id, user_id, year, month, ace, noc, fyct, fyct_pct, mdrt_shortage_fyct, fyc, fyc_pct, mdrt_shortage_fyc, created_at, updated_at';
 
 class SalesReportYtdRepository {
   async bulkUpsert(rows: SalesReportYtdIns[]): Promise<void> {
@@ -45,37 +56,16 @@ class SalesReportYtdRepository {
     year: number,
   ): Promise<number | null> {
     try {
-      // Direct adminClient call because the wrapper's `adminSelect` doesn't
-      // expose order/limit chaining.
-      const { data, error } = await (
-        supabaseService as unknown as {
-          adminClient: {
-            from: (t: string) => {
-              select: (s: string) => {
-                eq: (c: string, v: unknown) => {
-                  eq: (c: string, v: unknown) => {
-                    order: (c: string, opts: { ascending: boolean }) => {
-                      limit: (n: number) => Promise<{
-                        data: { month: number }[] | null;
-                        error: { message: string } | null;
-                      }>;
-                    };
-                  };
-                };
-              };
-            };
-          };
-        }
-      ).adminClient
-        .from('sales_report_ytd')
-        .select('month')
-        .eq('tenant_id', tenantId)
-        .eq('year', year)
-        .order('month', { ascending: false })
-        .limit(1);
+      const { data, error } = await supabaseService.adminSelectOrdered(
+        'sales_report_ytd',
+        'month',
+        { tenant_id: tenantId, year } as Partial<SalesReportYtdRow>,
+        { column: 'month', ascending: false },
+        1,
+      );
 
       if (error) throw new Error(error.message);
-      const rows = data ?? [];
+      const rows = (data ?? []) as unknown as { month: number }[];
       if (rows.length === 0) return null;
       return rows[0].month;
     } catch (error) {
@@ -97,34 +87,17 @@ class SalesReportYtdRepository {
     year: number,
   ): Promise<YtdRollupRow[]> {
     try {
-      const { data, error } = await (
-        supabaseService as unknown as {
-          adminClient: {
-            from: (t: string) => {
-              select: (s: string) => {
-                eq: (c: string, v: unknown) => {
-                  eq: (
-                    c: string,
-                    v: unknown,
-                  ) => Promise<{
-                    data: YtdRollupRow[] | null;
-                    error: { message: string } | null;
-                  }>;
-                };
-              };
-            };
-          };
-        }
-      ).adminClient
-        .from('sales_report_ytd')
-        .select(ROLLUP_COLUMNS)
-        .eq('tenant_id', tenantId)
-        .eq('year', year);
+      const { data, error } = await supabaseService.adminSelect(
+        'sales_report_ytd',
+        ROLLUP_COLUMNS,
+        { tenant_id: tenantId, year } as Partial<SalesReportYtdRow>,
+      );
 
       if (error) throw new Error(error.message);
 
+      const rows = (data ?? []) as unknown as YtdRollupRow[];
       const latestByUser = new Map<string, YtdRollupRow>();
-      for (const row of data ?? []) {
+      for (const row of rows) {
         const existing = latestByUser.get(row.user_id);
         if (!existing || row.month > existing.month) {
           latestByUser.set(row.user_id, row);
@@ -157,37 +130,22 @@ class SalesReportYtdRepository {
     try {
       if (userIds.length === 0 || months.length === 0) return [];
 
-      let q = (
-        supabaseService as unknown as {
-          adminClient: { from: (t: string) => unknown };
-        }
-      ).adminClient
-        .from('sales_report_ytd');
-
-      q = (q as { select: (s: string) => unknown }).select(
+      const { data, error } = await supabaseService.adminSelectInIn(
+        'sales_report_ytd',
         'user_id, month, fyct',
+        [
+          { column: 'month', values: months },
+          { column: 'user_id', values: userIds },
+        ],
+        { tenant_id: tenantId, year } as Partial<SalesReportYtdRow>,
       );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq(
-        'tenant_id',
-        tenantId,
-      );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('year', year);
-      q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
-        'month',
-        months,
-      );
-      q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
-        'user_id',
-        userIds,
-      );
-
-      const { data, error } = (await q) as {
-        data: { user_id: string; month: number; fyct: number }[] | null;
-        error: { message: string } | null;
-      };
 
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []) as unknown as {
+        user_id: string;
+        month: number;
+        fyct: number;
+      }[];
     } catch (error) {
       handleRepositoryError(
         'SalesReportYtdRepository.findFyctByTenantYearMonths',
@@ -206,38 +164,16 @@ class SalesReportYtdRepository {
     year: number,
   ): Promise<YtdRollupRow | null> {
     try {
-      const { data, error } = await (
-        supabaseService as unknown as {
-          adminClient: {
-            from: (t: string) => {
-              select: (s: string) => {
-                eq: (c: string, v: unknown) => {
-                  eq: (c: string, v: unknown) => {
-                    eq: (c: string, v: unknown) => {
-                      order: (c: string, opts: { ascending: boolean }) => {
-                        limit: (n: number) => Promise<{
-                          data: YtdRollupRow[] | null;
-                          error: { message: string } | null;
-                        }>;
-                      };
-                    };
-                  };
-                };
-              };
-            };
-          };
-        }
-      ).adminClient
-        .from('sales_report_ytd')
-        .select(ROLLUP_COLUMNS)
-        .eq('tenant_id', tenantId)
-        .eq('user_id', userId)
-        .eq('year', year)
-        .order('month', { ascending: false })
-        .limit(1);
+      const { data, error } = await supabaseService.adminSelectOrdered(
+        'sales_report_ytd',
+        ROLLUP_COLUMNS,
+        { tenant_id: tenantId, user_id: userId, year } as Partial<SalesReportYtdRow>,
+        { column: 'month', ascending: false },
+        1,
+      );
 
       if (error) throw new Error(error.message);
-      const rows = data ?? [];
+      const rows = (data ?? []) as unknown as YtdRollupRow[];
       return rows.length === 0 ? null : rows[0];
     } catch (error) {
       handleRepositoryError(

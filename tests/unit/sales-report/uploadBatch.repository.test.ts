@@ -6,6 +6,9 @@ jest.mock('@src/services/supabase.service', () => ({
   default: {
     adminInsert: jest.fn(),
     adminUpdate: jest.fn(),
+    adminSelect: jest.fn(),
+    adminSelectIn: jest.fn(),
+    adminSelectPaginated: jest.fn(),
   },
 }));
 
@@ -146,89 +149,82 @@ describe('UploadBatchRepository.updateBatchSummary', () => {
   });
 });
 
+describe('UploadBatchRepository.findPriorBatchIdsForPeriod', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('returns ids for the period, excluding the current batch', async () => {
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
+      data: [{ id: 'b1' }, { id: 'b2' }, { id: 'b-current' }],
+      error: null,
+    });
+
+    const out = await uploadBatchRepository.findPriorBatchIdsForPeriod(
+      't1', 2026, 5, 'b-current',
+    );
+
+    expect(supabaseService.adminSelect).toHaveBeenCalledWith(
+      'upload_batches',
+      'id',
+      { tenant_id: 't1', year: 2026, month: 5 },
+    );
+    expect(out).toEqual(['b1', 'b2']);
+  });
+
+  it('throws RepositoryError on error response', async () => {
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'boom' },
+    });
+
+    await expect(
+      uploadBatchRepository.findPriorBatchIdsForPeriod('t1', 2026, 5, 'b-current'),
+    ).rejects.toThrow('UploadBatchRepository.findPriorBatchIdsForPeriod failed');
+  });
+});
+
 describe('UploadBatchRepository.findPaginatedAuditByTenant', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  /**
-   * Builds the chained-builder mock for the two queries the repo runs:
-   * 1. `from('upload_batches').select(..., { count }).eq().eq().order().range()`
-   * 2. `from('users').select('id, name').in('id', [...])`
-   */
-  function stubQueryChain(
-    batches: {
-      data: unknown[] | null;
-      error: { message: string } | null;
-      count: number | null;
-    },
-    users: {
-      data: { id: string; name: string }[] | null;
-      error: { message: string } | null;
-    } = { data: [], error: null },
-  ) {
-    const rangeMock = jest.fn().mockResolvedValue(batches);
-    const orderMock = jest.fn().mockReturnValue({ range: rangeMock });
-    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-
-    const inMock = jest.fn().mockResolvedValue(users);
-    const usersSelectMock = jest.fn().mockReturnValue({ in: inMock });
-
-    const fromMock = jest.fn((table: string) => {
-      if (table === 'upload_batches') return { select: selectMock };
-      if (table === 'users') return { select: usersSelectMock };
-      throw new Error(`unexpected table: ${table}`);
+  it('returns mapped audit entries with uploader_name resolved via adminSelectIn', async () => {
+    (supabaseService.adminSelectPaginated as jest.Mock).mockResolvedValue({
+      data: [
+        {
+          id: 'b1',
+          year: 2026,
+          month: 3,
+          file_name: 'input.xlsx',
+          rows_loaded: 65,
+          rows_skipped: 2,
+          status: 'partial',
+          created_at: '2026-04-29T16:01:33.000Z',
+          uploaded_by: 'u1',
+        },
+      ],
+      error: null,
+      count: 12,
     });
-
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
-    return {
-      fromMock,
-      selectMock,
-      eqMock1,
-      eqMock2,
-      orderMock,
-      rangeMock,
-      usersSelectMock,
-      inMock,
-    };
-  }
-
-  it('returns mapped audit entries with uploader_name resolved via a separate users query', async () => {
-    const { fromMock, selectMock, orderMock, rangeMock, inMock } = stubQueryChain(
-      {
-        data: [
-          {
-            id: 'b1',
-            year: 2026,
-            month: 3,
-            file_name: 'input.xlsx',
-            rows_loaded: 65,
-            rows_skipped: 2,
-            status: 'partial',
-            created_at: '2026-04-29T16:01:33.000Z',
-            uploaded_by: 'u1',
-          },
-        ],
-        error: null,
-        count: 12,
-      },
-      { data: [{ id: 'u1', name: 'Jane Doe' }], error: null },
-    );
+    (supabaseService.adminSelectIn as jest.Mock).mockResolvedValue({
+      data: [{ id: 'u1', name: 'Jane Doe' }],
+      error: null,
+    });
 
     const result = await uploadBatchRepository.findPaginatedAuditByTenant(
       't1', 2026, 1, 50,
     );
 
-    expect(fromMock).toHaveBeenCalledWith('upload_batches');
-    expect(selectMock).toHaveBeenCalledWith(
+    expect(supabaseService.adminSelectPaginated).toHaveBeenCalledWith(
+      'upload_batches',
       expect.stringContaining('uploaded_by'),
-      { count: 'exact' },
+      { tenant_id: 't1', year: 2026 },
+      { column: 'created_at', ascending: false },
+      { from: 0, to: 49 },
     );
-    expect(orderMock).toHaveBeenCalledWith('created_at', { ascending: false });
-    expect(rangeMock).toHaveBeenCalledWith(0, 49);
-    expect(inMock).toHaveBeenCalledWith('id', ['u1']);
+    expect(supabaseService.adminSelectIn).toHaveBeenCalledWith(
+      'users',
+      'id, name',
+      'id',
+      ['u1'],
+    );
     expect(result.data).toEqual([
       {
         id: 'b1',
@@ -246,7 +242,7 @@ describe('UploadBatchRepository.findPaginatedAuditByTenant', () => {
   });
 
   it('returns null uploader_name when uploaded_by is null (manual ingest)', async () => {
-    const { inMock } = stubQueryChain({
+    (supabaseService.adminSelectPaginated as jest.Mock).mockResolvedValue({
       data: [
         {
           id: 'b2',
@@ -270,19 +266,29 @@ describe('UploadBatchRepository.findPaginatedAuditByTenant', () => {
 
     expect(result.data[0].uploader_name).toBeNull();
     // No uploader IDs to resolve → users query is skipped.
-    expect(inMock).not.toHaveBeenCalled();
+    expect(supabaseService.adminSelectIn).not.toHaveBeenCalled();
   });
 
   it('computes range from page/pageSize for the second page', async () => {
-    const { rangeMock } = stubQueryChain({ data: [], error: null, count: 0 });
+    (supabaseService.adminSelectPaginated as jest.Mock).mockResolvedValue({
+      data: [],
+      error: null,
+      count: 0,
+    });
 
     await uploadBatchRepository.findPaginatedAuditByTenant('t1', 2026, 2, 25);
 
-    expect(rangeMock).toHaveBeenCalledWith(25, 49);
+    expect(supabaseService.adminSelectPaginated).toHaveBeenCalledWith(
+      'upload_batches',
+      expect.any(String),
+      { tenant_id: 't1', year: 2026 },
+      { column: 'created_at', ascending: false },
+      { from: 25, to: 49 },
+    );
   });
 
   it('throws RepositoryError on error response', async () => {
-    stubQueryChain({
+    (supabaseService.adminSelectPaginated as jest.Mock).mockResolvedValue({
       data: null,
       error: { message: 'boom' },
       count: null,

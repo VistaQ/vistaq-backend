@@ -1,4 +1,5 @@
 import supabaseService from '@src/services/supabase.service';
+import { Database } from '@src/types/database.types';
 import {
   IPaginatedUploadAudit,
   IUploadAuditEntry,
@@ -8,6 +9,8 @@ import {
   UploadStatus,
 } from '@src/types/salesReport.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+
+type UsersRow = Database['public']['Tables']['users']['Row'];
 
 interface BatchSummaryUpdate {
   rows_loaded: number;
@@ -56,35 +59,18 @@ class UploadBatchRepository {
     excludeBatchId: string,
   ): Promise<string[]> {
     try {
-      const { data, error } = await (
-        supabaseService as unknown as {
-          adminClient: {
-            from: (t: string) => {
-              select: (s: string) => {
-                eq: (c: string, v: unknown) => {
-                  eq: (c: string, v: unknown) => {
-                    eq: (c: string, v: unknown) => {
-                      neq: (c: string, v: unknown) => Promise<{
-                        data: { id: string }[] | null;
-                        error: { message: string } | null;
-                      }>;
-                    };
-                  };
-                };
-              };
-            };
-          };
-        }
-      ).adminClient
-        .from('upload_batches')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('year', year)
-        .eq('month', month)
-        .neq('id', excludeBatchId);
-
+      // Fetch all matching ids for the period and filter out the excluded
+      // current batch in JS — the wrapper exposes `.eq()` filters, and the
+      // exclusion is a single id-equality check that doesn't justify adding a
+      // dedicated `.neq()` primitive.
+      const { data, error } = await supabaseService.adminSelect(
+        'upload_batches',
+        'id',
+        { tenant_id: tenantId, year, month } as Partial<UploadBatchRow>,
+      );
       if (error) throw new Error(error.message);
-      return (data ?? []).map((r) => r.id);
+      const rows = (data ?? []) as unknown as { id: string }[];
+      return rows.map((r) => r.id).filter((id) => id !== excludeBatchId);
     } catch (error) {
       handleRepositoryError(
         'UploadBatchRepository.findPriorBatchIdsForPeriod',
@@ -146,45 +132,17 @@ class UploadBatchRepository {
       const offset = (page - 1) * pageSize;
       const rangeEnd = offset + pageSize - 1;
 
-      // Direct adminClient call: the wrapper's `adminSelect` doesn't expose
-      // `range` or `count: 'exact'`.
-      const { data, error, count } = await (
-        supabaseService as unknown as {
-          adminClient: {
-            from: (t: string) => {
-              select: (s: string, opts: { count: 'exact' }) => {
-                eq: (c: string, v: unknown) => {
-                  eq: (c: string, v: unknown) => {
-                    order: (c: string, opts: { ascending: boolean }) => {
-                      range: (
-                        from: number,
-                        to: number,
-                      ) => Promise<{
-                        data: BatchAuditRow[] | null;
-                        error: { message: string } | null;
-                        count: number | null;
-                      }>;
-                    };
-                  };
-                };
-              };
-            };
-          };
-        }
-      ).adminClient
-        .from('upload_batches')
-        .select(
-          'id, year, month, file_name, rows_loaded, rows_skipped, status, created_at, uploaded_by',
-          { count: 'exact' },
-        )
-        .eq('tenant_id', tenantId)
-        .eq('year', year)
-        .order('created_at', { ascending: false })
-        .range(offset, rangeEnd);
+      const { data, error, count } = await supabaseService.adminSelectPaginated(
+        'upload_batches',
+        'id, year, month, file_name, rows_loaded, rows_skipped, status, created_at, uploaded_by',
+        { tenant_id: tenantId, year } as Partial<UploadBatchRow>,
+        { column: 'created_at', ascending: false },
+        { from: offset, to: rangeEnd },
+      );
 
       if (error) throw new Error(error.message);
 
-      const rows = data ?? [];
+      const rows = (data ?? []) as unknown as BatchAuditRow[];
       const uploaderIds = Array.from(
         new Set(
           rows
@@ -195,29 +153,17 @@ class UploadBatchRepository {
 
       const nameByUserId = new Map<string, string>();
       if (uploaderIds.length > 0) {
-        const { data: userRows, error: userError } = await (
-          supabaseService as unknown as {
-            adminClient: {
-              from: (t: string) => {
-                select: (s: string) => {
-                  in: (
-                    c: string,
-                    v: unknown[],
-                  ) => Promise<{
-                    data: { id: string; name: string }[] | null;
-                    error: { message: string } | null;
-                  }>;
-                };
-              };
-            };
-          }
-        ).adminClient
-          .from('users')
-          .select('id, name')
-          .in('id', uploaderIds);
+        const { data: userRows, error: userError } =
+          await supabaseService.adminSelectIn(
+            'users',
+            'id, name',
+            'id',
+            uploaderIds,
+          );
 
         if (userError) throw new Error(userError.message);
-        for (const u of userRows ?? []) {
+        const users = (userRows ?? []) as unknown as Pick<UsersRow, 'id' | 'name'>[];
+        for (const u of users) {
           nameByUserId.set(u.id, u.name);
         }
       }

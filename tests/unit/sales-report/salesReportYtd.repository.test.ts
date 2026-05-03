@@ -6,6 +6,8 @@ jest.mock('@src/services/supabase.service', () => ({
   default: {
     adminUpsert: jest.fn(),
     adminSelect: jest.fn(),
+    adminSelectOrdered: jest.fn(),
+    adminSelectInIn: jest.fn(),
   },
 }));
 
@@ -65,40 +67,28 @@ describe('SalesReportYtdRepository.findLatestUploadedMonth', () => {
   beforeEach(() => jest.resetAllMocks());
 
   it('returns the highest month for the tenant/year', async () => {
-    const limitMock = jest.fn().mockResolvedValue({
+    (supabaseService.adminSelectOrdered as jest.Mock).mockResolvedValue({
       data: [{ month: 4 }],
       error: null,
     });
-    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
-    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
 
     const month = await salesReportYtdRepository.findLatestUploadedMonth('t1', 2026);
 
-    expect(fromMock).toHaveBeenCalledWith('sales_report_ytd');
-    expect(selectMock).toHaveBeenCalledWith('month');
-    expect(eqMock1).toHaveBeenCalledWith('tenant_id', 't1');
-    expect(eqMock2).toHaveBeenCalledWith('year', 2026);
-    expect(orderMock).toHaveBeenCalledWith('month', { ascending: false });
-    expect(limitMock).toHaveBeenCalledWith(1);
+    expect(supabaseService.adminSelectOrdered).toHaveBeenCalledWith(
+      'sales_report_ytd',
+      'month',
+      { tenant_id: 't1', year: 2026 },
+      { column: 'month', ascending: false },
+      1,
+    );
     expect(month).toBe(4);
   });
 
   it('returns null when no rows exist', async () => {
-    const limitMock = jest.fn().mockResolvedValue({ data: [], error: null });
-    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
-    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
+    (supabaseService.adminSelectOrdered as jest.Mock).mockResolvedValue({
+      data: [],
+      error: null,
+    });
 
     const month = await salesReportYtdRepository.findLatestUploadedMonth('t1', 2026);
 
@@ -106,18 +96,10 @@ describe('SalesReportYtdRepository.findLatestUploadedMonth', () => {
   });
 
   it('throws RepositoryError when supabase returns an error', async () => {
-    const limitMock = jest.fn().mockResolvedValue({
+    (supabaseService.adminSelectOrdered as jest.Mock).mockResolvedValue({
       data: null,
       error: { message: 'boom' },
     });
-    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
-    const eqMock2 = jest.fn().mockReturnValue({ order: orderMock });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
 
     await expect(
       salesReportYtdRepository.findLatestUploadedMonth('t1', 2026),
@@ -128,42 +110,39 @@ describe('SalesReportYtdRepository.findLatestUploadedMonth', () => {
 describe('SalesReportYtdRepository.findLatestYtdPerUserByTenantYear', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  function stub(
-    rows: { user_id: string; month: number; [k: string]: unknown }[] | null,
-    error: { message: string } | null = null,
-  ) {
-    const eqMock2 = jest.fn().mockResolvedValue({ data: rows, error });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
-    return { fromMock, selectMock };
-  }
-
   it('keeps only the highest-month row per user', async () => {
-    stub([
-      { id: 'r1', user_id: 'u1', year: 2026, month: 3, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-04-01' },
-      { id: 'r2', user_id: 'u1', year: 2026, month: 5, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-06-01' },
-      { id: 'r3', user_id: 'u2', year: 2026, month: 4, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-05-01' },
-    ]);
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
+      data: [
+        { id: 'r1', user_id: 'u1', year: 2026, month: 3, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-04-01', updated_at: '2026-04-01' },
+        { id: 'r2', user_id: 'u1', year: 2026, month: 5, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-06-01', updated_at: '2026-06-01' },
+        { id: 'r3', user_id: 'u2', year: 2026, month: 4, ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0, fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0, created_at: '2026-05-01', updated_at: '2026-05-01' },
+      ],
+      error: null,
+    });
 
     const out = await salesReportYtdRepository.findLatestYtdPerUserByTenantYear('t1', 2026);
 
+    expect(supabaseService.adminSelect).toHaveBeenCalledWith(
+      'sales_report_ytd',
+      expect.stringContaining('updated_at'),
+      { tenant_id: 't1', year: 2026 },
+    );
     expect(out.find((r) => r.user_id === 'u1')?.id).toBe('r2');
     expect(out.find((r) => r.user_id === 'u2')?.id).toBe('r3');
     expect(out).toHaveLength(2);
   });
 
   it('returns empty array when nothing matches', async () => {
-    stub([]);
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({ data: [], error: null });
     const out = await salesReportYtdRepository.findLatestYtdPerUserByTenantYear('t1', 2026);
     expect(out).toEqual([]);
   });
 
   it('throws RepositoryError when supabase returns an error', async () => {
-    stub(null, { message: 'boom' });
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'boom' },
+    });
     await expect(
       salesReportYtdRepository.findLatestYtdPerUserByTenantYear('t1', 2026),
     ).rejects.toThrow(
@@ -175,52 +154,86 @@ describe('SalesReportYtdRepository.findLatestYtdPerUserByTenantYear', () => {
 describe('SalesReportYtdRepository.findLatestYtdForUserYear', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  function stub(
-    rows: { user_id: string; month: number; [k: string]: unknown }[] | null,
-    error: { message: string } | null = null,
-  ) {
-    const limitMock = jest.fn().mockResolvedValue({ data: rows, error });
-    const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
-    const eqMock3 = jest.fn().mockReturnValue({ order: orderMock });
-    const eqMock2 = jest.fn().mockReturnValue({ eq: eqMock3 });
-    const eqMock1 = jest.fn().mockReturnValue({ eq: eqMock2 });
-    const selectMock = jest.fn().mockReturnValue({ eq: eqMock1 });
-    const fromMock = jest.fn().mockReturnValue({ select: selectMock });
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
-    return { eqMock1, eqMock2, eqMock3, orderMock, limitMock };
-  }
-
   it('returns the single latest row when one exists', async () => {
-    const { eqMock1, eqMock2, eqMock3, limitMock } = stub([
-      {
-        id: 'r1', user_id: 'u1', year: 2026, month: 5,
-        ace: 1, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
-        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
-        created_at: '2026-06-01',
-      },
-    ]);
+    (supabaseService.adminSelectOrdered as jest.Mock).mockResolvedValue({
+      data: [
+        {
+          id: 'r1', user_id: 'u1', year: 2026, month: 5,
+          ace: 1, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+          fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+          created_at: '2026-06-01', updated_at: '2026-06-02',
+        },
+      ],
+      error: null,
+    });
 
     const out = await salesReportYtdRepository.findLatestYtdForUserYear('t1', 'u1', 2026);
 
-    expect(eqMock1).toHaveBeenCalledWith('tenant_id', 't1');
-    expect(eqMock2).toHaveBeenCalledWith('user_id', 'u1');
-    expect(eqMock3).toHaveBeenCalledWith('year', 2026);
-    expect(limitMock).toHaveBeenCalledWith(1);
+    expect(supabaseService.adminSelectOrdered).toHaveBeenCalledWith(
+      'sales_report_ytd',
+      expect.stringContaining('updated_at'),
+      { tenant_id: 't1', user_id: 'u1', year: 2026 },
+      { column: 'month', ascending: false },
+      1,
+    );
     expect(out?.id).toBe('r1');
   });
 
   it('returns null when no row exists', async () => {
-    stub([]);
+    (supabaseService.adminSelectOrdered as jest.Mock).mockResolvedValue({ data: [], error: null });
     const out = await salesReportYtdRepository.findLatestYtdForUserYear('t1', 'u1', 2026);
     expect(out).toBeNull();
   });
 
   it('throws RepositoryError when supabase returns an error', async () => {
-    stub(null, { message: 'boom' });
+    (supabaseService.adminSelectOrdered as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'boom' },
+    });
     await expect(
       salesReportYtdRepository.findLatestYtdForUserYear('t1', 'u1', 2026),
     ).rejects.toThrow('SalesReportYtdRepository.findLatestYtdForUserYear failed');
+  });
+});
+
+describe('SalesReportYtdRepository.findFyctByTenantYearMonths', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('returns rows scoped via adminSelectInIn with month + user_id .in() filters', async () => {
+    (supabaseService.adminSelectInIn as jest.Mock).mockResolvedValue({
+      data: [{ user_id: 'u1', month: 5, fyct: 14500 }],
+      error: null,
+    });
+
+    const out = await salesReportYtdRepository.findFyctByTenantYearMonths(
+      't1', 2026, [5, 4], ['u1'],
+    );
+
+    expect(supabaseService.adminSelectInIn).toHaveBeenCalledWith(
+      'sales_report_ytd',
+      'user_id, month, fyct',
+      [
+        { column: 'month', values: [5, 4] },
+        { column: 'user_id', values: ['u1'] },
+      ],
+      { tenant_id: 't1', year: 2026 },
+    );
+    expect(out).toEqual([{ user_id: 'u1', month: 5, fyct: 14500 }]);
+  });
+
+  it('short-circuits to [] on empty userIds (no DB call)', async () => {
+    const out = await salesReportYtdRepository.findFyctByTenantYearMonths(
+      't1', 2026, [5], [],
+    );
+    expect(out).toEqual([]);
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits to [] on empty months (no DB call)', async () => {
+    const out = await salesReportYtdRepository.findFyctByTenantYearMonths(
+      't1', 2026, [], ['u1'],
+    );
+    expect(out).toEqual([]);
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
   });
 });

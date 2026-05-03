@@ -1,6 +1,9 @@
 import supabaseService from '@src/services/supabase.service';
+import { Database } from '@src/types/database.types';
 import { SalesReportMtdIns } from '@src/types/salesReport.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+
+type SalesReportMtdRow = Database['public']['Tables']['sales_report_mtd']['Row'];
 
 export interface MtdMonthlyRow {
   user_id: string;
@@ -46,36 +49,23 @@ class SalesReportMtdRepository {
     try {
       if (userIds && userIds.length === 0) return [];
 
-      const query = (
-        supabaseService as unknown as {
-          adminClient: { from: (t: string) => unknown };
-        }
-      ).adminClient
-        .from('sales_report_mtd');
+      const eqFilters = { tenant_id: tenantId, year } as Partial<SalesReportMtdRow>;
 
-      // Builder type widens with each filter; coerce per step.
-      let q = (query as { select: (s: string) => unknown }).select(
-        'user_id, month, ace, noc',
-      );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq(
-        'tenant_id',
-        tenantId,
-      );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('year', year);
-      if (userIds) {
-        q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
-          'user_id',
-          userIds,
-        );
-      }
+      const response = userIds
+        ? await supabaseService.adminSelectInIn(
+            'sales_report_mtd',
+            'user_id, month, ace, noc',
+            [{ column: 'user_id', values: userIds }],
+            eqFilters,
+          )
+        : await supabaseService.adminSelect(
+            'sales_report_mtd',
+            'user_id, month, ace, noc',
+            eqFilters,
+          );
 
-      const { data, error } = (await q) as {
-        data: MtdMonthlyRow[] | null;
-        error: { message: string } | null;
-      };
-
-      if (error) throw new Error(error.message);
-      return data ?? [];
+      if (response.error) throw new Error(response.error.message);
+      return (response.data ?? []) as unknown as MtdMonthlyRow[];
     } catch (error) {
       handleRepositoryError(
         'SalesReportMtdRepository.findAceNocByTenantYear',
@@ -99,34 +89,15 @@ class SalesReportMtdRepository {
     try {
       if (userIds.length === 0) return [];
 
-      let q = (
-        supabaseService as unknown as {
-          adminClient: { from: (t: string) => unknown };
-        }
-      ).adminClient
-        .from('sales_report_mtd');
-
-      q = (q as { select: (s: string) => unknown }).select(
+      const { data, error } = await supabaseService.adminSelectInIn(
+        'sales_report_mtd',
         'user_id, month, ace, noc',
+        [{ column: 'user_id', values: userIds }],
+        { tenant_id: tenantId, year, month } as Partial<SalesReportMtdRow>,
       );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq(
-        'tenant_id',
-        tenantId,
-      );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('year', year);
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('month', month);
-      q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
-        'user_id',
-        userIds,
-      );
-
-      const { data, error } = (await q) as {
-        data: MtdMonthlyRow[] | null;
-        error: { message: string } | null;
-      };
 
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []) as unknown as MtdMonthlyRow[];
     } catch (error) {
       handleRepositoryError(
         'SalesReportMtdRepository.findAceNocByTenantYearMonth',
@@ -149,35 +120,25 @@ class SalesReportMtdRepository {
     try {
       if (userIds && userIds.length === 0) return [];
 
-      let q = (
-        supabaseService as unknown as {
-          adminClient: { from: (t: string) => unknown };
-        }
-      ).adminClient
-        .from('sales_report_mtd_fyc');
+      // `sales_report_mtd_fyc` is a view (Database['public']['Views']), not a
+      // Table — the typed wrappers accept any table name when called via the
+      // string-typed `adminSelectWithJoinIn`. `.eq()` filters cover tenant +
+      // year; `.in()` covers the optional userIds filter.
+      const eqFilters = { tenant_id: tenantId, year } as Record<string, unknown>;
+      const inFilters = userIds
+        ? [{ column: 'user_id', values: userIds }]
+        : [];
 
-      q = (q as { select: (s: string) => unknown }).select(
-        'user_id, month, fyc_mtd, fyct_mtd',
-      );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq(
-        'tenant_id',
-        tenantId,
-      );
-      q = (q as { eq: (c: string, v: unknown) => unknown }).eq('year', year);
-      if (userIds) {
-        q = (q as { in: (c: string, v: unknown[]) => unknown }).in(
-          'user_id',
-          userIds,
+      const { data, error } =
+        await supabaseService.adminSelectWithJoinIn(
+          'sales_report_mtd_fyc',
+          'user_id, month, fyc_mtd, fyct_mtd',
+          inFilters,
+          eqFilters,
         );
-      }
-
-      const { data, error } = (await q) as {
-        data: MtdFycMonthlyRow[] | null;
-        error: { message: string } | null;
-      };
 
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []) as unknown as MtdFycMonthlyRow[];
     } catch (error) {
       handleRepositoryError(
         'SalesReportMtdRepository.findFycByTenantYear',

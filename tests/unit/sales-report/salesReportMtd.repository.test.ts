@@ -5,6 +5,10 @@ jest.mock('@src/services/supabase.service', () => ({
   __esModule: true,
   default: {
     adminUpsert: jest.fn(),
+    adminSelect: jest.fn(),
+    adminSelectInIn: jest.fn(),
+    adminSelectWithJoin: jest.fn(),
+    adminSelectWithJoinIn: jest.fn(),
   },
 }));
 
@@ -47,35 +51,8 @@ describe('SalesReportMtdRepository.bulkUpsert', () => {
 describe('SalesReportMtdRepository.findAceNocByTenantYear', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  function stubChain(
-    finalResult: { data: unknown[] | null; error: { message: string } | null },
-  ) {
-    const final = jest.fn().mockResolvedValue(finalResult);
-    // Builder chain: from().select().eq().eq() (and optional .in())
-    // Each step returns the same builder shape so callers can chain freely.
-    const builder = {
-      select: jest.fn(),
-      eq: jest.fn(),
-      in: jest.fn(),
-      then: undefined as unknown,
-    };
-    builder.select.mockReturnValue(builder);
-    builder.eq.mockReturnValue(builder);
-    builder.in.mockReturnValue(builder);
-    // The terminal awaited promise: the last call in the chain is what's
-    // awaited. We make the builder itself thenable by routing then() to the
-    // final result.
-    (builder as unknown as { then: (cb: (v: unknown) => unknown) => unknown }).then =
-      (cb: (v: unknown) => unknown) => Promise.resolve(final()).then(cb);
-    const fromMock = jest.fn().mockReturnValue(builder);
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
-    return { fromMock, builder, final };
-  }
-
-  it('queries sales_report_mtd and returns rows when no userIds filter is supplied', async () => {
-    const { fromMock, builder } = stubChain({
+  it('queries sales_report_mtd via adminSelect when no userIds filter is supplied', async () => {
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
       data: [
         { user_id: 'u1', month: 1, ace: 10, noc: 1 },
         { user_id: 'u2', month: 5, ace: 50, noc: 5 },
@@ -85,33 +62,43 @@ describe('SalesReportMtdRepository.findAceNocByTenantYear', () => {
 
     const out = await salesReportMtdRepository.findAceNocByTenantYear('t1', 2026);
 
-    expect(fromMock).toHaveBeenCalledWith('sales_report_mtd');
-    expect(builder.select).toHaveBeenCalledWith('user_id, month, ace, noc');
-    expect(builder.eq).toHaveBeenCalledWith('tenant_id', 't1');
-    expect(builder.eq).toHaveBeenCalledWith('year', 2026);
-    expect(builder.in).not.toHaveBeenCalled();
+    expect(supabaseService.adminSelect).toHaveBeenCalledWith(
+      'sales_report_mtd',
+      'user_id, month, ace, noc',
+      { tenant_id: 't1', year: 2026 },
+    );
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
     expect(out).toHaveLength(2);
   });
 
-  it('applies an .in filter when userIds is provided', async () => {
-    const { builder } = stubChain({ data: [], error: null });
+  it('routes through adminSelectInIn when userIds is provided', async () => {
+    (supabaseService.adminSelectInIn as jest.Mock).mockResolvedValue({
+      data: [],
+      error: null,
+    });
 
     await salesReportMtdRepository.findAceNocByTenantYear('t1', 2026, ['u1']);
 
-    expect(builder.in).toHaveBeenCalledWith('user_id', ['u1']);
+    expect(supabaseService.adminSelectInIn).toHaveBeenCalledWith(
+      'sales_report_mtd',
+      'user_id, month, ace, noc',
+      [{ column: 'user_id', values: ['u1'] }],
+      { tenant_id: 't1', year: 2026 },
+    );
   });
 
   it('returns an empty array immediately when userIds is an empty array', async () => {
-    const { fromMock } = stubChain({ data: [], error: null });
-
     const out = await salesReportMtdRepository.findAceNocByTenantYear('t1', 2026, []);
-
     expect(out).toEqual([]);
-    expect(fromMock).not.toHaveBeenCalled();
+    expect(supabaseService.adminSelect).not.toHaveBeenCalled();
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
   });
 
   it('throws RepositoryError on error response', async () => {
-    stubChain({ data: null, error: { message: 'view query failed' } });
+    (supabaseService.adminSelect as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'view query failed' },
+    });
 
     await expect(
       salesReportMtdRepository.findAceNocByTenantYear('t1', 2026),
@@ -119,46 +106,84 @@ describe('SalesReportMtdRepository.findAceNocByTenantYear', () => {
   });
 });
 
+describe('SalesReportMtdRepository.findAceNocByTenantYearMonth', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('routes through adminSelectInIn with month + user_id filters', async () => {
+    (supabaseService.adminSelectInIn as jest.Mock).mockResolvedValue({
+      data: [{ user_id: 'u1', month: 5, ace: 100, noc: 2 }],
+      error: null,
+    });
+
+    const out = await salesReportMtdRepository.findAceNocByTenantYearMonth(
+      't1', 2026, 5, ['u1'],
+    );
+
+    expect(supabaseService.adminSelectInIn).toHaveBeenCalledWith(
+      'sales_report_mtd',
+      'user_id, month, ace, noc',
+      [{ column: 'user_id', values: ['u1'] }],
+      { tenant_id: 't1', year: 2026, month: 5 },
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it('short-circuits to [] on empty userIds (no DB call)', async () => {
+    const out = await salesReportMtdRepository.findAceNocByTenantYearMonth(
+      't1', 2026, 5, [],
+    );
+    expect(out).toEqual([]);
+    expect(supabaseService.adminSelectInIn).not.toHaveBeenCalled();
+  });
+});
+
 describe('SalesReportMtdRepository.findFycByTenantYear', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  function stubChain(
-    finalResult: { data: unknown[] | null; error: { message: string } | null },
-  ) {
-    const final = jest.fn().mockResolvedValue(finalResult);
-    const builder = {
-      select: jest.fn(),
-      eq: jest.fn(),
-      in: jest.fn(),
-      then: undefined as unknown,
-    };
-    builder.select.mockReturnValue(builder);
-    builder.eq.mockReturnValue(builder);
-    builder.in.mockReturnValue(builder);
-    (builder as unknown as { then: (cb: (v: unknown) => unknown) => unknown }).then =
-      (cb: (v: unknown) => unknown) => Promise.resolve(final()).then(cb);
-    const fromMock = jest.fn().mockReturnValue(builder);
-    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
-      from: fromMock,
-    } as never;
-    return { fromMock, builder };
-  }
-
-  it('queries the sales_report_mtd_fyc view with the expected columns', async () => {
-    const { fromMock, builder } = stubChain({
+  it('queries the sales_report_mtd_fyc view via adminSelectWithJoinIn', async () => {
+    (supabaseService.adminSelectWithJoinIn as jest.Mock).mockResolvedValue({
       data: [{ user_id: 'u1', month: 5, fyc_mtd: 1000, fyct_mtd: 1100 }],
       error: null,
     });
 
     const out = await salesReportMtdRepository.findFycByTenantYear('t1', 2026);
 
-    expect(fromMock).toHaveBeenCalledWith('sales_report_mtd_fyc');
-    expect(builder.select).toHaveBeenCalledWith('user_id, month, fyc_mtd, fyct_mtd');
+    expect(supabaseService.adminSelectWithJoinIn).toHaveBeenCalledWith(
+      'sales_report_mtd_fyc',
+      'user_id, month, fyc_mtd, fyct_mtd',
+      [],
+      { tenant_id: 't1', year: 2026 },
+    );
     expect(out).toEqual([{ user_id: 'u1', month: 5, fyc_mtd: 1000, fyct_mtd: 1100 }]);
   });
 
+  it('forwards an .in() filter when userIds is provided', async () => {
+    (supabaseService.adminSelectWithJoinIn as jest.Mock).mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    await salesReportMtdRepository.findFycByTenantYear('t1', 2026, ['u1']);
+
+    expect(supabaseService.adminSelectWithJoinIn).toHaveBeenCalledWith(
+      'sales_report_mtd_fyc',
+      'user_id, month, fyc_mtd, fyct_mtd',
+      [{ column: 'user_id', values: ['u1'] }],
+      { tenant_id: 't1', year: 2026 },
+    );
+  });
+
+  it('short-circuits to [] on empty userIds (no DB call)', async () => {
+    const out = await salesReportMtdRepository.findFycByTenantYear('t1', 2026, []);
+    expect(out).toEqual([]);
+    expect(supabaseService.adminSelectWithJoinIn).not.toHaveBeenCalled();
+  });
+
   it('throws RepositoryError on error response', async () => {
-    stubChain({ data: null, error: { message: 'view query failed' } });
+    (supabaseService.adminSelectWithJoinIn as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'view query failed' },
+    });
 
     await expect(
       salesReportMtdRepository.findFycByTenantYear('t1', 2026),
