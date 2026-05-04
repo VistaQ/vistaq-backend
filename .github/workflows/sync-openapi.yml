@@ -1,0 +1,55 @@
+name: Sync OpenAPI spec to frontend
+
+on:
+  push:
+    branches:
+      - staging
+    paths:
+      - openapi.yaml
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+
+      - name: Checkout frontend
+        uses: actions/checkout@v4
+        with:
+          repository: VistaQ/vistaq_client
+          token: ${{ secrets.FRONTEND_REPO_PAT }}
+          path: vistaq_client
+          ref: staging
+
+      - name: Copy openapi.yaml to frontend
+        run: cp openapi.yaml vistaq_client/openapi.yaml
+
+      - name: Install frontend dependencies
+        working-directory: vistaq_client
+        run: npm ci
+
+      - name: Regenerate types
+        working-directory: vistaq_client
+        run: npm run gen:types
+
+      - name: Open PR on frontend
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.FRONTEND_REPO_PAT }}
+          path: vistaq_client
+          branch: chore/sync-openapi-spec
+          base: staging
+          title: "chore: sync OpenAPI spec from backend"
+          body: |
+            Automated sync triggered by a change to `openapi.yaml` on the backend.
+
+            **Backend commit:** [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+
+            Changes included:
+            - `openapi.yaml` — updated spec copied from backend
+            - `types.generated.ts` — regenerated via `npm run gen:types`
+
+            Review the type changes and merge when the frontend is ready to consume them.
+          commit-message: "chore: sync openapi spec and regenerate types"
