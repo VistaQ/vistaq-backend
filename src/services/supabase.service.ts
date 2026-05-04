@@ -1265,6 +1265,71 @@ class SupabaseService {
   }
 
   // ---------------------------------------------------------------------------
+  // User Upsert (RLS-enforced)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Upserts one or more rows into the given table using a user-scoped client, enforcing RLS.
+   *
+   * @param userToken - The user's JWT, used to build the user-scoped client.
+   * @param table     - The table to upsert into.
+   * @param values    - A single row object or an array of row objects to upsert.
+   * @param options.onConflict       - Comma-separated list of columns forming the conflict target (typically a UNIQUE constraint, e.g. 'tenant_id,agent_code').
+   * @param options.ignoreDuplicates - If true, conflicting rows are skipped instead of updated. Defaults to false.
+   */
+  async userUpsert<T extends keyof Database['public']['Tables']>(
+    userToken: string,
+    table: T,
+    values:
+      | Database['public']['Tables'][T]['Insert']
+      | Database['public']['Tables'][T]['Insert'][],
+    options: { onConflict: string; ignoreDuplicates?: boolean },
+  ) {
+    return this.withSpan(
+      'db.upsert',
+      'SupabaseService.userUpsert',
+      {
+        'db.system': 'supabase',
+        'db.operation': 'upsert',
+        'db.collection.name': table as string,
+        'db.client_type': 'user',
+      },
+      async () => {
+        try {
+          loggingService.info('SupabaseService.userUpsert called', { table });
+
+          const userClient = this.getUserClient(userToken);
+          const response = await userClient
+            .from(table)
+            .upsert(values as never, {
+              onConflict: options.onConflict,
+              ignoreDuplicates: options.ignoreDuplicates ?? false,
+            })
+            .select();
+
+          if (response.error) {
+            loggingService.error(
+              'SupabaseService.userUpsert query error',
+              response.error,
+              { table },
+            );
+          }
+
+          return response;
+        } catch (error) {
+          loggingService.error('SupabaseService.userUpsert failed', error, {
+            table,
+          });
+          throw new SupabaseServiceError(
+            'User upsert operation failed in SupabaseService',
+            error,
+          );
+        }
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // User Update (RLS-enforced)
   // ---------------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 import express from 'express';
 
 import agentPointsRoutes from '@src/routes/agentPoints.routes';
+import agentCodeRoutes from '@src/routes/agentCode.routes';
 import authRoutes from '@src/routes/auth.routes';
 import publicRoutes from '@src/routes/public.routes';
 import coachingSessionRoutes from '@src/routes/coachingSession.routes';
@@ -37,6 +38,7 @@ router.use('/point-activity-types', pointActivityTypeRoutes);
 router.use('/point-configs', pointConfigRoutes);
 router.use('/leaderboard', leaderboardRoutes);
 router.use('/agent-points', agentPointsRoutes);
+router.use('/agent-codes', agentCodeRoutes);
 router.use('/sales-reports', salesReportReadRoutes);
 router.use('/reports/jobs', reportJobRoutes);
 router.use('/reports', salesReportRoutes);
