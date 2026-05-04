@@ -322,15 +322,20 @@ class UserRepository {
     }
   }
 
+  /**
+   * Admin-mode lookup of `group_trainers` rows for the supplied trainer ids.
+   * Returns a `trainer_id → group_ids[]` map. The caller has already been
+   * authenticated by the JWT-verifying middleware, so RLS adds no security
+   * value here; routing through the admin client keeps scope-resolution
+   * paths consistent with `findGroupIdById`.
+   */
   async findManagedGroupIdsByUserIds(
     userIds: string[],
-    userToken: string,
   ): Promise<Map<string, string[]>> {
     try {
       if (userIds.length === 0) return new Map();
 
-      const response = await supabaseService.userSelectIn(
-        userToken,
+      const response = await supabaseService.adminSelectIn(
         'group_trainers',
         'group_id,trainer_id',
         'trainer_id',
@@ -383,6 +388,94 @@ class UserRepository {
       await supabaseService.adminUpdateAuthUserPassword(userId, password);
     } catch (error) {
       return handleRepositoryError('UserRepository.updateAuthUserPassword', error);
+    }
+  }
+
+  async findByAgentCodes(
+    tenantId: string,
+    agentCodes: string[],
+  ): Promise<{ id: string; agent_code: string }[]> {
+    try {
+      if (agentCodes.length === 0) return [];
+
+      const { data, error } = await supabaseService.adminSelectIn(
+        'users',
+        'id, agent_code',
+        'agent_code',
+        agentCodes,
+        { tenant_id: tenantId } as Partial<UsersRow>,
+      );
+
+      if (error) throw new Error(error.message);
+      return (data ?? []) as unknown as { id: string; agent_code: string }[];
+    } catch (error) {
+      handleRepositoryError('UserRepository.findByAgentCodes', error);
+    }
+  }
+
+  /**
+   * Returns the caller's `users.group_id` (nullable) using the service-role
+   * client. Used by the sales-report read API to scope a `group_leader`'s
+   * view to their own group's agents — the caller is always identified by a
+   * verified JWT, so bypassing RLS for this lookup is safe.
+   */
+  async findGroupIdById(userId: string): Promise<string | null> {
+    try {
+      const response = await supabaseService.adminSelect(
+        'users',
+        'group_id',
+        { id: userId } as Partial<UsersRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as { group_id: string | null }[];
+      if (rows.length === 0) return null;
+      return rows[0].group_id ?? null;
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findGroupIdById', error);
+    }
+  }
+
+  /**
+   * Resolves a set of user IDs to `{ id, name, agent_code }` triples using the
+   * service-role client (bypasses RLS). Used by the sales-report read API to
+   * decorate aggregated YTD rows with the agent's display name + code.
+   *
+   * When `groupIds` is supplied, the result is additionally filtered to users
+   * whose `users.group_id` is in that set — this is how role-based scoping for
+   * `trainer` and `group_leader` callers is enforced. An empty `groupIds`
+   * array short-circuits to `[]` (caller has no permitted scope).
+   */
+  async findIdNameAgentCodeByIds(
+    userIds: string[],
+    groupIds?: string[],
+  ): Promise<{ id: string; name: string; agent_code: string | null }[]> {
+    try {
+      if (userIds.length === 0) return [];
+      if (groupIds !== undefined && groupIds.length === 0) return [];
+
+      const inFilters = [{ column: 'id', values: userIds }];
+      if (groupIds !== undefined) {
+        inFilters.push({ column: 'group_id', values: groupIds });
+      }
+
+      const response = await supabaseService.adminSelectInIn(
+        'users',
+        'id, name, agent_code',
+        inFilters,
+      );
+
+      if (response.error) throw new Error(response.error.message);
+      return (response.data ?? []) as unknown as {
+        id: string;
+        name: string;
+        agent_code: string | null;
+      }[];
+    } catch (error) {
+      handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
     }
   }
 }

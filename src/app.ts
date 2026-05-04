@@ -1,18 +1,21 @@
-import './instrument';
-import cors from 'cors';
+import * as Sentry from '@sentry/node';
+import cors, { CorsOptions } from 'cors';
+import { randomUUID } from 'crypto';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
-import { randomUUID } from 'crypto';
 import path from 'path';
-import * as Sentry from '@sentry/node';
 
-import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import healthController from '@src/controllers/health.controller';
 import { RouteError } from '@src/models/errors/route.error';
 import router from '@src/routes/router';
-import healthController from '@src/controllers/health.controller';
-import { asyncLocalStorage, loggingService } from '@src/services/logging.service';
-import { emitHttpMetrics, emitActiveUser } from '@src/utils/sentry.metrics';
+import {
+  asyncLocalStorage,
+  loggingService,
+} from '@src/services/logging.service';
+import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import { emitActiveUser, emitHttpMetrics } from '@src/utils/sentry.metrics';
 
+import './instrument';
 import EnvVars, { NodeEnvs } from './utils/env';
 
 /******************************************************************************
@@ -25,8 +28,13 @@ const app = express();
                                 Middleware
 ******************************************************************************/
 
-// CORS — allow all origins (tighten before production go-live)
-app.use(cors());
+// CORS — restrict to allowed origins in production, permissive elsewhere
+const corsOptions: CorsOptions = {
+  origin:
+    EnvVars.NodeEnv === NodeEnvs.PRODUCTION ? EnvVars.AllowedOrigins : true,
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
 // Parse JSON bodies
 app.use(express.json());
@@ -53,12 +61,18 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         Sentry.setTag('correlationId', correlationId);
         // Redact sensitive fields from request body before logging
         const SENSITIVE_BODY_FIELDS = [
-          'password', 'newPassword', 'confirmPassword',
-          'token', 'refreshToken', 'accessToken',
+          'password',
+          'newPassword',
+          'confirmPassword',
+          'token',
+          'refreshToken',
+          'accessToken',
         ];
         let requestBody: unknown = req.body as unknown;
         if (requestBody && typeof requestBody === 'object') {
-          const redacted: Record<string, unknown> = { ...(requestBody as Record<string, unknown>) };
+          const redacted: Record<string, unknown> = {
+            ...(requestBody as Record<string, unknown>),
+          };
           for (const field of SENSITIVE_BODY_FIELDS) {
             if (field in redacted) {
               redacted[field] = '[REDACTED]';
@@ -98,8 +112,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
             // Derive a stable route pattern (e.g. "GET /api/users/:userId").
             // req.route is populated only after the route handler runs, making
             // the finish listener the correct place to read it.
-            const routePattern = req.route?.path
-              ? `${req.method} ${req.baseUrl}${req.route.path}`
+            const routePath = (req.route as { path?: string } | undefined)
+              ?.path;
+            const routePattern = routePath
+              ? `${req.method} ${req.baseUrl}${routePath}`
               : `${req.method} ${req.originalUrl.split('?')[0]}`;
 
             Sentry.setTag('route_pattern', routePattern);
@@ -108,7 +124,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
               Sentry.setTag('user_role', req.user.role);
             }
 
-            emitHttpMetrics(req.method, routePattern, res.statusCode, durationMs);
+            emitHttpMetrics(
+              req.method,
+              routePattern,
+              res.statusCode,
+              durationMs,
+            );
 
             if (req.user) {
               emitActiveUser(req.user.tenant_id);
