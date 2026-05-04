@@ -2038,11 +2038,14 @@ paths:
       description: >
         Creates a new event scoped to the authenticated user's tenant. The caller
         must supply a valid Bearer token belonging to a user with the `admin`,
-        `master_trainer`, `trainer`, or `group_leader` role — `agent` users will
-        receive a 403. At least one of `groupIds` or `agentIds` must be provided.
-        For `trainer` users, all supplied `groupIds` must belong to groups that
-        the trainer manages via the `group_trainers` junction table; any unmanaged
-        group IDs result in a 400.
+        `master_trainer`, `trainer`, `group_leader`, or `agent` role. At least
+        one of `groupIds` or `agentIds` must be provided for non-`agent` roles —
+        `agent` users are automatically assigned to their own event and may omit
+        both fields. For `trainer` users, all supplied `groupIds` must belong to
+        groups that the trainer manages via the `group_trainers` junction table;
+        any unmanaged group IDs result in a 400. If `visibility` is not supplied,
+        it defaults to `public` for `agent` and `group_leader` roles, and
+        `private` for all other roles.
       security:
         - bearerAuth: []
       requestBody:
@@ -2105,6 +2108,13 @@ paths:
                   minLength: 1
                   description: Description or agenda for the event.
                   example: Quarterly training kickoff covering Q2 targets and new product modules.
+                visibility:
+                  type: string
+                  enum: [public, private]
+                  description: >
+                    Visibility of the event. Optional. Defaults to `public` for `agent`
+                    and `group_leader` roles, `private` for all other roles.
+                  example: public
                 groupIds:
                   type: array
                   minItems: 1
@@ -2115,7 +2125,9 @@ paths:
                     Array of group UUIDs the event is associated with. Must
                     contain at least one UUID if provided, and must not contain
                     duplicates. For trainers, all IDs must be groups they manage.
-                    At least one of `groupIds` or `agentIds` must be supplied.
+                    At least one of `groupIds` or `agentIds` must be supplied
+                    (ignored for `agent` role — agents are always assigned to
+                    their own event automatically).
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
                 agentIds:
@@ -2128,7 +2140,9 @@ paths:
                     Array of agent user UUIDs to assign individually to the
                     event via the `event_agents` junction table. Must contain at
                     least one UUID if provided, and must not contain duplicates.
-                    At least one of `groupIds` or `agentIds` must be supplied.
+                    At least one of `groupIds` or `agentIds` must be supplied
+                    (ignored for `agent` role — agents are always assigned to
+                    their own event automatically).
                   example:
                     - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
@@ -2194,8 +2208,7 @@ paths:
                 message: Unauthorized
         '403':
           description: >
-            Forbidden. Returned when the authenticated user has the `agent`
-            role, which is not permitted to create events.
+            Forbidden — non-admin attempting to modify another user's event.
           content:
             application/json:
               schema:
@@ -2315,13 +2328,16 @@ paths:
       description: >
         Updates the event identified by `eventId`. The caller must supply a valid
         Bearer token belonging to a user with the `admin`, `master_trainer`,
-        `trainer`, or `group_leader` role — `agent` users will receive a 403.
-        All request body fields are optional, but at least one must be provided.
-        When `groupIds` is supplied, the existing `event_groups` entries for this
-        event are replaced entirely. When `agentIds` is supplied, the existing
-        `event_agents` entries for this event are replaced entirely. For `trainer`
-        users, all supplied `groupIds` must belong to groups they manage; any
-        unmanaged group IDs result in a 400.
+        `trainer`, `group_leader`, or `agent` role. All request body fields are
+        optional, but at least one must be provided. Non-admin users may only
+        update events they created — attempting to modify another user's event
+        returns a 403. `agent` users always remain the sole assigned agent;
+        supplied `groupIds` and `agentIds` are ignored and replaced with the
+        agent's own ID. When `groupIds` is supplied (non-`agent` roles), the
+        existing `event_groups` entries for this event are replaced entirely.
+        When `agentIds` is supplied, the existing `event_agents` entries for this
+        event are replaced entirely. For `trainer` users, all supplied `groupIds`
+        must belong to groups they manage; any unmanaged group IDs result in a 400.
       security:
         - bearerAuth: []
       parameters:
@@ -2383,6 +2399,14 @@ paths:
                   minLength: 1
                   description: Updated description or agenda for the event.
                   example: Updated agenda covering revised Q2 targets.
+                visibility:
+                  type: string
+                  enum: [public, private]
+                  description: >
+                    Updated visibility of the event. Optional. Defaults to `public`
+                    for `agent` and `group_leader` roles, `private` for all other
+                    roles when not supplied on creation.
+                  example: public
                 groupIds:
                   type: array
                   minItems: 1
@@ -2393,7 +2417,7 @@ paths:
                     Replacement set of group UUIDs for the event. Existing
                     `event_groups` entries are deleted and replaced with these
                     values. Must not contain duplicates. For trainers, all IDs
-                    must be groups they manage.
+                    must be groups they manage. Ignored for `agent` role.
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
                 agentIds:
@@ -2405,7 +2429,7 @@ paths:
                   description: >
                     Replacement set of agent user UUIDs for the event. Existing
                     `event_agents` entries are deleted and replaced with these
-                    values. Must not contain duplicates.
+                    values. Must not contain duplicates. Ignored for `agent` role.
                   example:
                     - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
@@ -2467,8 +2491,7 @@ paths:
                 message: Unauthorized
         '403':
           description: >
-            Forbidden. Returned when the authenticated user has the `agent`
-            role, which is not permitted to update events.
+            Forbidden — non-admin attempting to modify another user's event.
           content:
             application/json:
               schema:
@@ -2482,6 +2505,140 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
+                message: Event not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Events]
+      summary: Delete an event
+      description: >
+        Permanently deletes the event identified by `eventId`. The caller must
+        supply a valid Bearer token. Admin users may delete any event within
+        the tenant. Non-admin users may only delete events they themselves
+        created — attempting to delete another user's event returns a 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: UUID of the event to delete.
+          schema:
+            type: string
+            format: uuid
+            example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+      responses:
+        '204':
+          description: Event deleted successfully. No response body is returned.
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden — non-admin attempting to delete another user's event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Not found. Returned when no event exists for the given `eventId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Event not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /events/{eventId}/public:
+    get:
+      tags: [Events]
+      summary: Get public event details
+      description: >
+        Returns publicly visible details for a single event. No authentication
+        is required. Returns 404 if the event does not exist, has been cancelled,
+        or has `visibility` set to `private`. Successful responses include a
+        `Cache-Control: public, max-age=60` header.
+      security: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: UUID of the event to retrieve.
+          schema:
+            type: string
+            format: uuid
+            example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+      responses:
+        '200':
+          description: Public event details retrieved successfully.
+          headers:
+            Cache-Control:
+              description: Instructs clients and proxies to cache the response for 60 seconds.
+              schema:
+                type: string
+                example: 'public, max-age=60'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PublicEventObject'
+              example:
+                success: true
+                data:
+                  id: b2c3d4e5-f6a7-8901-bcde-f12345678901
+                  event_title: Q2 Agent Networking Night
+                  description: A networking event open to all agents in the region.
+                  start_date: '2026-06-01T18:00:00.000Z'
+                  end_date: '2026-06-01T21:00:00.000Z'
+                  type: 'Face to Face'
+                  venue: Marina Bay Sands Convention Centre
+                  meeting_link: null
+                  created_by_name: Jane Doe
+                  status: upcoming
+        '404':
+          description: >
+            Not found. Returned when no event exists for the given `eventId`,
+            the event has been cancelled, or the event is not public.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message]
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Event not found
+              example:
+                success: false
                 message: Event not found
         '500':
           description: Internal server error
@@ -4642,6 +4799,11 @@ components:
           type: string
           format: date-time
           example: '2026-03-14T08:00:00.000Z'
+        visibility:
+          type: string
+          enum: [public, private]
+          description: Visibility of the event. Defaults to `public` for `agent` and `group_leader` roles, `private` for all other roles.
+          example: private
         groupIds:
           type: array
           items:
@@ -4660,6 +4822,56 @@ components:
           example:
             - d4e5f6a7-b8c9-0123-def0-234567890123
             - e5f6a7b8-c9d0-1234-ef01-345678901234
+
+    PublicEventObject:
+      type: object
+      required:
+        - id
+        - event_title
+        - start_date
+        - type
+        - created_by_name
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        event_title:
+          type: string
+          example: Q2 Agent Networking Night
+        description:
+          type: string
+          nullable: true
+          example: A networking event open to all agents in the region.
+        start_date:
+          type: string
+          format: date-time
+          example: '2026-06-01T18:00:00.000Z'
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-06-01T21:00:00.000Z'
+        type:
+          type: string
+          enum: ['Online', 'Face to Face']
+          example: 'Face to Face'
+        venue:
+          type: string
+          nullable: true
+          example: Marina Bay Sands Convention Centre
+        meeting_link:
+          type: string
+          nullable: true
+          example: 'https://meet.example.com/q2-networking'
+        created_by_name:
+          type: string
+          example: Jane Doe
+        status:
+          type: string
+          enum: [upcoming, completed]
+          example: upcoming
 
     DashboardStatsObject:
       type: object

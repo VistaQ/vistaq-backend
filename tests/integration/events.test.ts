@@ -384,22 +384,25 @@ describe('POST /api/events — happy path', () => {
 });
 
 describe('POST /api/events — role guard', () => {
-  it('returns 403 when called by agent role', async () => {
+  it('returns 201 when called by agent role (agent is now allowed to create own events)', async () => {
     expect(agentToken).not.toBeNull();
 
     const res = await request(app)
       .post('/api/events')
       .set('Authorization', `Bearer ${agentToken}`)
       .send({
-        title: 'Agent Event Attempt',
+        title: 'Agent Role Guard Event',
         startDate: futureDate(7),
         endDate: futureDateEnd(7),
         type: 'Face to Face',
-        description: 'Should be rejected',
-        groupIds: [GROUP_ID_ALPHA],
+        description: 'Agent is now in ALLOWED_ROLES',
       });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+
+    if (res.body?.data?.id) {
+      createdEventIds.push(res.body.data.id as string);
+    }
   });
 
   it('returns 401 when no Authorization header is provided', async () => {
@@ -492,7 +495,7 @@ describe('POST /api/events — validation', () => {
     expect(res.body).toHaveProperty('message', 'Validation failed');
   });
 
-  it('returns 400 when both groupIds and agentIds are omitted', async () => {
+  it('returns 400 when both groupIds and agentIds are omitted (non-agent role)', async () => {
     expect(adminToken).not.toBeNull();
 
     const res = await request(app)
@@ -503,11 +506,11 @@ describe('POST /api/events — validation', () => {
         startDate: futureDate(7),
         endDate: futureDateEnd(7),
         type: 'Face to Face',
-        description: 'Should fail — at least one of groupIds or agentIds required',
+        description: 'Should fail — at least one of groupIds or agentIds required for admin',
       });
 
+    // The Zod schema no longer enforces this — the controller returns 400 with its own message
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty('message', 'Validation failed');
   });
 
   it('returns 400 when groupIds is an empty array', async () => {
@@ -838,7 +841,7 @@ describe('PUT /api/events/:eventId — not found', () => {
 });
 
 describe('PUT /api/events/:eventId — role guard', () => {
-  it('returns 403 when called by agent role', async () => {
+  it('returns 404 when agent tries to update a non-existent event (agent is now allowed)', async () => {
     expect(agentToken).not.toBeNull();
 
     const res = await request(app)
@@ -846,7 +849,8 @@ describe('PUT /api/events/:eventId — role guard', () => {
       .set('Authorization', `Bearer ${agentToken}`)
       .send({ title: 'Agent Update Attempt' });
 
-    expect(res.status).toBe(403);
+    // Agent is now in ALLOWED_ROLES — event does not exist so 404 is expected
+    expect(res.status).toBe(404);
   });
 
   it('returns 401 when no Authorization header is provided', async () => {
@@ -1136,5 +1140,442 @@ describe('GET /api/events/:eventId — auth guard', () => {
       '/api/events/00000000-0000-0000-0000-000000000000',
     );
     expect(res.status).toBe(401);
+  });
+});
+
+/******************************************************************************
+  DELETE /api/events/:eventId
+******************************************************************************/
+
+describe('DELETE /api/events/:eventId', () => {
+  /** IDs created within this describe block — may already be deleted by test */
+  const deleteBlockEventIds: string[] = [];
+
+  afterAll(async () => {
+    for (const eventId of deleteBlockEventIds) {
+      try {
+        await supabaseService.adminDelete('events', { id: eventId });
+      } catch { /* best-effort — may already be deleted */ }
+    }
+  });
+
+  it('returns 204 and event is gone (404) after agent deletes their own event', async () => {
+    expect(agentToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    // Create an event as the agent
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({
+        title: 'Agent Event To Delete',
+        startDate: futureDate(3),
+        endDate: futureDateEnd(3),
+        type: 'Online',
+        description: 'This event will be deleted by the agent',
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    deleteBlockEventIds.push(eventId);
+
+    // Delete the event as the same agent
+    const deleteRes = await request(app)
+      .delete(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(deleteRes.status).toBe(204);
+
+    // Follow-up GET as same agent should return 404
+    const getRes = await request(app)
+      .get(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(getRes.status).toBe(404);
+  });
+
+  it('returns 403 or 404 when agent tries to delete another user\'s event', async () => {
+    expect(adminToken).not.toBeNull();
+    expect(agentToken).not.toBeNull();
+
+    // Create an event as admin
+    const createRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Admin Event Agent Cannot Delete',
+        startDate: futureDate(3),
+        endDate: futureDateEnd(3),
+        type: 'Face to Face',
+        description: 'Created by admin, agent should not be able to delete',
+        groupIds: [GROUP_ID_ALPHA],
+      });
+
+    expect(createRes.status).toBe(201);
+    const eventId = createRes.body.data.id as string;
+    deleteBlockEventIds.push(eventId);
+    createdEventIds.push(eventId);
+
+    // Agent attempts to delete an event they did not create
+    const deleteRes = await request(app)
+      .delete(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect([403, 404]).toContain(deleteRes.status);
+  });
+
+  it('returns 401 when no Authorization header is provided', async () => {
+    const res = await request(app)
+      .delete('/api/events/00000000-0000-0000-0000-000000000001');
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for a non-existent event UUID', async () => {
+    expect(adminToken).not.toBeNull();
+
+    const res = await request(app)
+      .delete('/api/events/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(404);
+  });
+});
+
+/******************************************************************************
+  Agent event create + GET /api/events/:eventId/public
+******************************************************************************/
+
+describe('POST /api/events — agent create', () => {
+  it('returns 201 with agentIds:[self], groupIds:[], created_by_role:agent, visibility:public when no audience fields sent', async () => {
+    expect(agentToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({
+        title: 'Agent Personal Event',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
+        type: 'Online',
+        description: 'Created by agent with no audience override',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('success', true);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('id');
+    expect(event).toHaveProperty('created_by_role', 'agent');
+    expect(event).toHaveProperty('visibility', 'public');
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.agentIds).toContain(agentUserId!);
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect((event.groupIds as string[]).length).toBe(0);
+
+    if (event.id) {
+      createdEventIds.push(event.id as string);
+    }
+  });
+
+  it('returns 201 with visibility:private when agent explicitly sets visibility:private', async () => {
+    expect(agentToken).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({
+        title: 'Agent Private Event',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
+        type: 'Face to Face',
+        description: 'Agent-set private visibility',
+        visibility: 'private',
+      });
+
+    expect(res.status).toBe(201);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('visibility', 'private');
+
+    if (event.id) {
+      createdEventIds.push(event.id as string);
+    }
+  });
+
+  it('returns 201 and server overrides groupIds/agentIds to [self]/[] when agent sends them', async () => {
+    expect(agentToken).not.toBeNull();
+    expect(agentUserId).not.toBeNull();
+    expect(adminUserId).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({
+        title: 'Agent Override Audience Event',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
+        type: 'Online',
+        description: 'Server should override groupIds and agentIds',
+        groupIds: [GROUP_ID_ALPHA],
+        agentIds: [adminUserId!],
+      });
+
+    expect(res.status).toBe(201);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('visibility', 'public');
+    expect(Array.isArray(event.agentIds)).toBe(true);
+    expect(event.agentIds).toContain(agentUserId!);
+    expect(event.agentIds).not.toContain(adminUserId!);
+    expect(Array.isArray(event.groupIds)).toBe(true);
+    expect((event.groupIds as string[]).length).toBe(0);
+
+    if (event.id) {
+      createdEventIds.push(event.id as string);
+    }
+  });
+
+  it('returns 201 with visibility:private when admin creates event with no visibility', async () => {
+    expect(adminToken).not.toBeNull();
+
+    const res = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Admin Event No Visibility',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
+        type: 'Face to Face',
+        description: 'Admin default visibility should be private',
+        groupIds: [GROUP_ID_ALPHA],
+      });
+
+    expect(res.status).toBe(201);
+
+    const event = res.body.data as Record<string, unknown>;
+    expect(event).toHaveProperty('visibility', 'private');
+
+    if (event.id) {
+      createdEventIds.push(event.id as string);
+    }
+  });
+});
+
+describe('GET /api/events/:eventId/public', () => {
+  /** IDs created within this describe block — cleaned up in afterAll via createdEventIds */
+  let publicEventId: string | null = null;
+  let privateEventId: string | null = null;
+  let cancelledPublicEventId: string | null = null;
+  let completedPublicEventId: string | null = null;
+  let adminPublicEventId: string | null = null;
+
+  beforeAll(async () => {
+    if (!adminToken || !adminUserId) return;
+
+    // Create a public upcoming event
+    const publicRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Public Upcoming Event',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
+        type: 'Online',
+        description: 'Visible publicly',
+        groupIds: [GROUP_ID_ALPHA],
+        visibility: 'public',
+      });
+    if (publicRes.status === 201 && publicRes.body?.data?.id) {
+      publicEventId = publicRes.body.data.id as string;
+      createdEventIds.push(publicEventId);
+    }
+
+    // Create a private event
+    const privateRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Private Event',
+        startDate: futureDate(5),
+        endDate: futureDateEnd(5),
+        type: 'Online',
+        description: 'Should not be visible publicly',
+        groupIds: [GROUP_ID_ALPHA],
+        visibility: 'private',
+      });
+    if (privateRes.status === 201 && privateRes.body?.data?.id) {
+      privateEventId = privateRes.body.data.id as string;
+      createdEventIds.push(privateEventId);
+    }
+
+    // Create a public event then update it to cancelled via admin insert
+    const cancelledInsert = await supabaseService.adminInsert('events', {
+      tenant_id: TENANT_ID,
+      event_title: 'Cancelled Public Event',
+      start_date: futureDate(5),
+      end_date: futureDateEnd(5),
+      type: 'Online',
+      description: 'Cancelled and public',
+      status: 'cancelled',
+      visibility: 'public',
+      created_by: adminUserId,
+      created_by_role: 'admin',
+    });
+    const cancelledRows = cancelledInsert.data as unknown as { id: string }[];
+    if (cancelledRows && cancelledRows.length > 0) {
+      cancelledPublicEventId = cancelledRows[0].id;
+      createdEventIds.push(cancelledPublicEventId);
+    }
+
+    // Create a public completed event via admin insert
+    const completedInsert = await supabaseService.adminInsert('events', {
+      tenant_id: TENANT_ID,
+      event_title: 'Completed Public Event',
+      start_date: futureDate(5),
+      end_date: futureDateEnd(5),
+      type: 'Online',
+      description: 'Completed and public',
+      status: 'completed',
+      visibility: 'public',
+      created_by: adminUserId,
+      created_by_role: 'admin',
+    });
+    const completedRows = completedInsert.data as unknown as { id: string }[];
+    if (completedRows && completedRows.length > 0) {
+      completedPublicEventId = completedRows[0].id;
+      createdEventIds.push(completedPublicEventId);
+    }
+
+    // Admin-created public event (same as publicEventId but explicit separate record)
+    const adminPubRes = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 'Admin Created Public Event',
+        startDate: futureDate(6),
+        endDate: futureDateEnd(6),
+        type: 'Face to Face',
+        description: 'Admin role creates a public event',
+        groupIds: [GROUP_ID_ALPHA],
+        visibility: 'public',
+      });
+    if (adminPubRes.status === 201 && adminPubRes.body?.data?.id) {
+      adminPublicEventId = adminPubRes.body.data.id as string;
+      createdEventIds.push(adminPublicEventId);
+    }
+  }, 30000);
+
+  it('returns 200 with IPublicEvent shape for a public upcoming event', async () => {
+    expect(publicEventId).not.toBeNull();
+
+    const res = await request(app)
+      .get(`/api/events/${publicEventId}/public`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+    expect(res.body).toHaveProperty('data');
+
+    const data = res.body.data as Record<string, unknown>;
+    // Required fields
+    expect(data).toHaveProperty('id', publicEventId);
+    expect(data).toHaveProperty('event_title');
+    expect(data).toHaveProperty('start_date');
+    expect(data).toHaveProperty('end_date');
+    expect(data).toHaveProperty('type');
+    expect(data).toHaveProperty('status');
+    expect(data).toHaveProperty('created_by_name');
+    // Optional nullable fields present
+    expect(Object.keys(data)).toContain('description');
+    expect(Object.keys(data)).toContain('venue');
+    expect(Object.keys(data)).toContain('meeting_link');
+
+    // Sensitive fields MUST NOT be present
+    expect(data).not.toHaveProperty('tenant_id');
+    expect(data).not.toHaveProperty('created_by');
+    expect(data).not.toHaveProperty('created_by_role');
+    expect(data).not.toHaveProperty('visibility');
+    expect(data).not.toHaveProperty('agentIds');
+    expect(data).not.toHaveProperty('groupIds');
+  });
+
+  it('returns 404 with { success: false, message: "Event not found" } for a private event', async () => {
+    expect(privateEventId).not.toBeNull();
+
+    const res = await request(app)
+      .get(`/api/events/${privateEventId}/public`);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('success', false);
+    expect(res.body).toHaveProperty('message', 'Event not found');
+  });
+
+  it('returns 404 for a public but cancelled event', async () => {
+    if (!cancelledPublicEventId) return;
+
+    const res = await request(app)
+      .get(`/api/events/${cancelledPublicEventId}/public`);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('success', false);
+    expect(res.body).toHaveProperty('message', 'Event not found');
+  });
+
+  it('returns 200 for a public completed event (completed events are viewable)', async () => {
+    if (!completedPublicEventId) return;
+
+    const res = await request(app)
+      .get(`/api/events/${completedPublicEventId}/public`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+
+    const data = res.body.data as Record<string, unknown>;
+    expect(data).toHaveProperty('status', 'completed');
+  });
+
+  it('returns 200 with no Authorization header (unauthenticated access)', async () => {
+    expect(publicEventId).not.toBeNull();
+
+    const res = await request(app)
+      .get(`/api/events/${publicEventId}/public`);
+    // Deliberately no .set('Authorization', ...) header
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+  });
+
+  it('returns 404 for a non-existent UUID', async () => {
+    const res = await request(app)
+      .get('/api/events/00000000-0000-0000-0000-000000000000/public');
+
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('success', false);
+    expect(res.body).toHaveProperty('message', 'Event not found');
+  });
+
+  it('returns 404 for a garbage non-UUID string', async () => {
+    const res = await request(app)
+      .get('/api/events/not-a-valid-uuid/public');
+
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('success', false);
+    expect(res.body).toHaveProperty('message', 'Event not found');
+  });
+
+  it('returns 200 for an admin-created public event (model is role-agnostic)', async () => {
+    expect(adminPublicEventId).not.toBeNull();
+
+    const res = await request(app)
+      .get(`/api/events/${adminPublicEventId}/public`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('success', true);
+
+    const data = res.body.data as Record<string, unknown>;
+    expect(data).toHaveProperty('id', adminPublicEventId);
+    expect(data).not.toHaveProperty('tenant_id');
+    expect(data).not.toHaveProperty('visibility');
   });
 });

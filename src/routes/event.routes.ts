@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 
 import eventController, {
@@ -35,6 +35,7 @@ export const createEventSchema = z
     link: z.string().url('Link must be a valid URL').optional(),
     venue: z.string().optional(),
     description: z.string().min(1),
+    visibility: z.enum(['public', 'private']).optional(),
     groupIds: z
       .array(z.string().uuid())
       .min(1)
@@ -47,10 +48,6 @@ export const createEventSchema = z
       .optional(),
   })
   .strict()
-  .refine(
-    (data) => data.groupIds !== undefined || data.agentIds !== undefined,
-    { message: 'At least one of groupIds or agentIds must be provided' },
-  )
   .refine(
     (data) => new Date(data.endDate) > new Date(data.startDate),
     { message: 'endDate must be after startDate', path: ['endDate'] },
@@ -66,6 +63,7 @@ export const updateEventSchema = z
     link: z.string().url('Link must be a valid URL').optional(),
     venue: z.string().optional(),
     description: z.string().min(1).optional(),
+    visibility: z.enum(['public', 'private']).optional(),
     groupIds: z
       .array(z.string().uuid())
       .min(1)
@@ -97,6 +95,12 @@ export const updateEventSchema = z
 
 const router = express.Router();
 
+router.get(
+  '/:eventId/public',
+  (req: Request, res: Response, next: NextFunction) =>
+    eventController.getPublic(req, res, next),
+);
+
 router.post(
   '/',
   authenticate,
@@ -111,6 +115,13 @@ router.put(
   validate(updateEventSchema),
   (req, res, next) =>
     eventController.update(req as unknown as IUpdateEventReq, res, next),
+);
+
+router.delete(
+  '/:eventId',
+  authenticate,
+  (req, res, next) =>
+    eventController.delete(req as unknown as IGetEventByIdReq, res, next),
 );
 
 router.get(
