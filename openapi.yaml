@@ -1327,8 +1327,10 @@ paths:
         is supplied and differs from the current leader, the new leader is promoted
         to `group_leader` and the previous leader is demoted back to `agent`. When
         `trainer_ids` is supplied, the existing trainer assignments for the group are replaced with the provided set. When
-        `member_ids` is supplied, the `group_id` field on each referenced user is
-        set to this group. All referenced users must exist within the caller's tenant.
+        `member_ids` is supplied, the group's member set is **replaced** with the provided list — users currently in the
+        group but absent from the new list have their `group_id` set to `null` (unlinked). The current group leader is
+        always retained as a member regardless of whether their UUID appears in `member_ids`. Passing an empty array
+        (`[]`) unlinks all non-leader members. All provided UUIDs must exist within the caller's tenant.
       security:
         - bearerAuth: []
       parameters:
@@ -1378,13 +1380,13 @@ paths:
                     - 3fa85f64-5717-4562-b3fc-2c963f66afa6
                 member_ids:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
-                    Array of user UUIDs to assign to this group. Sets the
-                    `group_id` field on each referenced user. All provided IDs
+                    Replaces the full member set for the group. Users currently in the group but absent from this list
+                    have their `group_id` set to `null`. The current group leader is always retained regardless of
+                    whether their UUID is included. Pass `[]` to unlink all non-leader members. All provided UUIDs
                     must exist within the caller's tenant.
                   example:
                     - a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11

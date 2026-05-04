@@ -183,7 +183,7 @@ class UserService {
     }
   }
 
-  async updateUsersGroupId(userIds: string[], groupId: string, token: string): Promise<void> {
+  async updateUsersGroupId(userIds: string[], groupId: string | null, token: string): Promise<void> {
     try {
       await userRepository.updateGroupIdForUsers(userIds, groupId, token);
     } catch (error) {
