@@ -1,7 +1,9 @@
-import { NextFunction, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
 
 import {
   EventNotFoundError,
+  ForbiddenEventAccessError,
   InvalidAgentIdsError,
   InvalidDateRangeError,
   InvalidGroupIdsError,
@@ -10,7 +12,7 @@ import {
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import eventService from '@src/services/event.service';
-import { IEvent } from '@src/types/event.types';
+import { IEvent, IPublicEvent } from '@src/types/event.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -28,6 +30,7 @@ export interface ICreateEventReq extends IBaseReq {
     link?: string;
     venue?: string;
     description: string;
+    visibility?: string;
     groupIds?: string[];
     agentIds?: string[];
   };
@@ -49,6 +52,7 @@ export interface IUpdateEventReq extends IBaseReq {
     link?: string;
     venue?: string;
     description?: string;
+    visibility?: string;
     groupIds?: string[];
     agentIds?: string[];
   };
@@ -73,11 +77,16 @@ export interface IGetEventByIdRes extends IBaseRes {
   data: IEvent;
 }
 
+export interface IGetPublicEventRes extends IBaseRes {
+  success: boolean;
+  data: IPublicEvent;
+}
+
 /******************************************************************************
                             EventController
 ******************************************************************************/
 
-const ALLOWED_ROLES = ['admin', 'master_trainer', 'trainer', 'group_leader'];
+const ALLOWED_ROLES = ['admin', 'master_trainer', 'trainer', 'group_leader', 'agent'];
 
 class EventController {
   async create(
@@ -92,8 +101,20 @@ class EventController {
       }
 
       const token = req.headers['authorization']!.slice(7);
-      const { title, startDate, endDate, status, type, link, venue, description, groupIds, agentIds } =
-        req.body;
+      const { title, startDate, endDate, status, type, link, venue, description } = req.body;
+      let { visibility, groupIds, agentIds } = req.body;
+
+      if (req.user!.role === 'agent') {
+        groupIds = undefined;
+        agentIds = [req.user!.id];
+      } else if (groupIds === undefined && agentIds === undefined) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'At least one of groupIds or agentIds must be provided'));
+        return;
+      }
+
+      if (visibility === undefined) {
+        visibility = req.user!.role === 'agent' ? 'public' : 'private';
+      }
 
       const event = await eventService.createEvent({
         title,
@@ -104,6 +125,7 @@ class EventController {
         link,
         venue,
         description,
+        visibility,
         groupIds,
         agentIds,
         tenantId: req.user!.tenant_id,
@@ -145,8 +167,13 @@ class EventController {
 
       const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
-      const { title, startDate, endDate, status, type, link, venue, description, groupIds, agentIds } =
-        req.body;
+      const { title, startDate, endDate, status, type, link, venue, description, visibility } = req.body;
+      let { groupIds, agentIds } = req.body;
+
+      if (req.user!.role === 'agent') {
+        groupIds = undefined;
+        agentIds = [req.user!.id];
+      }
 
       const event = await eventService.updateEvent({
         eventId,
@@ -158,6 +185,7 @@ class EventController {
         link,
         venue,
         description,
+        visibility,
         groupIds,
         agentIds,
         tenantId: req.user!.tenant_id,
@@ -229,6 +257,63 @@ class EventController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('EventController.getById', error, next);
+    }
+  }
+
+  async delete(
+    req: IGetEventByIdReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const token = req.headers['authorization']!.slice(7);
+      const { eventId } = req.params;
+
+      await eventService.deleteEvent({
+        eventId,
+        userId: req.user!.id,
+        role: req.user!.role,
+        token,
+      });
+
+      res.status(HttpStatusCodes.NO_CONTENT).send();
+    } catch (error) {
+      if (error instanceof EventNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+      if (error instanceof ForbiddenEventAccessError) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, error.message));
+        return;
+      }
+      return handleControllerError('EventController.delete', error, next);
+    }
+  }
+
+  async getPublic(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const parsed = z.string().uuid().safeParse(req.params.eventId);
+      if (!parsed.success) {
+        res.status(HttpStatusCodes.NOT_FOUND).json({ success: false, message: 'Event not found' });
+        return;
+      }
+
+      const event = await eventService.getPublicEventById(parsed.data);
+
+      if (!event) {
+        res.status(HttpStatusCodes.NOT_FOUND).json({ success: false, message: 'Event not found' });
+        return;
+      }
+
+      const responseBody: IGetPublicEventRes = { success: true, data: event };
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('EventController.getPublic', error, next);
     }
   }
 }

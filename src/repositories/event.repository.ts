@@ -15,6 +15,20 @@ type EventWithRelationsRow = EventsRow & {
   event_agents: { user_id: string }[];
 };
 
+export type PublicEventRaw = {
+  id: string;
+  event_title: string;
+  description: string | null;
+  start_date: string;
+  end_date: string | null;
+  type: string;
+  venue: string | null;
+  meeting_link: string | null;
+  created_by_name: string;
+  status: string;
+  visibility: string;
+};
+
 /******************************************************************************
                             EventRepository
 ******************************************************************************/
@@ -36,6 +50,7 @@ class EventRepository {
       created_by_role: row.created_by_role,
       created_at: row.created_at,
       updated_at: row.updated_at,
+      visibility: row.visibility,
       groupIds: (row.event_groups ?? []).map((eg) => eg.group_id),
       agentIds: (row.event_agents ?? []).map((ea) => ea.user_id),
     };
@@ -57,6 +72,7 @@ class EventRepository {
       created_by_role: row.created_by_role,
       created_at: row.created_at,
       updated_at: row.updated_at,
+      visibility: row.visibility,
       groupIds: [],
       agentIds: [],
     };
@@ -309,6 +325,70 @@ class EventRepository {
         'EventRepository.deleteEventAgentsByEventId',
         error,
       );
+    }
+  }
+
+  async deleteEvent(eventId: string, userToken: string): Promise<void> {
+    try {
+      const response = await supabaseService.userDelete(
+        userToken,
+        'events',
+        { id: eventId } as Partial<EventsRow>,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+    } catch (error) {
+      return handleRepositoryError('EventRepository.deleteEvent', error);
+    }
+  }
+
+  async findPublicEventById(eventId: string): Promise<PublicEventRaw | null> {
+    try {
+      const response = await supabaseService.adminSelectWithJoin(
+        'events',
+        'id, event_title, description, start_date, end_date, type, venue, meeting_link, status, visibility, users!events_created_by_fkey(name)',
+        { id: eventId },
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (!response.data || response.data.length === 0) {
+        return null;
+      }
+
+      const row = response.data[0] as unknown as {
+        id: string;
+        event_title: string;
+        description: string | null;
+        start_date: string;
+        end_date: string | null;
+        type: string;
+        venue: string | null;
+        meeting_link: string | null;
+        status: string;
+        visibility: string;
+        users: { name: string } | null;
+      };
+
+      return {
+        id: row.id,
+        event_title: row.event_title,
+        description: row.description,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        type: row.type,
+        venue: row.venue,
+        meeting_link: row.meeting_link,
+        created_by_name: row.users?.name ?? '',
+        status: row.status,
+        visibility: row.visibility,
+      };
+    } catch (error) {
+      return handleRepositoryError('EventRepository.findPublicEventById', error);
     }
   }
 }
