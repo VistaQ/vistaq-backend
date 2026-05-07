@@ -32,7 +32,12 @@ export const createEventSchema = z
     endDate: isoDateTimeField,
     status: z.enum(['upcoming', 'completed', 'cancelled']).optional(),
     type: z.enum(['Face to Face', 'Online']),
-    link: z.string().url('Link must be a valid URL').optional(),
+    link: z
+      .string()
+      .min(1, 'Link must not be empty')
+      .transform((val) => (/^https?:\/\//i.test(val) ? val : `https://${val}`))
+      .pipe(z.string().url('Link must be a valid URL'))
+      .optional(),
     venue: z.string().optional(),
     description: z.string().min(1),
     visibility: z.enum(['public', 'private']).optional(),
@@ -58,7 +63,12 @@ export const updateEventSchema = z
     endDate: isoDateTimeField.optional(),
     status: z.enum(['upcoming', 'completed', 'cancelled']).optional(),
     type: z.enum(['Face to Face', 'Online']).optional(),
-    link: z.string().url('Link must be a valid URL').optional(),
+    link: z
+      .string()
+      .min(1, 'Link must not be empty')
+      .transform((val) => (/^https?:\/\//i.test(val) ? val : `https://${val}`))
+      .pipe(z.string().url('Link must be a valid URL'))
+      .optional(),
     venue: z.string().optional(),
     description: z.string().min(1).optional(),
     visibility: z.enum(['public', 'private']).optional(),

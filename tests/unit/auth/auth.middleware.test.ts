@@ -91,7 +91,7 @@ describe('validate middleware — registerSchema', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Validation failed', errors: expect.any(Array) }),
+      expect.objectContaining({ message: 'Validation failed', fieldErrors: expect.any(Object) }),
     );
     expect(next).not.toHaveBeenCalled();
   });
@@ -105,7 +105,7 @@ describe('validate middleware — registerSchema', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Validation failed', errors: expect.any(Array) }),
+      expect.objectContaining({ message: 'Validation failed', fieldErrors: expect.any(Object) }),
     );
     expect(next).not.toHaveBeenCalled();
   });
@@ -168,7 +168,7 @@ describe('validate middleware — loginSchema', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Validation failed', errors: expect.any(Array) }),
+      expect.objectContaining({ message: 'Validation failed', fieldErrors: expect.any(Object) }),
     );
     expect(next).not.toHaveBeenCalled();
   });
@@ -181,7 +181,7 @@ describe('validate middleware — loginSchema', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Validation failed', errors: expect.any(Array) }),
+      expect.objectContaining({ message: 'Validation failed', fieldErrors: expect.any(Object) }),
     );
     expect(next).not.toHaveBeenCalled();
   });
@@ -195,7 +195,7 @@ describe('validate middleware — loginSchema', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Validation failed', errors: expect.any(Array) }),
+      expect.objectContaining({ message: 'Validation failed', fieldErrors: expect.any(Object) }),
     );
     expect(next).not.toHaveBeenCalled();
   });
