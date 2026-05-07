@@ -204,14 +204,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: too_small
-                        minimum: 6
-                        type: string
-                        inclusive: true
-                        exact: false
-                        message: Password must be at least 6 characters
-                        path: [password]
+                    formErrors: []
+                    fieldErrors:
+                      password:
+                        - Password must be at least 6 characters
         '404':
           description: Tenant not found
           content:
@@ -309,11 +305,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: invalid_string
-                        validation: email
-                        message: Invalid email
-                        path: [email]
+                    formErrors: []
+                    fieldErrors:
+                      email:
+                        - Invalid email
         '404':
           description: Tenant not found
           content:
@@ -496,11 +491,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: invalid_string
-                        validation: email
-                        message: Invalid email
-                        path: [email]
+                    formErrors: []
+                    fieldErrors:
+                      email:
+                        - Invalid email
         '404':
           description: Tenant not found
           content:
@@ -580,14 +574,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 6
-                    type: string
-                    inclusive: true
-                    exact: false
-                    message: Password must be at least 6 characters
-                    path: [newPassword]
+                formErrors: []
+                fieldErrors:
+                  newPassword:
+                    - Password must be at least 6 characters
         '500':
           description: >
             Internal server error. Also returned when the supplied token is
@@ -660,14 +650,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 6
-                    type: string
-                    inclusive: true
-                    exact: false
-                    message: Password must be at least 6 characters
-                    path: [newPassword]
+                formErrors: []
+                fieldErrors:
+                  newPassword:
+                    - Password must be at least 6 characters
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -876,10 +862,9 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: custom
-                    message: At least one field must be provided
-                    path: []
+                formErrors:
+                  - At least one field must be provided
+                fieldErrors: {}
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -1054,14 +1039,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: too_small
-                        minimum: 8
-                        type: string
-                        inclusive: true
-                        exact: false
-                        message: Password must be at least 8 characters
-                        path: [password]
+                    formErrors: []
+                    fieldErrors:
+                      password:
+                        - Password must be at least 8 characters
                 invalidAgentCode:
                   summary: Invalid or already used agent code
                   value:
@@ -1213,14 +1194,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: too_small
-                        minimum: 1
-                        type: string
-                        inclusive: true
-                        exact: false
-                        message: String must contain at least 1 character(s)
-                        path: [name]
+                    formErrors: []
+                    fieldErrors:
+                      name:
+                        - String must contain at least 1 character(s)
                 invalidLeaderRole:
                   summary: Leader does not have the agent role
                   value:
@@ -1422,10 +1399,9 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one field must be provided
-                        path: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 invalidLeaderRole:
                   summary: Proposed leader does not have the agent role
                   value:
@@ -1692,14 +1668,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 1
-                    type: string
-                    inclusive: true
-                    exact: false
-                    message: String must contain at least 1 character(s)
-                    path: [fullName]
+                formErrors: []
+                fieldErrors:
+                  fullName:
+                    - String must contain at least 1 character(s)
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -1912,18 +1884,17 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one field must be provided
-                        path: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 missingUnsuccessfulReason:
                   summary: unsuccessfulReason required when salesOutcome is unsuccessful
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: unsuccessfulReason is required when salesOutcome is unsuccessful
-                        path: [unsuccessfulReason]
+                    formErrors: []
+                    fieldErrors:
+                      unsuccessfulReason:
+                        - unsuccessfulReason is required when salesOutcome is unsuccessful
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -2096,9 +2067,11 @@ paths:
                   example: 'Face to Face'
                 link:
                   type: string
-                  format: uri
-                  description: Optional URL for the event (e.g. a video call link).
-                  example: 'https://meet.example.com/q2-kickoff'
+                  description: >
+                    Optional URL for an online meeting link. If no protocol is
+                    provided (`http://` or `https://`), the server will
+                    auto-prefix `https://`.
+                  example: 'meet.example.com/q2-kickoff'
                 venue:
                   type: string
                   description: Optional venue or location for the event.
@@ -2172,18 +2145,17 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: Date cannot be in the past
-                        path: [date]
+                    formErrors: []
+                    fieldErrors:
+                      title:
+                        - Required
                 missingGroupsOrAgents:
                   summary: Neither groupIds nor agentIds provided
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one of groupIds or agentIds must be provided
-                        path: []
+                    formErrors:
+                      - At least one of groupIds or agentIds must be provided
+                    fieldErrors: {}
                 invalidGroupIds:
                   summary: One or more group IDs do not exist
                   value:
@@ -2383,9 +2355,11 @@ paths:
                   example: Online
                 link:
                   type: string
-                  format: uri
-                  description: Updated URL for the event.
-                  example: 'https://meet.example.com/q2-kickoff-revised'
+                  description: >
+                    Optional URL for an online meeting link. If no protocol is
+                    provided (`http://` or `https://`), the server will
+                    auto-prefix `https://`.
+                  example: 'meet.example.com/q2-kickoff-revised'
                 venue:
                   type: string
                   description: Updated venue or location for the event.
@@ -2459,10 +2433,9 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one field must be provided
-                        path: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 invalidDateRange:
                   summary: endDate is not after startDate
                   value:
@@ -2800,10 +2773,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: invalid_type
-                        path: [activity]
-                        message: Required
+                    formErrors: []
+                    fieldErrors:
+                      activity:
+                        - Required
         '403':
           description: Forbidden. The authenticated user does not have the `admin` role.
           content:
@@ -2916,14 +2889,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 1
-                    type: number
-                    inclusive: true
-                    exact: false
-                    message: Points must be greater than 0
-                    path: [points]
+                formErrors: []
+                fieldErrors:
+                  points:
+                    - Points must be greater than 0
         '403':
           description: Forbidden. The authenticated user does not have the `admin` role.
           content:
@@ -3060,7 +3029,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors: []
+                formErrors: []
+                fieldErrors:
+                  period:
+                    - Invalid enum value. Expected 'mtd' | 'ytd'
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -3145,7 +3117,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors: []
+                formErrors: []
+                fieldErrors:
+                  page:
+                    - Expected number, received string
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -3267,7 +3242,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors: []
+                formErrors: []
+                fieldErrors:
+                  title:
+                    - Required
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -3477,7 +3455,9 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 invalidDateRange:
                   summary: endDate is not after startDate
                   value:
@@ -5416,16 +5396,27 @@ components:
 
     ValidationErrorResponse:
       type: object
-      required: [message, errors]
+      required: [message, formErrors, fieldErrors]
       properties:
         message:
           type: string
           example: Validation failed
-        errors:
+        formErrors:
           type: array
           items:
-            type: object
+            type: string
+          description: Top-level (non-field) validation error messages.
           example: []
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Per-field validation error messages keyed by field name.
+          example:
+            fieldName:
+              - Error message for the field
 
     ##########################################################################
     # Sales Reports
