@@ -38,12 +38,10 @@ export const createEventSchema = z
     visibility: z.enum(['public', 'private']).optional(),
     groupIds: z
       .array(z.string().uuid())
-      .min(1)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
       .optional(),
     agentIds: z
       .array(z.string().uuid())
-      .min(1)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
       .optional(),
   })
@@ -66,12 +64,10 @@ export const updateEventSchema = z
     visibility: z.enum(['public', 'private']).optional(),
     groupIds: z
       .array(z.string().uuid())
-      .min(1)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
       .optional(),
     agentIds: z
       .array(z.string().uuid())
-      .min(1)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
       .optional(),
   })

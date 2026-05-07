@@ -107,7 +107,7 @@ class EventController {
       if (req.user!.role === 'agent') {
         groupIds = undefined;
         agentIds = [req.user!.id];
-      } else if (groupIds === undefined && agentIds === undefined) {
+      } else if (!groupIds?.length && !agentIds?.length) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'At least one of groupIds or agentIds must be provided'));
         return;
       }
@@ -173,6 +173,15 @@ class EventController {
       if (req.user!.role === 'agent') {
         groupIds = undefined;
         agentIds = [req.user!.id];
+      } else {
+        if (groupIds !== undefined && groupIds.length === 0) {
+          next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'groupIds must not be empty'));
+          return;
+        }
+        if (agentIds !== undefined && agentIds.length === 0) {
+          next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'agentIds must not be empty'));
+          return;
+        }
       }
 
       const event = await eventService.updateEvent({
@@ -266,6 +275,11 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
+      if (!ALLOWED_ROLES.includes(req.user!.role)) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
       const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
 
@@ -298,14 +312,14 @@ class EventController {
     try {
       const parsed = z.string().uuid().safeParse(req.params.eventId);
       if (!parsed.success) {
-        res.status(HttpStatusCodes.NOT_FOUND).json({ success: false, message: 'Event not found' });
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Event not found'));
         return;
       }
 
       const event = await eventService.getPublicEventById(parsed.data);
 
       if (!event) {
-        res.status(HttpStatusCodes.NOT_FOUND).json({ success: false, message: 'Event not found' });
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Event not found'));
         return;
       }
 
