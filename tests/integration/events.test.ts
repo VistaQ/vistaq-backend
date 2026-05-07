@@ -529,7 +529,7 @@ describe('POST /api/events — validation', () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty('message', 'Validation failed');
+    expect(res.body).toHaveProperty('message', 'At least one of groupIds or agentIds must be provided');
   });
 
   it('returns 400 for an invalid type value', async () => {
@@ -1507,7 +1507,6 @@ describe('GET /api/events/:eventId/public', () => {
       .get(`/api/events/${privateEventId}/public`);
 
     expect(res.status).toBe(404);
-    expect(res.body).toHaveProperty('success', false);
     expect(res.body).toHaveProperty('message', 'Event not found');
   });
 
@@ -1518,7 +1517,6 @@ describe('GET /api/events/:eventId/public', () => {
       .get(`/api/events/${cancelledPublicEventId}/public`);
 
     expect(res.status).toBe(404);
-    expect(res.body).toHaveProperty('success', false);
     expect(res.body).toHaveProperty('message', 'Event not found');
   });
 
@@ -1551,7 +1549,6 @@ describe('GET /api/events/:eventId/public', () => {
       .get('/api/events/00000000-0000-0000-0000-000000000000/public');
 
     expect(res.status).toBe(404);
-    expect(res.body).toHaveProperty('success', false);
     expect(res.body).toHaveProperty('message', 'Event not found');
   });
 
@@ -1560,7 +1557,6 @@ describe('GET /api/events/:eventId/public', () => {
       .get('/api/events/not-a-valid-uuid/public');
 
     expect(res.status).toBe(404);
-    expect(res.body).toHaveProperty('success', false);
     expect(res.body).toHaveProperty('message', 'Event not found');
   });
 

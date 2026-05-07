@@ -2117,32 +2117,28 @@ paths:
                   example: public
                 groupIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
                     Array of group UUIDs the event is associated with. Must
-                    contain at least one UUID if provided, and must not contain
-                    duplicates. For trainers, all IDs must be groups they manage.
-                    At least one of `groupIds` or `agentIds` must be supplied
-                    (ignored for `agent` role — agents are always assigned to
-                    their own event automatically).
+                    not contain duplicates. For trainers, all IDs must be groups
+                    they manage. At least one of `groupIds` or `agentIds` must
+                    be supplied (ignored for `agent` role — agents are always
+                    assigned to their own event automatically).
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
                 agentIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
                     Array of agent user UUIDs to assign individually to the
-                    event via the `event_agents` junction table. Must contain at
-                    least one UUID if provided, and must not contain duplicates.
-                    At least one of `groupIds` or `agentIds` must be supplied
-                    (ignored for `agent` role — agents are always assigned to
-                    their own event automatically).
+                    event via the `event_agents` junction table. Must not contain
+                    duplicates. At least one of `groupIds` or `agentIds` must be
+                    supplied (ignored for `agent` role — agents are always
+                    assigned to their own event automatically).
                   example:
                     - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
@@ -2409,7 +2405,6 @@ paths:
                   example: public
                 groupIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
@@ -2422,7 +2417,6 @@ paths:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
                 agentIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
@@ -2451,7 +2445,9 @@ paths:
             Bad request. Returned when the request body fails validation (e.g.
             no fields provided, `startDate` is in the past, `endDate` is not
             after `startDate`, a supplied group UUID does not exist, or a
-            trainer supplies a group they do not manage).
+            trainer supplies a group they do not manage). Also returned if
+            `groupIds` or `agentIds` is provided as an empty array (non-agent
+            callers only).
           content:
             application/json:
               schema:
@@ -2518,9 +2514,11 @@ paths:
       summary: Delete an event
       description: >
         Permanently deletes the event identified by `eventId`. The caller must
-        supply a valid Bearer token. Admin users may delete any event within
-        the tenant. Non-admin users may only delete events they themselves
-        created — attempting to delete another user's event returns a 403.
+        supply a valid Bearer token belonging to a user with the `admin`,
+        `master_trainer`, `trainer`, `group_leader`, or `agent` role. Admin
+        users may delete any event within the tenant. Non-admin users may only
+        delete events they themselves created — attempting to delete another
+        user's event returns a 403.
       security:
         - bearerAuth: []
       parameters:
@@ -2547,7 +2545,9 @@ paths:
                 message: Unauthorized
         '403':
           description: >
-            Forbidden — non-admin attempting to delete another user's event.
+            Forbidden — caller does not have an allowed role (`admin`,
+            `master_trainer`, `trainer`, `group_leader`, `agent`), or a
+            non-admin caller is attempting to delete another user's event.
           content:
             application/json:
               schema:
@@ -2629,16 +2629,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [success, message]
+                required: [message]
                 properties:
-                  success:
-                    type: boolean
-                    example: false
                   message:
                     type: string
                     example: Event not found
               example:
-                success: false
                 message: Event not found
         '500':
           description: Internal server error
