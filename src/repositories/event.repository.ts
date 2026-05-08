@@ -262,7 +262,7 @@ class EventRepository {
       const response = await supabaseService.userSelectIn(
         userToken,
         'users',
-        'id,role,tenant_id',
+        'id,role,tenant_id,status',
         'id',
         userIds,
       );
@@ -275,8 +275,11 @@ class EventRepository {
         id: string;
         role: string;
         tenant_id: string;
+        status: string;
       }[];
-      return rows;
+      return rows
+        .filter((r) => r.status === 'active')
+        .map(({ id, role, tenant_id }) => ({ id, role, tenant_id }));
     } catch (error) {
       return handleRepositoryError(
         'EventRepository.findUsersByIdsAndRoles',
