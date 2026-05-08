@@ -309,6 +309,16 @@ paths:
                     fieldErrors:
                       email:
                         - Invalid email
+        '403':
+          description: >
+            Forbidden. Returned when the user exists but their account has been
+            deactivated by an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Account is inactive
         '404':
           description: Tenant not found
           content:
@@ -782,9 +792,8 @@ paths:
         Updates the user record for the given `userId`. The caller must supply
         a valid Bearer token. Non-admin users can only update themselves — a
         403 is returned if they attempt to update another user. Non-admin
-        callers cannot update the `role` or `status` fields; those fields are
-        silently stripped from the request body. At least one field must be
-        provided.
+        callers cannot update the `role` field; it is silently stripped from
+        the request body. At least one field must be provided.
       security:
         - bearerAuth: []
       parameters:
@@ -831,13 +840,6 @@ paths:
                     Only honoured for admin callers. Non-admin callers may
                     include this field but it is silently stripped.
                   example: trainer
-                status:
-                  type: string
-                  enum: [active, inactive]
-                  description: >
-                    Only honoured for admin callers. Non-admin callers may
-                    include this field but it is silently stripped.
-                  example: active
       responses:
         '200':
           description: User updated successfully
@@ -1065,6 +1067,151 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{userId}/deactivate:
+    post:
+      tags: [Users]
+      summary: Deactivate a user
+      description: >
+        Admin-only. Sets the user's status to `inactive`, preventing them from
+        logging in or making authenticated requests. The user's data and group
+        membership are preserved for seamless reactivation. Idempotent —
+        deactivating an already-inactive user returns 200.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: UUID of the user to deactivate.
+          schema:
+            type: string
+            format: uuid
+            example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+      responses:
+        '200':
+          description: User deactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/UserObject'
+        '400':
+          description: >
+            Bad request. Returned when the authenticated admin attempts to
+            deactivate their own account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Admins cannot deactivate themselves
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no user exists for the given `userId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: User not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{userId}/reactivate:
+    post:
+      tags: [Users]
+      summary: Reactivate a user
+      description: >
+        Admin-only. Restores the user's status to `active`, allowing them to
+        log in and make authenticated requests again. Idempotent — reactivating
+        an already-active user returns 200.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: UUID of the user to reactivate.
+          schema:
+            type: string
+            format: uuid
+            example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+      responses:
+        '200':
+          description: User reactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/UserObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no user exists for the given `userId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: User not found
         '500':
           description: Internal server error
           content:
