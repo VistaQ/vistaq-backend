@@ -29,3 +29,11 @@ export class InvalidCredentialsError extends Error {
     this.name = 'InvalidCredentialsError';
   }
 }
+
+export class UserInactiveError extends Error {
+  public constructor(message = 'Account is inactive') {
+    super(message);
+    this.name = 'UserInactiveError';
+  }
+}
+

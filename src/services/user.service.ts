@@ -22,7 +22,6 @@ interface IUpdateUserParams {
     agency?: string;
     location?: string;
     role?: string;
-    status?: string;
     group_id?: string | null;
   };
 }
@@ -84,7 +83,6 @@ class UserService {
       const updateData = { ...params.data };
       if (params.callerRole !== 'admin') {
         delete updateData.role;
-        delete updateData.status;
       }
 
       // Fetch existing user
@@ -196,6 +194,30 @@ class UserService {
       await userRepository.updateAuthUserPassword(userId, newPassword);
     } catch (error) {
       return handleServiceError('UserService.changePassword', error);
+    }
+  }
+
+  async setUserStatus(userId: string, status: 'active' | 'inactive', token: string): Promise<IUser> {
+    try {
+      loggingService.info('UserService.setUserStatus called', { userId, status });
+
+      const existingUser = await userRepository.findById(userId, token);
+      if (!existingUser) {
+        throw new UserNotFoundError();
+      }
+
+      if (existingUser.status === status) {
+        loggingService.info('UserService.setUserStatus — status unchanged, skipping update', { userId, status });
+        return existingUser;
+      }
+
+      const updatedUser = await userRepository.updateUser(userId, { status }, token);
+      return updatedUser;
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('UserService.setUserStatus', error);
     }
   }
 
