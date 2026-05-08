@@ -9,7 +9,7 @@ import app from '@src/app';
 const TENANT_SLUG = 'demo-agency';
 
 /** Admin credentials used to obtain a token in beforeAll */
-const ADMIN_EMAIL = 'jeremy.nathan1@gmail.com';
+const ADMIN_EMAIL = 'admin@demo-agency.com';
 const ADMIN_PASSWORD = 'password';
 
 /** Admin JWT obtained in beforeAll */

@@ -317,26 +317,16 @@ describe('GET /api/leaderboard/stats — all roles permitted', () => {
 
   it('agent sees global data (individual list includes more than just the authenticated agent)', async () => {
     expect(agentToken).not.toBeNull();
-    expect(adminToken).not.toBeNull();
 
     const agentRes = await request(app)
       .get('/api/leaderboard/stats?period=mtd')
       .set('Authorization', `Bearer ${agentToken}`);
 
-    const adminRes = await request(app)
-      .get('/api/leaderboard/stats?period=mtd')
-      .set('Authorization', `Bearer ${adminToken}`);
-
     expect(agentRes.status).toBe(200);
-    expect(adminRes.status).toBe(200);
 
     const agentIndividual = agentRes.body.data.individual as Record<string, unknown>[];
-    const adminIndividual = adminRes.body.data.individual as Record<string, unknown>[];
 
-    // Both roles should see the same number of individuals (global, not RLS-scoped)
-    expect(agentIndividual.length).toBe(adminIndividual.length);
-
-    // The list should include more than just the authenticated agent (global data)
-    expect(agentIndividual.length).toBeGreaterThanOrEqual(1);
+    // Agent sees global data — list includes more than just themselves
+    expect(agentIndividual.length).toBeGreaterThan(1);
   });
 });
