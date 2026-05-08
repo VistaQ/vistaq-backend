@@ -26,6 +26,20 @@ jest.mock('@src/services/logging.service', () => ({
     warn: jest.fn(),
     error: jest.fn(),
   },
+  asyncLocalStorage: {
+    getStore: jest.fn().mockReturnValue(null),
+  },
+}));
+
+jest.mock('@sentry/node', () => ({
+  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('@src/utils/sentry.metrics', () => ({
+  emitErrorCount: jest.fn(),
 }));
 
 // Mock userService — used by UserController
@@ -52,6 +66,7 @@ jest.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
   default: {
     findAll: jest.fn(),
+    findManagedGroupIdsByUserIds: jest.fn().mockResolvedValue(new Map()),
   },
 }));
 
@@ -60,7 +75,7 @@ import userRepository from '@src/repositories/user.repository';
 import supabaseService from '@src/services/supabase.service';
 import userController from '@src/controllers/user.controller';
 import { ControllerError, RepositoryError, ServiceError } from '@src/models/errors/layer.errors';
-import { IUser } from '@src/types/auth.types';
+import { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 import { IBaseReq } from '@src/models/interfaces/base.interface';
 
@@ -100,6 +115,11 @@ const mockUsers: IUser[] = [
     updated_at: '2024-02-01T00:00:00Z',
   },
 ];
+
+const mockUsersEnriched: IUserWithManagedGroups[] = mockUsers.map((u) => ({
+  ...u,
+  managed_group_ids: [],
+}));
 
 /******************************************************************************
   Helpers
@@ -186,7 +206,7 @@ describe('UserService.getUsers', () => {
 
     const result = await realService.getUsers('mock-token-abc');
 
-    expect(result).toEqual(mockUsers);
+    expect(result).toEqual(mockUsersEnriched);
     expect(userRepository.findAll).toHaveBeenCalledTimes(1);
     expect(userRepository.findAll).toHaveBeenCalledWith('mock-token-abc');
   });
