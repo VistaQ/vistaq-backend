@@ -222,6 +222,53 @@ describe('UserRepository.updateGroupIdForUsers', () => {
 });
 
 /******************************************************************************
+  Test suite — UserRepository.findByGroupId
+******************************************************************************/
+
+describe('UserRepository.findByGroupId', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('passes { group_id, status: "active" } filter to userSelect and returns mapped users', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: [mockUserRow1, mockUserRow2],
+      error: null,
+    } as any);
+
+    const result = await userRepository.findByGroupId(GROUP_ID, USER_TOKEN);
+
+    expect(result).toEqual([expectedUser1, expectedUser2]);
+    expect(supabaseService.userSelect).toHaveBeenCalledWith(
+      USER_TOKEN,
+      'users',
+      '*',
+      { group_id: GROUP_ID, status: 'active' },
+    );
+  });
+
+  it('returns empty array when no rows match', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: [],
+      error: null,
+    } as any);
+
+    const result = await userRepository.findByGroupId(GROUP_ID, USER_TOKEN);
+
+    expect(result).toEqual([]);
+  });
+
+  it('throws RepositoryError when supabaseService.userSelect returns an error', async () => {
+    jest.spyOn(supabaseService, 'userSelect').mockResolvedValue({
+      data: null,
+      error: { message: 'select failed: permission denied' },
+    } as any);
+
+    await expect(
+      userRepository.findByGroupId(GROUP_ID, USER_TOKEN),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
+});
+
+/******************************************************************************
   Test suite — UserRepository.findByAgentCodes
 ******************************************************************************/
 
@@ -248,7 +295,7 @@ describe('UserRepository.findByAgentCodes', () => {
       'id, agent_code',
       'agent_code',
       ['A1', 'A2'],
-      { tenant_id: 't1' },
+      { tenant_id: 't1', status: 'active' },
     );
     expect(result).toEqual([
       { id: 'u1', agent_code: 'A1' },

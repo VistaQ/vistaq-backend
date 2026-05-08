@@ -277,6 +277,72 @@ describe('AuthService.login', () => {
 });
 
 /******************************************************************************
+  Test suite — AuthService.forgotPassword
+******************************************************************************/
+
+const FORGOT_PASSWORD_PARAMS = {
+  tenantSlug: 'acme',
+  email: 'jane.doe@example.com',
+};
+
+const mockInactiveUser: IUser = {
+  ...mockUser,
+  status: 'inactive',
+};
+
+describe('AuthService.forgotPassword', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('happy path — calls resetPasswordForEmail when user is active', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+    jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(mockUser);
+    const resetSpy = jest
+      .spyOn(authRepository, 'resetPasswordForEmail')
+      .mockResolvedValue(undefined);
+
+    await authService.forgotPassword(FORGOT_PASSWORD_PARAMS);
+
+    expect(resetSpy).toHaveBeenCalledTimes(1);
+    expect(resetSpy).toHaveBeenCalledWith(
+      FORGOT_PASSWORD_PARAMS.email,
+      expect.any(String),
+    );
+  });
+
+  it('returns without calling resetPasswordForEmail when user status is inactive', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+    jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(mockInactiveUser);
+    const resetSpy = jest
+      .spyOn(authRepository, 'resetPasswordForEmail')
+      .mockResolvedValue(undefined);
+
+    await authService.forgotPassword(FORGOT_PASSWORD_PARAMS);
+
+    expect(resetSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns without calling resetPasswordForEmail when user is not found', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+    jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(null);
+    const resetSpy = jest
+      .spyOn(authRepository, 'resetPasswordForEmail')
+      .mockResolvedValue(undefined);
+
+    await authService.forgotPassword(FORGOT_PASSWORD_PARAMS);
+
+    expect(resetSpy).not.toHaveBeenCalled();
+  });
+
+  it('throws TenantNotFoundError when findTenantBySlug returns null', async () => {
+    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(null);
+
+    await expect(
+      authService.forgotPassword(FORGOT_PASSWORD_PARAMS),
+    ).rejects.toBeInstanceOf(TenantNotFoundError);
+  });
+});
+
+/******************************************************************************
   Test suite — AuthService.logout
 ******************************************************************************/
 

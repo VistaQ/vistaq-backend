@@ -26,6 +26,20 @@ jest.mock('@src/services/logging.service', () => ({
     warn: jest.fn(),
     error: jest.fn(),
   },
+  asyncLocalStorage: {
+    getStore: jest.fn().mockReturnValue(null),
+  },
+}));
+
+jest.mock('@sentry/node', () => ({
+  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('@src/utils/sentry.metrics', () => ({
+  emitErrorCount: jest.fn(),
 }));
 
 // Mock userService — used by UserController
@@ -52,6 +66,7 @@ jest.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
   default: {
     findById: jest.fn(),
+    findManagedGroupIdsByUserIds: jest.fn().mockResolvedValue(new Map()),
   },
 }));
 
@@ -61,7 +76,7 @@ import supabaseService from '@src/services/supabase.service';
 import userController from '@src/controllers/user.controller';
 import { ControllerError, RepositoryError, ServiceError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IUser } from '@src/types/auth.types';
+import { IUserWithManagedGroups } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 import { IGetUserByIdReq } from '@src/controllers/user.controller';
 
@@ -69,7 +84,7 @@ import { IGetUserByIdReq } from '@src/controllers/user.controller';
   Shared Fixtures
 ******************************************************************************/
 
-const mockUser: IUser = {
+const mockUserBase = {
   id: 'user-001',
   tenant_id: 'tenant-456',
   email: 'alice@example.com',
@@ -84,6 +99,8 @@ const mockUser: IUser = {
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 };
+
+const mockUser: IUserWithManagedGroups = { ...mockUserBase, managed_group_ids: [] };
 
 /******************************************************************************
   Helpers
@@ -239,7 +256,7 @@ describe('UserRepository.findById', () => {
 
     const result = await realRepo.findById('user-001', 'mock-token-abc');
 
-    expect(result).toEqual(mockUser);
+    expect(result).toEqual(mockUserBase);
     expect(supabaseService.userSelect).toHaveBeenCalledTimes(1);
     expect(supabaseService.userSelect).toHaveBeenCalledWith(
       'mock-token-abc',

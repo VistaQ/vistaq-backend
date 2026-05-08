@@ -12,7 +12,7 @@ const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const VALID_GROUP_ID = '00000000-0000-4000-8000-000000000001';
 
 /** Admin credentials used to obtain a token in beforeAll */
-const ADMIN_EMAIL = 'jeremy.nathan1@gmail.com';
+const ADMIN_EMAIL = 'admin@demo-agency.com';
 const ADMIN_PASSWORD = 'password';
 
 /** The user being created in the happy path test */

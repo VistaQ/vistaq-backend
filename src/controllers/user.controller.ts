@@ -52,7 +52,12 @@ export interface IUpdateUserReq extends IBaseReq {
     agency?: string;
     location?: string;
     role?: string;
-    status?: string;
+  };
+}
+
+export interface IUserStatusChangeReq extends IBaseReq {
+  params: {
+    userId: string;
   };
 }
 
@@ -223,6 +228,75 @@ class UserController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('UserController.changePassword', error, next);
+    }
+  }
+
+  async deactivate(
+    req: IUserStatusChangeReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (req.user!.role !== 'admin') {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const { userId } = req.params;
+
+      if (req.user!.id === userId) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'Admins cannot deactivate themselves'));
+        return;
+      }
+
+      const user = await userService.setUserStatus(userId, 'inactive', token);
+
+      const responseBody: IUpdateUserRes = {
+        success: true,
+        data: user,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+
+      return handleControllerError('UserController.deactivate', error, next);
+    }
+  }
+
+  async reactivate(
+    req: IUserStatusChangeReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (req.user!.role !== 'admin') {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const { userId } = req.params;
+
+      const user = await userService.setUserStatus(userId, 'active', token);
+
+      const responseBody: IUpdateUserRes = {
+        success: true,
+        data: user,
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+
+      return handleControllerError('UserController.reactivate', error, next);
     }
   }
 

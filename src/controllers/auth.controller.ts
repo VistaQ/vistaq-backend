@@ -4,6 +4,7 @@ import {
   AgentCodeInvalidError,
   InvalidCredentialsError,
   TenantNotFoundError,
+  UserInactiveError,
 } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
@@ -252,6 +253,11 @@ class AuthController {
         next(
           new RouteError(HttpStatusCodes.BAD_REQUEST, 'Invalid credentials'),
         );
+        return;
+      }
+
+      if (error instanceof UserInactiveError) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, error.message));
         return;
       }
 

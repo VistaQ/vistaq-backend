@@ -26,6 +26,20 @@ jest.mock('@src/services/logging.service', () => ({
     warn: jest.fn(),
     error: jest.fn(),
   },
+  asyncLocalStorage: {
+    getStore: jest.fn().mockReturnValue(null),
+  },
+}));
+
+jest.mock('@sentry/node', () => ({
+  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('@src/utils/sentry.metrics', () => ({
+  emitErrorCount: jest.fn(),
 }));
 
 // Mock authService — used by AuthController

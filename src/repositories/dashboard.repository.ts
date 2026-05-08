@@ -12,15 +12,21 @@ class DashboardRepository {
         period_start: periodStart,
       });
     } catch (error) {
-      handleRepositoryError('DashboardRepository.getStats', error);
+      return handleRepositoryError('DashboardRepository.getStats', error);
     }
   }
 
   async getAgentsCount(token: string): Promise<number> {
     try {
-      return await supabaseService.userCount(token, 'users', 'role', ['agent', 'group_leader']);
+      return await supabaseService.userCountWithEq(
+        token,
+        'users',
+        { status: 'active' },
+        'role',
+        ['agent', 'group_leader'],
+      );
     } catch (error) {
-      handleRepositoryError('DashboardRepository.getAgentsCount', error);
+      return handleRepositoryError('DashboardRepository.getAgentsCount', error);
     }
   }
 }

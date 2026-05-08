@@ -37,7 +37,7 @@ let testGroupCreated = false;
 beforeAll(async () => {
   // Clean up any stale users from previous test runs that share our agent codes.
   // This makes the suite idempotent regardless of whether afterAll ran cleanly before.
-  const staleAgentCodes = ['AG001', 'AG002'];
+  const staleAgentCodes = ['AG005', 'AG002'];
   for (const agentCode of staleAgentCodes) {
     // Delete stale users — each deletion is isolated so one failure doesn't block the rest
     try {
@@ -87,8 +87,8 @@ beforeAll(async () => {
 
 const validBody = (overrides: Record<string, unknown> = {}) => ({
   fullName: 'Test Agent',
-  agentCode: 'AG001',
-  email: uniqueEmail('ag001'),
+  agentCode: 'AG005',
+  email: uniqueEmail('ag005'),
   password: VALID_PASSWORD,
   groupId: TEST_GROUP_ID,
   location: 'Kuala Lumpur',
@@ -143,12 +143,12 @@ afterAll(async () => {
 
 describe('POST /api/auth/register — happy path', () => {
   it('creates a user and returns 201 with the expected shape', async () => {
-    const email = uniqueEmail('ag001');
+    const email = uniqueEmail('ag005');
 
     const res = await request(app)
       .post('/api/auth/register')
       .set('X-Tenant-Slug', TENANT_SLUG)
-      .send(validBody({ agentCode: 'AG001', email }));
+      .send(validBody({ agentCode: 'AG005', email }));
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('success', true);
@@ -161,7 +161,7 @@ describe('POST /api/auth/register — happy path', () => {
     // Track for cleanup
     if (data?.user?.id) {
       createdAuthUserIds.push(data.user.id as string);
-      usedAgentCodes.push('AG001');
+      usedAgentCodes.push('AG005');
     }
 
     expect(data).toHaveProperty('user');

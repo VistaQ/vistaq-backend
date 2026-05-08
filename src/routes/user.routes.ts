@@ -6,6 +6,7 @@ import userController, {
   ICreateUserReq,
   IDeleteUserReq,
   IGetUserByIdReq,
+  IUserStatusChangeReq,
   IUpdateUserReq,
 } from '@src/controllers/user.controller';
 import { IBaseReq } from '@src/models/interfaces/base.interface';
@@ -24,7 +25,6 @@ export const updateUserSchema = z
     agency: z.string().min(1).optional(),
     location: z.string().min(1).optional(),
     role: z.enum(['admin', 'master_trainer', 'trainer', 'agent']).optional(),
-    status: z.enum(['active', 'inactive']).optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
@@ -108,6 +108,20 @@ router.post(
   validate(createUserSchema),
   (req, res, next) =>
     userController.create(req as unknown as ICreateUserReq, res, next),
+);
+
+router.post(
+  '/:userId/deactivate',
+  authenticate,
+  (req, res, next) =>
+    userController.deactivate(req as unknown as IUserStatusChangeReq, res, next),
+);
+
+router.post(
+  '/:userId/reactivate',
+  authenticate,
+  (req, res, next) =>
+    userController.reactivate(req as unknown as IUserStatusChangeReq, res, next),
 );
 
 router.delete(

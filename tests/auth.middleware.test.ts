@@ -37,8 +37,15 @@ jest.mock('@src/services/supabase.service', () => ({
   default: { verifyToken: jest.fn() },
 }));
 
+// Mock authService — each test configures getUserStatus behaviour individually
+jest.mock('@src/services/auth.service', () => ({
+  __esModule: true,
+  default: { getUserStatus: jest.fn() },
+}));
+
 import jwt from 'jsonwebtoken';
 import supabaseService from '@src/services/supabase.service';
+import authService from '@src/services/auth.service';
 import { authenticate } from '@src/middleware/auth';
 import { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -184,6 +191,7 @@ describe('authenticate middleware', () => {
       tenant_id: 'tenant-xyz-456',
       app_role: 'agent',
     });
+    (authService.getUserStatus as jest.Mock).mockResolvedValue('active');
 
     const req = buildReq('Bearer valid.token.here');
     const res = buildRes();
@@ -197,10 +205,10 @@ describe('authenticate middleware', () => {
 
     // req.user populated from decoded claims
     const typedReq = req as Request & { user: { id: string; tenant_id: string; role: string } };
-    expect(typedReq.user).toEqual({
+    expect(typedReq.user).toEqual(expect.objectContaining({
       id: 'user-abc-123',
       tenant_id: 'tenant-xyz-456',
       role: 'agent',
-    });
+    }));
   });
 });

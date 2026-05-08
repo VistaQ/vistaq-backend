@@ -26,6 +26,22 @@ jest.mock('@src/services/logging.service', () => ({
     warn: jest.fn(),
     error: jest.fn(),
   },
+  asyncLocalStorage: {
+    getStore: jest.fn().mockReturnValue(null),
+  },
+}));
+
+// Mock @sentry/node — prevent real Sentry calls; withScope must invoke the callback
+jest.mock('@sentry/node', () => ({
+  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+// Mock sentry.metrics to avoid real metric emissions
+jest.mock('@src/utils/sentry.metrics', () => ({
+  emitErrorCount: jest.fn(),
 }));
 
 // Mock userService — used by UserController
@@ -280,8 +296,11 @@ describe('UserService.updateUser', () => {
     expect(userRepository.updateAuthUserEmail).not.toHaveBeenCalled();
   });
 
-  // 2. Strips role/status for non-admin callers
-  it('strips role and status fields for non-admin callers', async () => {
+  // 2. Strips role for non-admin callers
+  // Note: 'status' is no longer accepted by the update schema (.strict() rejects unknown fields).
+  // Non-admin callers that attempt to send 'status' via the HTTP route receive a 400 validation error
+  // before this service method is reached.
+  it('strips role field for non-admin callers', async () => {
     (userRepository.findById as jest.Mock).mockResolvedValue(mockUser);
     (userRepository.updateUser as jest.Mock).mockResolvedValue(updatedMockUser);
 
@@ -289,14 +308,13 @@ describe('UserService.updateUser', () => {
       userId: 'user-001',
       callerRole: 'agent',
       token: 'mock-token-abc',
-      data: { name: 'Alice Updated', role: 'admin', status: 'inactive' },
+      data: { name: 'Alice Updated', role: 'admin' },
     });
 
     expect(userRepository.updateUser).toHaveBeenCalledTimes(1);
     const updateData = (userRepository.updateUser as jest.Mock).mock.calls[0][1];
     expect(updateData).toEqual({ name: 'Alice Updated' });
     expect(updateData).not.toHaveProperty('role');
-    expect(updateData).not.toHaveProperty('status');
   });
 
   // 3. Throws UserNotFoundError when user doesn't exist

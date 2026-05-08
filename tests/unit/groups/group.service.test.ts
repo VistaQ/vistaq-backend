@@ -299,12 +299,12 @@ describe('GroupService.createGroup', () => {
     ).rejects.toBeInstanceOf(InvalidLeaderRoleError);
   });
 
-  it('throws InvalidTrainerRoleError when trainer not found', async () => {
+  it('throws UserNotInTenantError when trainer not found', async () => {
     jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([]);
 
     await expect(
       groupService.createGroup({ ...BASE_PARAMS, trainerIds: [TRAINER_ID] }),
-    ).rejects.toBeInstanceOf(InvalidTrainerRoleError);
+    ).rejects.toBeInstanceOf(UserNotInTenantError);
   });
 
   it('throws InvalidTrainerRoleError when trainer has wrong role', async () => {
@@ -545,6 +545,7 @@ describe('GroupService.updateGroup', () => {
   it('replaces group trainers when trainer_ids is provided and valid', async () => {
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
     jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
+    jest.spyOn(groupRepository, 'findGroupTrainersByGroupId').mockResolvedValue([]);
     jest.spyOn(groupRepository, 'deleteGroupTrainersByGroupId').mockResolvedValue(undefined);
     jest.spyOn(groupRepository, 'insertGroupTrainers').mockResolvedValue([mockGroupTrainer]);
 
@@ -817,6 +818,7 @@ describe('GroupService.updateGroup', () => {
   it('returns existingGroup directly when updatePayload is empty (only trainer_ids/member_ids sent)', async () => {
     jest.spyOn(groupRepository, 'findById').mockResolvedValue(mockGroup);
     jest.spyOn(userService, 'findUsersByIds').mockResolvedValue([mockTrainerUser]);
+    jest.spyOn(groupRepository, 'findGroupTrainersByGroupId').mockResolvedValue([]);
     jest.spyOn(groupRepository, 'deleteGroupTrainersByGroupId').mockResolvedValue(undefined);
     jest.spyOn(groupRepository, 'insertGroupTrainers').mockResolvedValue([mockGroupTrainer]);
     const updateGroupSpy = jest.spyOn(groupRepository, 'updateGroup');

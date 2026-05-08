@@ -292,7 +292,7 @@ class UserRepository {
         userToken,
         'users',
         '*',
-        { group_id: groupId } as Partial<UsersRow>,
+        { group_id: groupId, status: 'active' } as Partial<UsersRow>,
       );
 
       if (response.error) {
@@ -439,7 +439,7 @@ class UserRepository {
         'id, agent_code',
         'agent_code',
         agentCodes,
-        { tenant_id: tenantId } as Partial<UsersRow>,
+        { tenant_id: tenantId, status: 'active' } as Partial<UsersRow>,
       );
 
       if (error) throw new Error(error.message);
