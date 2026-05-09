@@ -30,6 +30,8 @@ tags:
     description: Gamification leaderboard endpoints
   - name: Agent Points
     description: Gamification agent points endpoints
+  - name: Agent Codes
+    description: Tenant-scoped agent code provisioning endpoints
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
   - name: Sales Reports
@@ -3294,6 +3296,145 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   ##############################################################################
+  # AGENT CODES
+  ##############################################################################
+
+  /agent-codes:
+    post:
+      tags: [Agent Codes]
+      summary: Bulk create agent codes (admin only)
+      description: >
+        Bulk upserts one or more agent codes into the caller's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`
+        role; any other role returns 403. The tenant is derived from the JWT —
+        clients cannot specify it.
+
+
+        The operation is **idempotent**: codes are upserted on the
+        `(tenant_id, agent_code)` conflict target, so re-submitting an existing
+        code returns 200 with the existing row (its `created_at` is preserved
+        and `is_used` is **not** reset). Intra-batch duplicates are deduped
+        server-side, so the returned array length equals the **distinct** count
+        of submitted codes — e.g. submitting `["X", "X", "Y"]` returns 2 rows.
+        Returned order is not guaranteed to match input order.
+
+
+        There is no per-row partial-success path: the whole batch either
+        succeeds (200) or fails (500). The response makes no distinction
+        between freshly-inserted rows and pre-existing ones.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agentCodes]
+              properties:
+                agentCodes:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: string
+                    minLength: 1
+                  description: >
+                    Array of agent code strings to upsert. Must contain between
+                    1 and 500 entries (inclusive); each entry must be a
+                    non-empty string. Codes are stored case-sensitively and
+                    verbatim — no trimming or case-folding is performed
+                    server-side.
+                  example:
+                    - T66701C
+                    - T66702C
+                    - T66703C
+            example:
+              agentCodes:
+                - T66701C
+                - T66702C
+                - T66703C
+      responses:
+        '200':
+          description: >
+            Agent codes upserted successfully. The `data` array contains one
+            entry per distinct submitted code.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentCodeObject'
+              example:
+                success: true
+                data:
+                  - agentCode: T66701C
+                    isUsed: false
+                    createdAt: '2026-05-04T09:41:35.000Z'
+                    updatedAt: '2026-05-04T09:41:35.000Z'
+                  - agentCode: T66702C
+                    isUsed: false
+                    createdAt: '2026-05-04T09:41:35.000Z'
+                    updatedAt: '2026-05-04T09:41:35.000Z'
+                  - agentCode: T66703C
+                    isUsed: false
+                    createdAt: '2026-05-04T09:41:35.000Z'
+                    updatedAt: '2026-05-04T09:41:35.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails Zod validation —
+            e.g. `agentCodes` missing, not an array, empty, exceeds 500 entries,
+            contains a non-string or empty-string entry, or includes an unknown
+            top-level field.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: array
+                    inclusive: true
+                    exact: false
+                    message: Array must contain at least 1 element(s)
+                    path:
+                      - agentCodes
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
   # COACHING SESSIONS
   ##############################################################################
 
@@ -4496,6 +4637,39 @@ components:
           example:
             - abc-123-uuid
             - def-456-uuid
+
+    AgentCodeObject:
+      type: object
+      required:
+        - agentCode
+        - isUsed
+        - createdAt
+        - updatedAt
+      properties:
+        agentCode:
+          type: string
+          description: The agent code as stored, case-sensitive and verbatim.
+          example: T66701C
+        isUsed:
+          type: boolean
+          description: >
+            `true` once a user has been onboarded against this code. Newly
+            inserted rows are `false`. On upsert into an existing row, this
+            value is **not** reset.
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          description: >
+            ISO 8601 datetime of original row creation. For an upsert that hit
+            an existing row, this is the original creation time, not the time
+            of the current request.
+          example: '2026-05-04T09:41:35.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime the row was last touched (insert or upsert).
+          example: '2026-05-04T09:41:35.000Z'
 
     GroupObject:
       type: object
