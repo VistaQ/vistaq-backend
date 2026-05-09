@@ -101,7 +101,7 @@ describe('AgentCodeController.createMany', () => {
     await agentCodeController.createMany(req, res, next as NextFunction);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ agentCodes: mappedResult });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: mappedResult });
     expect(next).not.toHaveBeenCalled();
   });
 

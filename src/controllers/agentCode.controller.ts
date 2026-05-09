@@ -25,7 +25,8 @@ interface IAgentCodeResponse {
 }
 
 export interface ICreateAgentCodesRes extends IBaseRes {
-  agentCodes: IAgentCodeResponse[];
+  success: boolean;
+  data: IAgentCodeResponse[];
 }
 
 /******************************************************************************
@@ -54,7 +55,8 @@ class AgentCodeController {
       });
 
       const responseBody: ICreateAgentCodesRes = {
-        agentCodes: result.map((row: IAgentCode) => ({
+        success: true,
+        data: result.map((row: IAgentCode) => ({
           agentCode: row.agent_code,
           isUsed: row.is_used,
           createdAt: row.created_at,
