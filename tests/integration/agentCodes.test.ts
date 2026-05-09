@@ -94,10 +94,11 @@ describe('POST /api/agent-codes — happy path', () => {
       .send({ agentCodes: codes });
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('agentCodes');
-    expect(Array.isArray(res.body.agentCodes)).toBe(true);
-    expect(res.body.agentCodes).toHaveLength(3);
-    for (const entry of res.body.agentCodes) {
+    expect(res.body.success).toBe(true);
+    expect(res.body).toHaveProperty('data');
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data).toHaveLength(3);
+    for (const entry of res.body.data) {
       expect(codes).toContain(entry.agentCode);
       expect(entry.isUsed).toBe(false);
       expect(typeof entry.createdAt).toBe('string');
@@ -124,7 +125,7 @@ describe('POST /api/agent-codes — happy path', () => {
       .send({ agentCodes: [c1, c2] });
 
     expect(res.status).toBe(200);
-    expect(res.body.agentCodes).toHaveLength(2);
+    expect(res.body.data).toHaveLength(2);
 
     const selectRes = await supabaseService.adminSelect(
       'agent_codes',
@@ -148,7 +149,7 @@ describe('POST /api/agent-codes — happy path', () => {
       .send({ agentCodes: [c1, c1, c2] });
 
     expect(res.status).toBe(200);
-    expect(res.body.agentCodes).toHaveLength(2);
+    expect(res.body.data).toHaveLength(2);
   });
 });
 
