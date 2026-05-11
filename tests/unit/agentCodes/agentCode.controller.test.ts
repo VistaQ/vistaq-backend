@@ -37,6 +37,7 @@ import { agentCodeService } from '@src/services/agentCode.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
 import type { IAgentCode } from '@src/types/agentCode';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
   Fixtures
@@ -50,6 +51,7 @@ const mockResult: IAgentCode[] = [
   {
     agent_code: 'ABC123',
     is_used: false,
+    user_id: null,
     created_at: '2026-04-23T00:00:00.000Z',
     updated_at: '2026-04-23T00:00:00.000Z',
   },
@@ -64,6 +66,23 @@ const mappedResult = [
   },
 ];
 
+const mockListResult: IAgentCode[] = [
+  {
+    agent_code: 'ABC123',
+    is_used: false,
+    user_id: null,
+    created_at: '2026-04-23T00:00:00.000Z',
+    updated_at: '2026-04-23T00:00:00.000Z',
+  },
+  {
+    agent_code: 'XYZ789',
+    is_used: true,
+    user_id: 'user-uuid-111',
+    created_at: '2026-04-24T00:00:00.000Z',
+    updated_at: '2026-04-24T00:00:00.000Z',
+  },
+];
+
 function makeReq(overrides: Partial<ICreateAgentCodesReq> = {}): ICreateAgentCodesReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -71,6 +90,15 @@ function makeReq(overrides: Partial<ICreateAgentCodesReq> = {}): ICreateAgentCod
     user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
     ...overrides,
   } as unknown as ICreateAgentCodesReq;
+}
+
+function makeListReq(queryOverrides: Record<string, string> = {}, userOverrides: Partial<{ id: string; tenant_id: string; role: string }> = {}): IBaseReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    query: queryOverrides,
+    body: {},
+    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin', ...userOverrides },
+  } as unknown as IBaseReq;
 }
 
 function makeRes(): Response {
@@ -167,6 +195,161 @@ describe('AgentCodeController.createMany', () => {
     const next = makeNext();
 
     await agentCodeController.createMany(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — AgentCodeController.list
+******************************************************************************/
+
+describe('AgentCodeController.list', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 403 when role is not admin', async () => {
+    const req = makeListReq({}, { role: 'agent' });
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when role is group_leader', async () => {
+    const req = makeListReq({}, { role: 'group_leader' });
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+  });
+
+  it('returns 400 when isUsed query param is not "true" or "false"', async () => {
+    const req = makeListReq({ isUsed: 'maybe' });
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Validation failed' }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when isUsed query param is an integer string', async () => {
+    const req = makeListReq({ isUsed: '1' });
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Validation failed' }),
+    );
+  });
+
+  it('calls agentCodeService.list with { isUsed: true, token } when ?isUsed=true', async () => {
+    const spy = jest
+      .spyOn(agentCodeService, 'list')
+      .mockResolvedValue(mockListResult);
+
+    const req = makeListReq({ isUsed: 'true' });
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({ isUsed: true, token: USER_TOKEN });
+  });
+
+  it('calls agentCodeService.list with { isUsed: false, token } when ?isUsed=false', async () => {
+    const spy = jest
+      .spyOn(agentCodeService, 'list')
+      .mockResolvedValue(mockListResult);
+
+    const req = makeListReq({ isUsed: 'false' });
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({ isUsed: false, token: USER_TOKEN });
+  });
+
+  it('calls agentCodeService.list with { isUsed: undefined, token } when no query param', async () => {
+    const spy = jest
+      .spyOn(agentCodeService, 'list')
+      .mockResolvedValue(mockListResult);
+
+    const req = makeListReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({ isUsed: undefined, token: USER_TOKEN });
+  });
+
+  it('returns 200 with { success: true, data: [...] } and maps user_id to userId', async () => {
+    jest.spyOn(agentCodeService, 'list').mockResolvedValue(mockListResult);
+
+    const req = makeListReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: [
+        {
+          agentCode: 'ABC123',
+          isUsed: false,
+          userId: null,
+          createdAt: '2026-04-23T00:00:00.000Z',
+          updatedAt: '2026-04-23T00:00:00.000Z',
+        },
+        {
+          agentCode: 'XYZ789',
+          isUsed: true,
+          userId: 'user-uuid-111',
+          createdAt: '2026-04-24T00:00:00.000Z',
+          updatedAt: '2026-04-24T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) when agentCodeService.list throws', async () => {
+    jest
+      .spyOn(agentCodeService, 'list')
+      .mockRejectedValue(new Error('service failure'));
+
+    const req = makeListReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.list(req, res, next as NextFunction);
 
     expect(next).toHaveBeenCalledTimes(1);
     const err = next.mock.calls[0][0];

@@ -12,6 +12,11 @@ interface ICreateManyParams {
   token: string;
 }
 
+interface IListParams {
+  isUsed?: boolean;
+  token: string;
+}
+
 /******************************************************************************
                             AgentCodeService
 ******************************************************************************/
@@ -29,6 +34,21 @@ class AgentCodeService {
       return result;
     } catch (error) {
       return handleServiceError('AgentCodeService.createMany', error);
+    }
+  }
+
+  async list(params: IListParams): Promise<IAgentCode[]> {
+    try {
+      const filters: { is_used?: boolean } = {};
+      if (params.isUsed !== undefined) {
+        filters.is_used = params.isUsed;
+      }
+      return await agentCodeRepository.findAll(
+        params.token,
+        Object.keys(filters).length > 0 ? filters : undefined,
+      );
+    } catch (error) {
+      return handleServiceError('AgentCodeService.list', error);
     }
   }
 }
