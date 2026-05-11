@@ -34,7 +34,7 @@ router.get('/', authenticate, (req, res, next) =>
   agentCodeController.list(req as unknown as IBaseReq, res, next),
 );
 
-router.put(
+router.patch(
   '/:agentCode',
   authenticate,
   validate(updateAgentCodeSchema),
