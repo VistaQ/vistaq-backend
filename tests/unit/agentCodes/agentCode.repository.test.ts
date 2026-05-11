@@ -31,16 +31,19 @@ jest.mock('@src/services/supabase.service', () => ({
   default: {
     userUpsert: jest.fn(),
     userSelect: jest.fn(),
+    userUpdate: jest.fn(),
   },
   supabaseService: {
     userUpsert: jest.fn(),
     userSelect: jest.fn(),
+    userUpdate: jest.fn(),
   },
 }));
 
 import { agentCodeRepository } from '@src/repositories/agentCode.repository';
 import supabaseService from '@src/services/supabase.service';
 import { RepositoryError } from '@src/models/errors/layer.errors';
+import { AgentCodeNotFoundError, AgentCodeConflictError } from '@src/models/errors/agentCode.errors';
 
 /******************************************************************************
   Fixtures
@@ -284,6 +287,122 @@ describe('AgentCodeRepository.findAll', () => {
 
     await expect(
       agentCodeRepository.findAll(USER_TOKEN),
+    ).rejects.toBeInstanceOf(RepositoryError);
+  });
+});
+
+/******************************************************************************
+  Test suite — AgentCodeRepository.update
+******************************************************************************/
+
+const mockUpdateRow = {
+  id: 'uuid-1',
+  tenant_id: TENANT_ID,
+  agent_code: 'NEW001',
+  user_id: 'user-uuid-111',
+  is_used: true,
+  created_at: '2026-05-01T12:00:00.000Z',
+  updated_at: '2026-05-12T08:00:00.000Z',
+};
+
+describe('AgentCodeRepository.update', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('calls supabaseService.userUpdate with correct table, values, and filters', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: [mockUpdateRow],
+      error: null,
+    } as any);
+
+    await agentCodeRepository.update(
+      USER_TOKEN,
+      { tenant_id: TENANT_ID, agent_code: 'OLD001' },
+      { agent_code: 'NEW001', updated_at: '2026-05-12T08:00:00.000Z' },
+    );
+
+    expect(supabaseService.userUpdate).toHaveBeenCalledWith(
+      USER_TOKEN,
+      'agent_codes',
+      { agent_code: 'NEW001', updated_at: '2026-05-12T08:00:00.000Z' },
+      { tenant_id: TENANT_ID, agent_code: 'OLD001' },
+    );
+  });
+
+  it('maps the returned row to IAgentCode including user_id', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: [mockUpdateRow],
+      error: null,
+    } as any);
+
+    const result = await agentCodeRepository.update(
+      USER_TOKEN,
+      { tenant_id: TENANT_ID, agent_code: 'OLD001' },
+      { agent_code: 'NEW001', updated_at: '2026-05-12T08:00:00.000Z' },
+    );
+
+    expect(result).toEqual({
+      agent_code: 'NEW001',
+      is_used: true,
+      user_id: 'user-uuid-111',
+      created_at: '2026-05-01T12:00:00.000Z',
+      updated_at: '2026-05-12T08:00:00.000Z',
+    });
+  });
+
+  it('throws RepositoryError wrapping AgentCodeNotFoundError when response.data is an empty array', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: [],
+      error: null,
+    } as any);
+
+    let thrown: unknown;
+    try {
+      await agentCodeRepository.update(
+        USER_TOKEN,
+        { tenant_id: TENANT_ID, agent_code: 'MISSING' },
+        { agent_code: 'NEW001', updated_at: '2026-05-12T08:00:00.000Z' },
+      );
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(RepositoryError);
+    expect((thrown as RepositoryError).cause).toBeInstanceOf(AgentCodeNotFoundError);
+  });
+
+  it('throws RepositoryError wrapping AgentCodeConflictError when response.error.code is 23505', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+    } as any);
+
+    let thrown: unknown;
+    try {
+      await agentCodeRepository.update(
+        USER_TOKEN,
+        { tenant_id: TENANT_ID, agent_code: 'OLD001' },
+        { agent_code: 'DUPLICATE', updated_at: '2026-05-12T08:00:00.000Z' },
+      );
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(RepositoryError);
+    expect((thrown as RepositoryError).cause).toBeInstanceOf(AgentCodeConflictError);
+  });
+
+  it('throws RepositoryError when response.error has a non-23505 code', async () => {
+    jest.spyOn(supabaseService, 'userUpdate').mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table agent_codes' },
+    } as any);
+
+    await expect(
+      agentCodeRepository.update(
+        USER_TOKEN,
+        { tenant_id: TENANT_ID, agent_code: 'OLD001' },
+        { agent_code: 'NEW001', updated_at: '2026-05-12T08:00:00.000Z' },
+      ),
     ).rejects.toBeInstanceOf(RepositoryError);
   });
 });

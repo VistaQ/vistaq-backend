@@ -18,6 +18,12 @@ export const createAgentCodesSchema = z
   })
   .strict();
 
+export const updateAgentCodeSchema = z
+  .object({
+    agentCode: z.string().min(1),
+  })
+  .strict();
+
 /******************************************************************************
                             Router
 ******************************************************************************/
@@ -26,6 +32,14 @@ const router = express.Router();
 
 router.get('/', authenticate, (req, res, next) =>
   agentCodeController.list(req as unknown as IBaseReq, res, next),
+);
+
+router.put(
+  '/:agentCode',
+  authenticate,
+  validate(updateAgentCodeSchema),
+  (req, res, next) =>
+    agentCodeController.update(req as unknown as IBaseReq, res, next),
 );
 
 router.post(

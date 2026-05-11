@@ -1,6 +1,8 @@
 import agentCodeRepository from '@src/repositories/agentCode.repository';
+import { AgentCodeConflictError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import { IAgentCode } from '@src/types/agentCode';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { getRootCause } from '@src/utils/sentry.utils';
 
 /******************************************************************************
                             Interfaces
@@ -14,6 +16,13 @@ interface ICreateManyParams {
 
 interface IListParams {
   isUsed?: boolean;
+  token: string;
+}
+
+interface IUpdateParams {
+  currentAgentCode: string;
+  newAgentCode: string;
+  tenantId: string;
   token: string;
 }
 
@@ -49,6 +58,28 @@ class AgentCodeService {
       );
     } catch (error) {
       return handleServiceError('AgentCodeService.list', error);
+    }
+  }
+
+  async update(params: IUpdateParams): Promise<IAgentCode> {
+    try {
+      return await agentCodeRepository.update(
+        params.token,
+        { tenant_id: params.tenantId, agent_code: params.currentAgentCode },
+        {
+          agent_code: params.newAgentCode,
+          updated_at: new Date().toISOString(),
+        },
+      );
+    } catch (error) {
+      const rootCause = getRootCause(error);
+      if (
+        rootCause instanceof AgentCodeNotFoundError ||
+        rootCause instanceof AgentCodeConflictError
+      ) {
+        throw rootCause;
+      }
+      return handleServiceError('AgentCodeService.update', error);
     }
   }
 }

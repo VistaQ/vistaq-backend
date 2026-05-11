@@ -36,6 +36,7 @@ import type { ICreateAgentCodesReq } from '@src/controllers/agentCode.controller
 import { agentCodeService } from '@src/services/agentCode.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
+import { AgentCodeNotFoundError, AgentCodeConflictError } from '@src/models/errors/agentCode.errors';
 import type { IAgentCode } from '@src/types/agentCode';
 import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
@@ -350,6 +351,149 @@ describe('AgentCodeController.list', () => {
     const next = makeNext();
 
     await agentCodeController.list(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — AgentCodeController.update
+******************************************************************************/
+
+const mockUpdatedAgentCode: IAgentCode = {
+  agent_code: 'NEW001',
+  is_used: true,
+  user_id: 'user-uuid-111',
+  created_at: '2026-05-01T12:00:00.000Z',
+  updated_at: '2026-05-12T08:00:00.000Z',
+};
+
+function makeUpdateReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    params: { agentCode: 'OLD001' },
+    body: { agentCode: 'NEW001' },
+    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    ...overrides,
+  } as unknown as IBaseReq;
+}
+
+describe('AgentCodeController.update', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 403 when role is not admin', async () => {
+    const req = makeUpdateReq({
+      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+    } as Partial<IBaseReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls agentCodeService.update with correct params from req', async () => {
+    const spy = jest
+      .spyOn(agentCodeService, 'update')
+      .mockResolvedValue(mockUpdatedAgentCode);
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.update(req, res, next as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({
+      currentAgentCode: 'OLD001',
+      newAgentCode: 'NEW001',
+      tenantId: TENANT_ID,
+      token: USER_TOKEN,
+    });
+  });
+
+  it('returns 200 with { success: true, data: { agentCode, isUsed, userId, createdAt, updatedAt } } on success', async () => {
+    jest
+      .spyOn(agentCodeService, 'update')
+      .mockResolvedValue(mockUpdatedAgentCode);
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.update(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: {
+        agentCode: 'NEW001',
+        isUsed: true,
+        userId: 'user-uuid-111',
+        createdAt: '2026-05-01T12:00:00.000Z',
+        updatedAt: '2026-05-12T08:00:00.000Z',
+      },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 404 when service throws AgentCodeNotFoundError', async () => {
+    jest
+      .spyOn(agentCodeService, 'update')
+      .mockRejectedValue(new AgentCodeNotFoundError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 409 when service throws AgentCodeConflictError', async () => {
+    jest
+      .spyOn(agentCodeService, 'update')
+      .mockRejectedValue(new AgentCodeConflictError());
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(409);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) for unexpected service errors', async () => {
+    jest
+      .spyOn(agentCodeService, 'update')
+      .mockRejectedValue(new Error('unexpected failure'));
+
+    const req = makeUpdateReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.update(req, res, next as NextFunction);
 
     expect(next).toHaveBeenCalledTimes(1);
     const err = next.mock.calls[0][0];

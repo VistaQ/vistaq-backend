@@ -1,6 +1,7 @@
 import { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
+import { AgentCodeConflictError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import agentCodeService from '@src/services/agentCode.service';
@@ -41,6 +42,11 @@ export interface IAgentCodeListItem {
 export interface IListAgentCodesRes extends IBaseRes {
   success: boolean;
   data: IAgentCodeListItem[];
+}
+
+export interface IUpdateAgentCodeRes extends IBaseRes {
+  success: boolean;
+  data: IAgentCodeListItem;
 }
 
 const listAgentCodesQuerySchema = z.object({
@@ -134,6 +140,53 @@ class AgentCodeController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('AgentCodeController.list', error, next);
+    }
+  }
+
+  async update(
+    req: IBaseReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (req.user!.role !== 'admin') {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const currentAgentCode = req.params['agentCode'] as string;
+      const { agentCode: newAgentCode } = req.body;
+
+      const updated = await agentCodeService.update({
+        currentAgentCode,
+        newAgentCode,
+        tenantId: req.user!.tenant_id,
+        token,
+      });
+
+      const responseBody: IUpdateAgentCodeRes = {
+        success: true,
+        data: {
+          agentCode: updated.agent_code,
+          isUsed: updated.is_used,
+          userId: updated.user_id,
+          createdAt: updated.created_at,
+          updatedAt: updated.updated_at,
+        },
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof AgentCodeNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+      if (error instanceof AgentCodeConflictError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
+        return;
+      }
+      return handleControllerError('AgentCodeController.update', error, next);
     }
   }
 }
