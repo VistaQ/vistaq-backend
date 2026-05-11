@@ -1,4 +1,5 @@
 import { NextFunction, Response } from 'express';
+import { z } from 'zod';
 
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
@@ -28,6 +29,23 @@ export interface ICreateAgentCodesRes extends IBaseRes {
   success: boolean;
   data: IAgentCodeResponse[];
 }
+
+export interface IAgentCodeListItem {
+  agentCode: string;
+  isUsed: boolean;
+  userId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IListAgentCodesRes extends IBaseRes {
+  success: boolean;
+  data: IAgentCodeListItem[];
+}
+
+const listAgentCodesQuerySchema = z.object({
+  isUsed: z.enum(['true', 'false']).optional(),
+});
 
 /******************************************************************************
                             AgentCodeController
@@ -71,6 +89,51 @@ class AgentCodeController {
         error,
         next,
       );
+    }
+  }
+
+  async list(
+    req: IBaseReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (req.user!.role !== 'admin') {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+
+      const parsed = listAgentCodesQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          message: 'Validation failed',
+          errors: parsed.error.issues,
+        });
+        return;
+      }
+
+      const token = req.headers['authorization']!.slice(7);
+      const isUsed =
+        parsed.data.isUsed !== undefined
+          ? parsed.data.isUsed === 'true'
+          : undefined;
+
+      const result = await agentCodeService.list({ isUsed, token });
+
+      const responseBody: IListAgentCodesRes = {
+        success: true,
+        data: result.map((row: IAgentCode) => ({
+          agentCode: row.agent_code,
+          isUsed: row.is_used,
+          userId: row.user_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })),
+      };
+
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      return handleControllerError('AgentCodeController.list', error, next);
     }
   }
 }

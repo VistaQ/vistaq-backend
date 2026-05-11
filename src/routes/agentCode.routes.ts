@@ -6,6 +6,7 @@ import agentCodeController, {
 } from '@src/controllers/agentCode.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
+import { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Zod Schemas
@@ -22,6 +23,10 @@ export const createAgentCodesSchema = z
 ******************************************************************************/
 
 const router = express.Router();
+
+router.get('/', authenticate, (req, res, next) =>
+  agentCodeController.list(req as unknown as IBaseReq, res, next),
+);
 
 router.post(
   '/',

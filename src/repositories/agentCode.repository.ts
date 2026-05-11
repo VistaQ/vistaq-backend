@@ -15,9 +15,33 @@ class AgentCodeRepository {
     return {
       agent_code: row.agent_code,
       is_used: row.is_used,
+      user_id: row.user_id,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
+  }
+
+  async findAll(
+    userToken: string,
+    filters?: { is_used?: boolean },
+  ): Promise<IAgentCode[]> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'agent_codes',
+        '*',
+        filters,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const data = (response.data ?? []) as unknown as AgentCodesRow[];
+      return data.map((row) => this.mapRowToAgentCode(row));
+    } catch (error) {
+      return handleRepositoryError('AgentCodeRepository.findAll', error);
+    }
   }
 
   async upsertMany(
