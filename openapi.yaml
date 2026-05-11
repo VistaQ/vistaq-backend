@@ -3434,6 +3434,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+    get:
+      tags: [Agent Codes]
+      summary: List agent codes (admin only)
+      description: >
+        Returns all agent codes provisioned for the caller's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`
+        role; any other role returns 403. The tenant is derived from the JWT —
+        clients cannot specify it.
+
+
+        The optional `isUsed` query parameter filters the result: pass `true`
+        to return only codes that have been claimed by a user, `false` to
+        return only unclaimed codes, or omit it entirely to return all codes.
+        No pagination is applied — the full matching list is returned in a
+        single response.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: isUsed
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: >
+            When provided, filters to only used (`true`) or unused (`false`)
+            codes. Omit to return all codes. Any value that is not a valid
+            boolean returns 400.
+      responses:
+        '200':
+          description: Agent codes retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentCodeListItem'
+              example:
+                success: true
+                data:
+                  - agentCode: T66701C
+                    isUsed: false
+                    userId: null
+                    createdAt: '2025-01-01T00:00:00.000Z'
+                    updatedAt: '2025-01-01T00:00:00.000Z'
+                  - agentCode: T66702C
+                    isUsed: true
+                    userId: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+                    createdAt: '2025-01-01T00:00:00.000Z'
+                    updatedAt: '2025-02-15T08:30:00.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the `isUsed` query parameter is present
+            but is not a valid boolean value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: invalid_type
+                    expected: boolean
+                    received: string
+                    path:
+                      - isUsed
+                    message: Expected boolean, received string
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   ##############################################################################
   # COACHING SESSIONS
   ##############################################################################
@@ -4670,6 +4767,44 @@ components:
           format: date-time
           description: ISO 8601 datetime the row was last touched (insert or upsert).
           example: '2026-05-04T09:41:35.000Z'
+
+    AgentCodeListItem:
+      type: object
+      required:
+        - agentCode
+        - isUsed
+        - userId
+        - createdAt
+        - updatedAt
+      properties:
+        agentCode:
+          type: string
+          description: The agent code as stored, case-sensitive and verbatim.
+          example: T66701C
+        isUsed:
+          type: boolean
+          description: >
+            `true` once a user has been onboarded against this code; `false`
+            for unclaimed codes.
+          example: false
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            UUID of the user who claimed this code, or `null` if the code has
+            not yet been used.
+          example: null
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime of original row creation.
+          example: '2025-01-01T00:00:00.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime the row was last modified.
+          example: '2025-01-01T00:00:00.000Z'
 
     GroupObject:
       type: object
