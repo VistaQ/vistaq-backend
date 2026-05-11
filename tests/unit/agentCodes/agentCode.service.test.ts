@@ -40,12 +40,14 @@ const mockResult: IAgentCode[] = [
   {
     agent_code: 'ABC123',
     is_used: false,
+    user_id: null,
     created_at: '2026-04-23T00:00:00.000Z',
     updated_at: '2026-04-23T00:00:00.000Z',
   },
   {
     agent_code: 'DEF456',
     is_used: false,
+    user_id: null,
     created_at: '2026-04-23T00:00:00.000Z',
     updated_at: '2026-04-23T00:00:00.000Z',
   },
@@ -101,6 +103,62 @@ describe('AgentCodeService.createMany', () => {
         tenantId: TENANT_ID,
         token: USER_TOKEN,
       }),
+    ).rejects.toThrow(ServiceError);
+  });
+});
+
+/******************************************************************************
+  Test suite — AgentCodeService.list
+******************************************************************************/
+
+describe('AgentCodeService.list', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('passes { is_used: true } filter to repository when isUsed is true', async () => {
+    const spy = jest
+      .spyOn(agentCodeRepository, 'findAll')
+      .mockResolvedValue(mockResult);
+
+    await agentCodeService.list({ isUsed: true, token: USER_TOKEN });
+
+    expect(spy).toHaveBeenCalledWith(USER_TOKEN, { is_used: true });
+  });
+
+  it('passes { is_used: false } filter to repository when isUsed is false', async () => {
+    const spy = jest
+      .spyOn(agentCodeRepository, 'findAll')
+      .mockResolvedValue(mockResult);
+
+    await agentCodeService.list({ isUsed: false, token: USER_TOKEN });
+
+    expect(spy).toHaveBeenCalledWith(USER_TOKEN, { is_used: false });
+  });
+
+  it('passes undefined (no filter) to repository when isUsed is not provided', async () => {
+    const spy = jest
+      .spyOn(agentCodeRepository, 'findAll')
+      .mockResolvedValue(mockResult);
+
+    await agentCodeService.list({ token: USER_TOKEN });
+
+    expect(spy).toHaveBeenCalledWith(USER_TOKEN, undefined);
+  });
+
+  it('returns whatever findAll returns', async () => {
+    jest.spyOn(agentCodeRepository, 'findAll').mockResolvedValue(mockResult);
+
+    const result = await agentCodeService.list({ token: USER_TOKEN });
+
+    expect(result).toEqual(mockResult);
+  });
+
+  it('throws ServiceError when repository throws', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findAll')
+      .mockRejectedValue(new Error('db failure'));
+
+    await expect(
+      agentCodeService.list({ token: USER_TOKEN }),
     ).rejects.toThrow(ServiceError);
   });
 });
