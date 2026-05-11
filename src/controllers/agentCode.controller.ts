@@ -1,7 +1,7 @@
 import { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
-import { AgentCodeConflictError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
+import { AgentCodeConflictError, AgentCodeInUseError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import agentCodeService from '@src/services/agentCode.service';
@@ -187,6 +187,29 @@ class AgentCodeController {
         return;
       }
       return handleControllerError('AgentCodeController.update', error, next);
+    }
+  }
+
+  async remove(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (req.user!.role !== 'admin') {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
+        return;
+      }
+      const token = req.headers['authorization']!.slice(7);
+      const agentCode = req.params['agentCode'] as string;
+      await agentCodeService.remove({ agentCode, tenantId: req.user!.tenant_id, token });
+      res.status(HttpStatusCodes.OK).json({ success: true });
+    } catch (error) {
+      if (error instanceof AgentCodeNotFoundError) {
+        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
+        return;
+      }
+      if (error instanceof AgentCodeInUseError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
+        return;
+      }
+      return handleControllerError('AgentCodeController.remove', error, next);
     }
   }
 }

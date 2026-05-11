@@ -27,7 +27,7 @@ jest.mock('@src/services/supabase.service', () => ({
 import { agentCodeService } from '@src/services/agentCode.service';
 import { agentCodeRepository } from '@src/repositories/agentCode.repository';
 import { ServiceError, RepositoryError } from '@src/models/errors/layer.errors';
-import { AgentCodeNotFoundError, AgentCodeConflictError } from '@src/models/errors/agentCode.errors';
+import { AgentCodeNotFoundError, AgentCodeConflictError, AgentCodeInUseError } from '@src/models/errors/agentCode.errors';
 import type { IAgentCode } from '@src/types/agentCode';
 
 /******************************************************************************
@@ -258,6 +258,147 @@ describe('AgentCodeService.update', () => {
       agentCodeService.update({
         currentAgentCode: 'OLD001',
         newAgentCode: 'NEW001',
+        tenantId: TENANT_ID,
+        token: USER_TOKEN,
+      }),
+    ).rejects.toBeInstanceOf(ServiceError);
+  });
+});
+
+/******************************************************************************
+  Test suite — AgentCodeService.remove
+******************************************************************************/
+
+const mockExistingUnused: IAgentCode = {
+  agent_code: 'DEL001',
+  is_used: false,
+  user_id: null,
+  created_at: '2026-05-01T10:00:00.000Z',
+  updated_at: '2026-05-01T10:00:00.000Z',
+};
+
+const mockExistingUsed: IAgentCode = {
+  agent_code: 'USED001',
+  is_used: true,
+  user_id: 'user-uuid-999',
+  created_at: '2026-05-01T10:00:00.000Z',
+  updated_at: '2026-05-01T10:00:00.000Z',
+};
+
+describe('AgentCodeService.remove', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('calls findByTenantAndCode then deleteByAgentCode on happy path', async () => {
+    const findSpy = jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockResolvedValue(mockExistingUnused);
+    const deleteSpy = jest
+      .spyOn(agentCodeRepository, 'deleteByAgentCode')
+      .mockResolvedValue(undefined);
+
+    await agentCodeService.remove({
+      agentCode: 'DEL001',
+      tenantId: TENANT_ID,
+      token: USER_TOKEN,
+    });
+
+    expect(findSpy).toHaveBeenCalledWith(USER_TOKEN, {
+      tenant_id: TENANT_ID,
+      agent_code: 'DEL001',
+    });
+    expect(deleteSpy).toHaveBeenCalledWith(USER_TOKEN, {
+      tenant_id: TENANT_ID,
+      agent_code: 'DEL001',
+    });
+  });
+
+  it('resolves to void (undefined) on success', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockResolvedValue(mockExistingUnused);
+    jest
+      .spyOn(agentCodeRepository, 'deleteByAgentCode')
+      .mockResolvedValue(undefined);
+
+    const result = await agentCodeService.remove({
+      agentCode: 'DEL001',
+      tenantId: TENANT_ID,
+      token: USER_TOKEN,
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  it('throws AgentCodeNotFoundError when findByTenantAndCode returns null', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockResolvedValue(null);
+
+    await expect(
+      agentCodeService.remove({
+        agentCode: 'GHOST001',
+        tenantId: TENANT_ID,
+        token: USER_TOKEN,
+      }),
+    ).rejects.toBeInstanceOf(AgentCodeNotFoundError);
+  });
+
+  it('throws AgentCodeInUseError when pre-check row has is_used: true', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockResolvedValue(mockExistingUsed);
+
+    await expect(
+      agentCodeService.remove({
+        agentCode: 'USED001',
+        tenantId: TENANT_ID,
+        token: USER_TOKEN,
+      }),
+    ).rejects.toBeInstanceOf(AgentCodeInUseError);
+  });
+
+  it('does not call deleteByAgentCode when pre-check finds no row', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockResolvedValue(null);
+    const deleteSpy = jest
+      .spyOn(agentCodeRepository, 'deleteByAgentCode')
+      .mockResolvedValue(undefined);
+
+    await agentCodeService.remove({
+      agentCode: 'GHOST001',
+      tenantId: TENANT_ID,
+      token: USER_TOKEN,
+    }).catch(() => {});
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not call deleteByAgentCode when pre-check row is in use', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockResolvedValue(mockExistingUsed);
+    const deleteSpy = jest
+      .spyOn(agentCodeRepository, 'deleteByAgentCode')
+      .mockResolvedValue(undefined);
+
+    await agentCodeService.remove({
+      agentCode: 'USED001',
+      tenantId: TENANT_ID,
+      token: USER_TOKEN,
+    }).catch(() => {});
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('wraps unexpected repository errors in ServiceError', async () => {
+    jest
+      .spyOn(agentCodeRepository, 'findByTenantAndCode')
+      .mockRejectedValue(new Error('unexpected db failure'));
+
+    await expect(
+      agentCodeService.remove({
+        agentCode: 'DEL001',
         tenantId: TENANT_ID,
         token: USER_TOKEN,
       }),
