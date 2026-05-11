@@ -1,4 +1,7 @@
-import { AgentCodeConflictError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
+import {
+  AgentCodeConflictError,
+  AgentCodeNotFoundError,
+} from '@src/models/errors/agentCode.errors';
 import supabaseService from '@src/services/supabase.service';
 import { IAgentCode } from '@src/types/agentCode';
 import { Database } from '@src/types/database.types';
@@ -89,7 +92,9 @@ class AgentCodeRepository {
       );
 
       if (response.error) {
-        if ((response.error as { code?: string }).code === UNIQUE_VIOLATION_CODE) {
+        if (
+          (response.error as { code?: string }).code === UNIQUE_VIOLATION_CODE
+        ) {
           throw new AgentCodeConflictError();
         }
         throw new Error(response.error.message);
@@ -103,6 +108,63 @@ class AgentCodeRepository {
       return this.mapRowToAgentCode(rows[0]);
     } catch (error) {
       return handleRepositoryError('AgentCodeRepository.update', error);
+    }
+  }
+
+  async findByTenantAndCode(
+    userToken: string,
+    filters: { tenant_id: string; agent_code: string },
+  ): Promise<IAgentCode | null> {
+    try {
+      const response = await supabaseService.userSelect(
+        userToken,
+        'agent_codes',
+        '*',
+        filters,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as AgentCodesRow[];
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return this.mapRowToAgentCode(rows[0]);
+    } catch (error) {
+      return handleRepositoryError(
+        'AgentCodeRepository.findByTenantAndCode',
+        error,
+      );
+    }
+  }
+
+  async deleteByAgentCode(
+    userToken: string,
+    filters: { tenant_id: string; agent_code: string },
+  ): Promise<void> {
+    try {
+      const response = await supabaseService.userDelete(
+        userToken,
+        'agent_codes',
+        filters,
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as AgentCodesRow[];
+      if (rows.length === 0) {
+        throw new AgentCodeNotFoundError();
+      }
+    } catch (error) {
+      return handleRepositoryError(
+        'AgentCodeRepository.deleteByAgentCode',
+        error,
+      );
     }
   }
 }

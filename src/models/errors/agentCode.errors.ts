@@ -11,3 +11,10 @@ export class AgentCodeConflictError extends Error {
     this.name = 'AgentCodeConflictError';
   }
 }
+
+export class AgentCodeInUseError extends Error {
+  constructor(message = 'Agent code is in use') {
+    super(message);
+    this.name = 'AgentCodeInUseError';
+  }
+}

@@ -1,5 +1,5 @@
 import agentCodeRepository from '@src/repositories/agentCode.repository';
-import { AgentCodeConflictError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
+import { AgentCodeConflictError, AgentCodeInUseError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import { IAgentCode } from '@src/types/agentCode';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { getRootCause } from '@src/utils/sentry.utils';
@@ -22,6 +22,12 @@ interface IListParams {
 interface IUpdateParams {
   currentAgentCode: string;
   newAgentCode: string;
+  tenantId: string;
+  token: string;
+}
+
+interface IDeleteParams {
+  agentCode: string;
   tenantId: string;
   token: string;
 }
@@ -80,6 +86,30 @@ class AgentCodeService {
         throw rootCause;
       }
       return handleServiceError('AgentCodeService.update', error);
+    }
+  }
+
+  async remove(params: IDeleteParams): Promise<void> {
+    try {
+      const existing = await agentCodeRepository.findByTenantAndCode(
+        params.token,
+        { tenant_id: params.tenantId, agent_code: params.agentCode },
+      );
+      if (!existing) throw new AgentCodeNotFoundError();
+      if (existing.is_used) throw new AgentCodeInUseError();
+      await agentCodeRepository.deleteByAgentCode(
+        params.token,
+        { tenant_id: params.tenantId, agent_code: params.agentCode },
+      );
+    } catch (error) {
+      const rootCause = getRootCause(error);
+      if (
+        rootCause instanceof AgentCodeNotFoundError ||
+        rootCause instanceof AgentCodeInUseError
+      ) {
+        throw rootCause;
+      }
+      return handleServiceError('AgentCodeService.remove', error);
     }
   }
 }

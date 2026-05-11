@@ -42,6 +42,10 @@ router.patch(
     agentCodeController.update(req as unknown as IBaseReq, res, next),
 );
 
+router.delete('/:agentCode', authenticate, (req, res, next) =>
+  agentCodeController.remove(req as unknown as IBaseReq, res, next),
+);
+
 router.post(
   '/',
   authenticate,
