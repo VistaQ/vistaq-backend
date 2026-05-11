@@ -1,3 +1,4 @@
+import { AgentCodeConflictError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import supabaseService from '@src/services/supabase.service';
 import { IAgentCode } from '@src/types/agentCode';
 import { Database } from '@src/types/database.types';
@@ -5,6 +6,9 @@ import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
 type AgentCodesInsert = Database['public']['Tables']['agent_codes']['Insert'];
+type AgentCodesUpdate = Database['public']['Tables']['agent_codes']['Update'];
+
+const UNIQUE_VIOLATION_CODE = '23505';
 
 /******************************************************************************
                             AgentCodeRepository
@@ -68,6 +72,37 @@ class AgentCodeRepository {
       return data.map((row) => this.mapRowToAgentCode(row));
     } catch (error) {
       return handleRepositoryError('AgentCodeRepository.upsertMany', error);
+    }
+  }
+
+  async update(
+    userToken: string,
+    filters: { tenant_id: string; agent_code: string },
+    values: AgentCodesUpdate,
+  ): Promise<IAgentCode> {
+    try {
+      const response = await supabaseService.userUpdate(
+        userToken,
+        'agent_codes',
+        values,
+        filters,
+      );
+
+      if (response.error) {
+        if ((response.error as { code?: string }).code === UNIQUE_VIOLATION_CODE) {
+          throw new AgentCodeConflictError();
+        }
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as AgentCodesRow[];
+      if (rows.length === 0) {
+        throw new AgentCodeNotFoundError();
+      }
+
+      return this.mapRowToAgentCode(rows[0]);
+    } catch (error) {
+      return handleRepositoryError('AgentCodeRepository.update', error);
     }
   }
 }
