@@ -36,7 +36,7 @@ import type { ICreateAgentCodesReq } from '@src/controllers/agentCode.controller
 import { agentCodeService } from '@src/services/agentCode.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
-import { AgentCodeNotFoundError, AgentCodeConflictError } from '@src/models/errors/agentCode.errors';
+import { AgentCodeNotFoundError, AgentCodeConflictError, AgentCodeInUseError } from '@src/models/errors/agentCode.errors';
 import type { IAgentCode } from '@src/types/agentCode';
 import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
@@ -494,6 +494,146 @@ describe('AgentCodeController.update', () => {
     const next = makeNext();
 
     await agentCodeController.update(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(ControllerError);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — AgentCodeController.remove
+******************************************************************************/
+
+function makeRemoveReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
+  return {
+    headers: { authorization: `Bearer ${USER_TOKEN}` },
+    params: { agentCode: 'DEL001' },
+    body: {},
+    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    ...overrides,
+  } as unknown as IBaseReq;
+}
+
+describe('AgentCodeController.remove', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('returns 200 { success: true } on successful deletion', async () => {
+    jest
+      .spyOn(agentCodeService, 'remove')
+      .mockResolvedValue(undefined);
+
+    const req = makeRemoveReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls agentCodeService.remove with agentCode from params, tenantId from JWT, and bearer token', async () => {
+    const spy = jest
+      .spyOn(agentCodeService, 'remove')
+      .mockResolvedValue(undefined);
+
+    const req = makeRemoveReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({
+      agentCode: 'DEL001',
+      tenantId: TENANT_ID,
+      token: USER_TOKEN,
+    });
+  });
+
+  it('calls next(RouteError) with status 403 when role is not admin', async () => {
+    const req = makeRemoveReq({
+      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+    } as Partial<IBaseReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 403 when role is group_leader', async () => {
+    const req = makeRemoveReq({
+      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'group_leader' },
+    } as Partial<IBaseReq>);
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(403);
+  });
+
+  it('calls next(RouteError) with status 404 when service throws AgentCodeNotFoundError', async () => {
+    jest
+      .spyOn(agentCodeService, 'remove')
+      .mockRejectedValue(new AgentCodeNotFoundError());
+
+    const req = makeRemoveReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(404);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(RouteError) with status 409 when service throws AgentCodeInUseError', async () => {
+    jest
+      .spyOn(agentCodeService, 'remove')
+      .mockRejectedValue(new AgentCodeInUseError());
+
+    const req = makeRemoveReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(RouteError);
+    expect((err as RouteError).status).toBe(409);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('calls next(ControllerError) for unexpected service errors', async () => {
+    jest
+      .spyOn(agentCodeService, 'remove')
+      .mockRejectedValue(new Error('unexpected failure'));
+
+    const req = makeRemoveReq();
+    const res = makeRes();
+    const next = makeNext();
+
+    await agentCodeController.remove(req, res, next as NextFunction);
 
     expect(next).toHaveBeenCalledTimes(1);
     const err = next.mock.calls[0][0];
