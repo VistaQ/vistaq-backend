@@ -961,6 +961,7 @@ export type Database = {
           name: string
           phone: string | null
           role: string
+          sales_target: number | null
           status: string
           tenant_id: string | null
           updated_at: string
@@ -976,6 +977,7 @@ export type Database = {
           name: string
           phone?: string | null
           role: string
+          sales_target?: number | null
           status?: string
           tenant_id?: string | null
           updated_at?: string
@@ -991,6 +993,7 @@ export type Database = {
           name?: string
           phone?: string | null
           role?: string
+          sales_target?: number | null
           status?: string
           tenant_id?: string | null
           updated_at?: string
@@ -1045,6 +1048,17 @@ export type Database = {
       }
     }
     Functions: {
+      award_sales_points_for_batch: {
+        Args: {
+          p_activities: string[]
+          p_awards: Json
+          p_batch_id: string
+          p_month: number
+          p_tenant_id: string
+          p_year: number
+        }
+        Returns: undefined
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_agent_leaderboard: { Args: { p_tenant_id: string }; Returns: Json }
       get_agent_points_breakdown: {

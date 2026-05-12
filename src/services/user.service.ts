@@ -23,6 +23,7 @@ interface IUpdateUserParams {
     location?: string;
     role?: string;
     group_id?: string | null;
+    sales_target?: number | null;
   };
 }
 

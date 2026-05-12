@@ -52,6 +52,7 @@ export interface IUpdateUserReq extends IBaseReq {
     agency?: string;
     location?: string;
     role?: string;
+    sales_target?: number | null;
   };
 }
 

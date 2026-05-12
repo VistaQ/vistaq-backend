@@ -101,6 +101,7 @@ const mockUser: IUser = {
   group_id: 'group-001',
   phone: null,
   agency: null,
+  sales_target: null,
   status: 'active',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
