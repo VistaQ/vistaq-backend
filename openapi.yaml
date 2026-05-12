@@ -842,6 +842,12 @@ paths:
                     Only honoured for admin callers. Non-admin callers may
                     include this field but it is silently stripped.
                   example: trainer
+                sales_target:
+                  type: number
+                  nullable: true
+                  minimum: 0
+                  example: 400000
+                  description: "Annual FYCt sales target in RM. Pass null to clear the target."
       responses:
         '200':
           description: User updated successfully
@@ -4957,6 +4963,11 @@ components:
           example:
             - abc-123-uuid
             - def-456-uuid
+        sales_target:
+          type: number
+          nullable: true
+          example: 400000
+          description: "The agent's personal annual FYCt sales target in RM. Null if the agent has not set a target yet."
 
     AgentCodeObject:
       type: object
