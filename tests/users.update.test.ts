@@ -87,6 +87,7 @@ import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import { IUser } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 import { IUpdateUserReq } from '@src/controllers/user.controller';
+import { updateUserSchema } from '@src/routes/user.routes';
 
 /******************************************************************************
   Shared Fixtures
@@ -103,6 +104,7 @@ const mockUser: IUser = {
   group_id: 'group-001',
   phone: null,
   agency: null,
+  sales_target: null,
   status: 'active',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -254,6 +256,52 @@ describe('UserController.update', () => {
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: updatedMockUser });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // 6. Self-update with numeric sales_target → 200, service called with sales_target: 500000
+  it('returns 200 and passes sales_target: 500000 to service when provided', async () => {
+    const userWithTarget: IUser = { ...mockUser, sales_target: 500000 };
+    (userService.updateUser as jest.Mock).mockResolvedValue(userWithTarget);
+
+    const req = buildUpdateReq({ role: 'agent', callerId: 'user-001', userId: 'user-001', body: { sales_target: 500000 } });
+    const res = buildRes();
+    const next = buildNext();
+
+    await userController.update(req, res, next);
+
+    expect(userService.updateUser).toHaveBeenCalledTimes(1);
+    expect(userService.updateUser).toHaveBeenCalledWith({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', sales_target: 500000 },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: userWithTarget });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // 7. Self-update with sales_target: null → 200, service called with sales_target: null (clear semantics)
+  it('returns 200 and passes sales_target: null to service when explicitly nulled', async () => {
+    const userClearedTarget: IUser = { ...mockUser, sales_target: null };
+    (userService.updateUser as jest.Mock).mockResolvedValue(userClearedTarget);
+
+    const req = buildUpdateReq({ role: 'agent', callerId: 'user-001', userId: 'user-001', body: { sales_target: null } });
+    const res = buildRes();
+    const next = buildNext();
+
+    await userController.update(req, res, next);
+
+    expect(userService.updateUser).toHaveBeenCalledTimes(1);
+    expect(userService.updateUser).toHaveBeenCalledWith({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', sales_target: null },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: userClearedTarget });
     expect(next).not.toHaveBeenCalled();
   });
 });
@@ -409,6 +457,58 @@ describe('UserService.updateUser', () => {
     ).rejects.toBeInstanceOf(ServiceError);
 
     expect(userRepository.findById).toHaveBeenCalledTimes(1);
+  });
+
+  // 7. sales_target passes through to repository — non-admin guard only strips role, not sales_target
+  it('passes sales_target through to userRepository.updateUser and does not strip it for non-admin callers', async () => {
+    (userRepository.findById as jest.Mock).mockResolvedValue(mockUser);
+    (userRepository.updateUser as jest.Mock).mockResolvedValue({ ...mockUser, sales_target: 500000 });
+
+    await realService.updateUser({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', sales_target: 500000 },
+    });
+
+    expect(userRepository.updateUser).toHaveBeenCalledTimes(1);
+    const updateData = (userRepository.updateUser as jest.Mock).mock.calls[0][1];
+    expect(updateData).toHaveProperty('sales_target', 500000);
+    expect(updateData).not.toHaveProperty('role');
+  });
+});
+
+/******************************************************************************
+  updateUserSchema — Zod validation
+******************************************************************************/
+
+describe('updateUserSchema validation', () => {
+  // 1. sales_target: -1 should be rejected (min(0) violation)
+  it('rejects sales_target: -1 with a validation error', () => {
+    const result = updateUserSchema.safeParse({ sales_target: -1 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((e) => e.path.join('.'));
+      expect(paths).toContain('sales_target');
+    }
+  });
+
+  // 2. sales_target: null should pass (nullable clears the field)
+  it('accepts sales_target: null', () => {
+    const result = updateUserSchema.safeParse({ sales_target: null });
+    expect(result.success).toBe(true);
+  });
+
+  // 3. sales_target: 0 should pass (boundary: min(0))
+  it('accepts sales_target: 0 (boundary value)', () => {
+    const result = updateUserSchema.safeParse({ sales_target: 0 });
+    expect(result.success).toBe(true);
+  });
+
+  // 4. sales_target: 500000 should pass
+  it('accepts sales_target: 500000 (positive number)', () => {
+    const result = updateUserSchema.safeParse({ sales_target: 500000 });
+    expect(result.success).toBe(true);
   });
 });
 
