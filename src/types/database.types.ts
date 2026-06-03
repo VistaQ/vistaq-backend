@@ -1087,10 +1087,19 @@ export type Database = {
         Returns: Json
       }
       get_group_stats: { Args: never; Returns: Json }
-      get_leaderboard_stats: {
-        Args: { p_period_start: string; p_tenant_id: string }
-        Returns: Json
-      }
+      get_leaderboard_stats:
+        | {
+            Args: { p_period_start: string; p_tenant_id: string }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_period?: string
+              p_period_start: string
+              p_tenant_id: string
+            }
+            Returns: Json
+          }
       reconcile_stale_report_jobs: { Args: never; Returns: undefined }
     }
     Enums: {

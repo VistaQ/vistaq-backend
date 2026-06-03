@@ -29,7 +29,7 @@ class LeaderboardService {
           ? new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
           : new Date(now.getFullYear(), 0, 1).toISOString();
 
-      const response = await leaderboardRepository.getStats(tenantId, periodStart);
+      const response = await leaderboardRepository.getStats(tenantId, periodStart, period);
       const raw = (response?.data ?? {}) as {
         individual?: ILeaderboardStatsIndividual[];
         groups?: ILeaderboardStatsGroup[];
