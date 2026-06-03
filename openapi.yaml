@@ -5702,6 +5702,9 @@ components:
         - sales_meetings
         - sales_successful
         - total_points
+        - ace
+        - fyc
+        - fyct
       properties:
         user_id:
           type: string
@@ -5744,6 +5747,32 @@ components:
           type: integer
           description: Pre-computed total points for this agent in the period, calculated server-side using the tenant's current point config.
           example: 26
+        ace:
+          type: number
+          description: >
+            Annualized Commission Earnings. For `period=mtd`, the current
+            calendar month's value sourced from `sales_report_mtd_fyc`; for
+            `period=ytd`, the latest available month snapshot for the current
+            year from `sales_report_ytd`. Defaults to 0 if no sales-report
+            data is available.
+          example: 12500.50
+        fyc:
+          type: number
+          description: >
+            First Year Commission. For `period=mtd`, the month-to-date delta
+            derived from the `sales_report_mtd_fyc` LAG view; for `period=ytd`,
+            the cumulative year-to-date value from `sales_report_ytd`.
+            Defaults to 0 if no sales-report data is available.
+          example: 8400
+        fyct:
+          type: number
+          description: >
+            First Year Commission Target. For `period=mtd`, the month-to-date
+            delta derived from the `sales_report_mtd_fyc` LAG view; for
+            `period=ytd`, the cumulative year-to-date value from
+            `sales_report_ytd`. Defaults to 0 if no sales-report data is
+            available.
+          example: 9000
 
     LeaderboardStatsGroupObject:
       type: object
@@ -5757,6 +5786,9 @@ components:
         - sales_meetings
         - sales_successful
         - total_points
+        - ace
+        - fyc
+        - fyct
       properties:
         group_id:
           type: string
@@ -5794,6 +5826,34 @@ components:
           type: integer
           description: Aggregated total points for all members of this group in the period, calculated server-side using the tenant's current point config.
           example: 52
+        ace:
+          type: number
+          description: >
+            Aggregated Annualized Commission Earnings across all group
+            members in the period. For `period=mtd`, the current calendar
+            month's value sourced from `sales_report_mtd_fyc`; for
+            `period=ytd`, the latest available month snapshot for the current
+            year from `sales_report_ytd`. Members with no sales-report data
+            contribute 0.
+          example: 62500.50
+        fyc:
+          type: number
+          description: >
+            Aggregated First Year Commission across all group members in the
+            period. For `period=mtd`, the month-to-date delta derived from
+            the `sales_report_mtd_fyc` LAG view; for `period=ytd`, the
+            cumulative year-to-date value from `sales_report_ytd`. Members
+            with no sales-report data contribute 0.
+          example: 42000
+        fyct:
+          type: number
+          description: >
+            Aggregated First Year Commission Target across all group members
+            in the period. For `period=mtd`, the month-to-date delta derived
+            from the `sales_report_mtd_fyc` LAG view; for `period=ytd`, the
+            cumulative year-to-date value from `sales_report_ytd`. Members
+            with no sales-report data contribute 0.
+          example: 45000
 
     AgentPointsObject:
       type: object
