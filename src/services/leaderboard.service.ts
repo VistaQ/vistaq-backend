@@ -26,8 +26,8 @@ class LeaderboardService {
       const now = new Date();
       const periodStart =
         period === 'mtd'
-          ? new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-          : new Date(now.getFullYear(), 0, 1).toISOString();
+          ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+          : new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString();
 
       const response = await leaderboardRepository.getStats(tenantId, periodStart, period);
       const raw = (response?.data ?? {}) as {

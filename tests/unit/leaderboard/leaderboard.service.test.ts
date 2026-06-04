@@ -124,7 +124,7 @@ describe('LeaderboardService.getStats', () => {
     );
   });
 
-  it('passes a periodStart at the start of the current month when period="mtd"', async () => {
+  it('passes a periodStart at the start of the current month in UTC when period="mtd"', async () => {
     const spy = jest.spyOn(leaderboardRepository, 'getStats').mockResolvedValue({
       data: { individual: [], groups: [] },
     } as never);
@@ -134,12 +134,13 @@ describe('LeaderboardService.getStats', () => {
     const periodStart = spy.mock.calls[0][1];
     const parsed = new Date(periodStart);
     const now = new Date();
-    expect(parsed.getFullYear()).toBe(now.getFullYear());
-    expect(parsed.getMonth()).toBe(now.getMonth());
-    expect(parsed.getDate()).toBe(1);
+    expect(parsed.getUTCFullYear()).toBe(now.getUTCFullYear());
+    expect(parsed.getUTCMonth()).toBe(now.getUTCMonth());
+    expect(parsed.getUTCDate()).toBe(1);
+    expect(parsed.getUTCHours()).toBe(0);
   });
 
-  it('passes a periodStart at the start of the current year when period="ytd"', async () => {
+  it('passes a periodStart at the start of the current year in UTC when period="ytd"', async () => {
     const spy = jest.spyOn(leaderboardRepository, 'getStats').mockResolvedValue({
       data: { individual: [], groups: [] },
     } as never);
@@ -149,9 +150,10 @@ describe('LeaderboardService.getStats', () => {
     const periodStart = spy.mock.calls[0][1];
     const parsed = new Date(periodStart);
     const now = new Date();
-    expect(parsed.getFullYear()).toBe(now.getFullYear());
-    expect(parsed.getMonth()).toBe(0);
-    expect(parsed.getDate()).toBe(1);
+    expect(parsed.getUTCFullYear()).toBe(now.getUTCFullYear());
+    expect(parsed.getUTCMonth()).toBe(0);
+    expect(parsed.getUTCDate()).toBe(1);
+    expect(parsed.getUTCHours()).toBe(0);
   });
 
   it('returns ace, fyc, fyct on individual entries untouched from the RPC response', async () => {
