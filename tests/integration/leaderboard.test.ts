@@ -251,12 +251,18 @@ describe('GET /api/leaderboard/stats — happy path (admin)', () => {
       expect(entry).toHaveProperty('sales_meetings');
       expect(entry).toHaveProperty('sales_successful');
       expect(entry).toHaveProperty('total_points');
+      expect(entry).toHaveProperty('ace');
+      expect(entry).toHaveProperty('fyc');
+      expect(entry).toHaveProperty('fyct');
 
       expect(typeof entry['prospects_added']).toBe('number');
       expect(typeof entry['appointments_completed']).toBe('number');
       expect(typeof entry['sales_meetings']).toBe('number');
       expect(typeof entry['sales_successful']).toBe('number');
       expect(typeof entry['total_points']).toBe('number');
+      expect(typeof entry['ace']).toBe('number');
+      expect(typeof entry['fyc']).toBe('number');
+      expect(typeof entry['fyct']).toBe('number');
     }
   });
 
@@ -286,6 +292,9 @@ describe('GET /api/leaderboard/stats — happy path (admin)', () => {
       expect(entry).toHaveProperty('sales_meetings');
       expect(entry).toHaveProperty('sales_successful');
       expect(entry).toHaveProperty('total_points');
+      expect(entry).toHaveProperty('ace');
+      expect(entry).toHaveProperty('fyc');
+      expect(entry).toHaveProperty('fyct');
 
       expect(typeof entry['member_count']).toBe('number');
       expect(typeof entry['prospects_added']).toBe('number');
@@ -293,6 +302,9 @@ describe('GET /api/leaderboard/stats — happy path (admin)', () => {
       expect(typeof entry['sales_meetings']).toBe('number');
       expect(typeof entry['sales_successful']).toBe('number');
       expect(typeof entry['total_points']).toBe('number');
+      expect(typeof entry['ace']).toBe('number');
+      expect(typeof entry['fyc']).toBe('number');
+      expect(typeof entry['fyct']).toBe('number');
     }
   });
 });

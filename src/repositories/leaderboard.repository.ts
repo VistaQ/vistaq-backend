@@ -16,11 +16,12 @@ class LeaderboardRepository {
     }
   }
 
-  async getStats(tenantId: string, periodStart: string) {
+  async getStats(tenantId: string, periodStart: string, period: 'mtd' | 'ytd') {
     try {
       return await supabaseService.adminRpc('get_leaderboard_stats', {
         p_tenant_id: tenantId,
         p_period_start: periodStart,
+        p_period: period,
       });
     } catch (error) {
       handleRepositoryError('LeaderboardRepository.getStats', error);
