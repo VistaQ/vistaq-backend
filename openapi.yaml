@@ -5705,6 +5705,7 @@ components:
         - ace
         - fyc
         - fyct
+        - acs
       properties:
         user_id:
           type: string
@@ -5773,6 +5774,14 @@ components:
             `sales_report_ytd`. Defaults to 0 if no sales-report data is
             available.
           example: 9000
+        acs:
+          type: number
+          description: >
+            Average Case Size = ACE / NOC for the period. For period=mtd uses
+            the current month's ACE and NOC; for period=ytd uses the latest
+            cumulative snapshot for the current year. Returns 0 when there are
+            no cases (NOC = 0).
+          example: 12500.50
 
     LeaderboardStatsGroupObject:
       type: object
@@ -5789,6 +5798,7 @@ components:
         - ace
         - fyc
         - fyct
+        - acs
       properties:
         group_id:
           type: string
@@ -5854,6 +5864,14 @@ components:
             cumulative year-to-date value from `sales_report_ytd`. Members
             with no sales-report data contribute 0.
           example: 45000
+        acs:
+          type: number
+          description: >
+            Average Case Size = ACE / NOC for the period. For period=mtd uses
+            the current month's ACE and NOC; for period=ytd uses the latest
+            cumulative snapshot for the current year. Returns 0 when there are
+            no cases (NOC = 0).
+          example: 18750.25
 
     AgentPointsObject:
       type: object
