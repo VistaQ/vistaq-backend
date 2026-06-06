@@ -52,6 +52,7 @@ const mockIndividual: ILeaderboardStatsIndividual[] = [
     ace: 50000.5,
     fyc: 12000,
     fyct: 8000,
+    acs: 16666.833333333332,
   },
   {
     user_id: 'user-uuid-2',
@@ -67,6 +68,7 @@ const mockIndividual: ILeaderboardStatsIndividual[] = [
     ace: 0,
     fyc: 0,
     fyct: 0,
+    acs: 0,
   },
 ];
 
@@ -84,6 +86,7 @@ const mockGroups: ILeaderboardStatsGroup[] = [
     ace: 250000.75,
     fyc: 60000,
     fyct: 40000,
+    acs: 27777.861111111113,
   },
 ];
 
@@ -156,7 +159,7 @@ describe('LeaderboardService.getStats', () => {
     expect(parsed.getUTCHours()).toBe(0);
   });
 
-  it('returns ace, fyc, fyct on individual entries untouched from the RPC response', async () => {
+  it('returns ace, fyc, fyct, acs on individual entries untouched from the RPC response', async () => {
     jest.spyOn(leaderboardRepository, 'getStats').mockResolvedValue({
       data: { individual: mockIndividual, groups: mockGroups },
     } as never);
@@ -167,12 +170,15 @@ describe('LeaderboardService.getStats', () => {
     expect(result.individual[0].ace).toBe(50000.5);
     expect(result.individual[0].fyc).toBe(12000);
     expect(result.individual[0].fyct).toBe(8000);
+    expect(result.individual[0].acs).toBe(16666.833333333332);
     expect(result.individual[1].ace).toBe(0);
     expect(result.individual[1].fyc).toBe(0);
     expect(result.individual[1].fyct).toBe(0);
+    // NOC=0 control row: acs collapses to 0
+    expect(result.individual[1].acs).toBe(0);
   });
 
-  it('returns ace, fyc, fyct on group entries untouched from the RPC response', async () => {
+  it('returns ace, fyc, fyct, acs on group entries untouched from the RPC response', async () => {
     jest.spyOn(leaderboardRepository, 'getStats').mockResolvedValue({
       data: { individual: mockIndividual, groups: mockGroups },
     } as never);
@@ -183,6 +189,7 @@ describe('LeaderboardService.getStats', () => {
     expect(result.groups[0].ace).toBe(250000.75);
     expect(result.groups[0].fyc).toBe(60000);
     expect(result.groups[0].fyct).toBe(40000);
+    expect(result.groups[0].acs).toBe(27777.861111111113);
   });
 
   it('echoes the period back on the response payload', async () => {

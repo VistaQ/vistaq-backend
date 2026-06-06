@@ -27,6 +27,7 @@ export type ILeaderboardStatsIndividual = {
   ace: number;
   fyc: number;
   fyct: number;
+  acs: number;
 };
 
 export type ILeaderboardStatsGroup = {
@@ -42,6 +43,7 @@ export type ILeaderboardStatsGroup = {
   ace: number;
   fyc: number;
   fyct: number;
+  acs: number;
 };
 
 export type ILeaderboardStats = {
