@@ -141,6 +141,7 @@ class SalesReportService {
           month: reportMonth,
           ace: readRowData(r, 'ACE (YTD)'),
           noc: readRowData(r, 'NOC (YTD)'),
+          acs: readRowData(r, 'ACS (YTD)'),
           fyct: readRowData(r, 'FYCT (YTD)'),
           fyct_pct: readRowData(r, '% FYCT (YTD)'),
           mdrt_shortage_fyct: readRowData(r, 'MDRT SHORTAGE FYCT'),
@@ -152,6 +153,7 @@ class SalesReportService {
         for (const [monthName, monthNum] of Object.entries(MONTH_MAP)) {
           const aceKey = `${monthName} ACE`;
           const nocKey = `${monthName} NOC`;
+          const acsKey = `${monthName} ACS`;
           const aceRaw = r[aceKey];
           const nocRaw = r[nocKey];
           if (aceRaw === undefined && nocRaw === undefined) continue;
@@ -164,6 +166,7 @@ class SalesReportService {
             month: monthNum,
             ace: num(aceRaw),
             noc: num(nocRaw),
+            acs: num(r[acsKey]),
           });
         }
       }
