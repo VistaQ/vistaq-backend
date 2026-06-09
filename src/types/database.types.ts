@@ -741,6 +741,7 @@ export type Database = {
       sales_report_mtd: {
         Row: {
           ace: number
+          acs: number
           batch_id: string
           created_at: string
           id: string
@@ -753,6 +754,7 @@ export type Database = {
         }
         Insert: {
           ace?: number
+          acs?: number
           batch_id: string
           created_at?: string
           id?: string
@@ -765,6 +767,7 @@ export type Database = {
         }
         Update: {
           ace?: number
+          acs?: number
           batch_id?: string
           created_at?: string
           id?: string
@@ -802,6 +805,7 @@ export type Database = {
       sales_report_ytd: {
         Row: {
           ace: number
+          acs: number
           batch_id: string
           created_at: string
           fyc: number
@@ -820,6 +824,7 @@ export type Database = {
         }
         Insert: {
           ace?: number
+          acs?: number
           batch_id: string
           created_at?: string
           fyc?: number
@@ -838,6 +843,7 @@ export type Database = {
         }
         Update: {
           ace?: number
+          acs?: number
           batch_id?: string
           created_at?: string
           fyc?: number
@@ -1020,6 +1026,7 @@ export type Database = {
       sales_report_mtd_fyc: {
         Row: {
           ace: number | null
+          acs: number | null
           fyc_mtd: number | null
           fyct_mtd: number | null
           id: string | null

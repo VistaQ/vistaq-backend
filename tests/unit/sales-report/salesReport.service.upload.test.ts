@@ -44,17 +44,17 @@ const baseEtl: IEtlResult = {
     {
       agentCode: 'A1',
       rowData: {
-        'ACE (YTD)': 100, 'NOC (YTD)': 5, 'FYCT (YTD)': 80, '% FYCT (YTD)': 0.4,
+        'ACE (YTD)': 100, 'NOC (YTD)': 5, 'ACS (YTD)': 20, 'FYCT (YTD)': 80, '% FYCT (YTD)': 0.4,
         'MDRT SHORTAGE FYCT': 20, 'FYC (YTD)': 70, '% FYC (YTD)': 0.35,
         'MDRT SHORTAGE FYC': 30,
-        'JANUARY ACE': 10, 'JANUARY NOC': 1,
-        'MAY ACE': 30, 'MAY NOC': 2,
+        'JANUARY ACE': 10, 'JANUARY NOC': 1, 'JANUARY ACS': 10,
+        'MAY ACE': 30, 'MAY NOC': 2, 'MAY ACS': 15,
       },
     },
     {
       agentCode: 'A2',
       rowData: {
-        'ACE (YTD)': 200, 'NOC (YTD)': 10, 'FYCT (YTD)': 160, '% FYCT (YTD)': 0.4,
+        'ACE (YTD)': 200, 'NOC (YTD)': 10, 'ACS (YTD)': 20, 'FYCT (YTD)': 160, '% FYCT (YTD)': 0.4,
         'MDRT SHORTAGE FYCT': 40, 'FYC (YTD)': 140, '% FYC (YTD)': 0.35,
         'MDRT SHORTAGE FYC': 60,
       },
@@ -94,13 +94,19 @@ describe('SalesReportService.uploadReport — happy path', () => {
     const ytdRows = (salesReportYtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0];
     expect(ytdRows).toHaveLength(2);
     expect(ytdRows[0]).toMatchObject({
-      tenant_id: 't1', user_id: 'u1', year: 2026, month: 5, ace: 100, fyc: 70,
+      tenant_id: 't1', user_id: 'u1', year: 2026, month: 5, ace: 100, fyc: 70, acs: 20,
     });
+    // YTD acs is read from the 'ACS (YTD)' column, not derived from ace/noc.
+    expect(ytdRows[0].acs).toBe(20);
+    expect(ytdRows[1].acs).toBe(20);
 
     expect(salesReportMtdRepository.bulkUpsert).toHaveBeenCalledTimes(1);
     const mtdRows = (salesReportMtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0];
     // A1 has JANUARY + MAY MTD; A2 has none → total = 2
     expect(mtdRows).toHaveLength(2);
+    // Each per-month MTD row reads acs from its '<MONTH> ACS' column.
+    expect(mtdRows[0]).toMatchObject({ month: 1, ace: 10, noc: 1, acs: 10 });
+    expect(mtdRows[1]).toMatchObject({ month: 5, ace: 30, noc: 2, acs: 15 });
 
     expect(uploadBatchRepository.updateBatchSummary).toHaveBeenCalledWith('batch-1', {
       rows_loaded: 2,
@@ -216,9 +222,12 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
           // Numeric values as strings (defensive coercion)
           'ACE (YTD)': '100.5' as unknown as number,
           'NOC (YTD)': null as unknown as number,
+          // YTD acs entirely absent → must default to 0.
           'FYC (YTD)': 70,
           'JANUARY ACE': '15' as unknown as number,
           'JANUARY NOC': 1,
+          // MTD acs is a non-numeric string → must coerce to 0.
+          'JANUARY ACS': 'n/a' as unknown as number,
         },
       }],
     };
@@ -231,12 +240,14 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
     const ytdRow = (salesReportYtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0][0];
     expect(ytdRow.ace).toBe(100.5);  // string coerced
     expect(ytdRow.noc).toBe(0);      // null → 0
+    expect(ytdRow.acs).toBe(0);      // 'ACS (YTD)' absent → 0
     expect(ytdRow.fyc).toBe(70);
 
     const mtdRow = (salesReportMtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0][0];
     expect(mtdRow.month).toBe(1);
     expect(mtdRow.ace).toBe(15);
     expect(mtdRow.noc).toBe(1);
+    expect(mtdRow.acs).toBe(0);      // non-numeric 'JANUARY ACS' → 0
   });
 });
 
