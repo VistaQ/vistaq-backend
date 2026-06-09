@@ -5777,10 +5777,11 @@ components:
         acs:
           type: number
           description: >
-            Average Case Size = ACE / NOC for the period. For period=mtd uses
-            the current month's ACE and NOC; for period=ytd uses the latest
-            cumulative snapshot for the current year. Returns 0 when there are
-            no cases (NOC = 0).
+            Average Case Size for the period. For `period=mtd`, the current
+            calendar month's value sourced from `sales_report_mtd`; for
+            `period=ytd`, the latest available month snapshot for the current
+            year from `sales_report_ytd`. Defaults to 0 when no sales-report
+            data is available.
           example: 12500.50
 
     LeaderboardStatsGroupObject:
@@ -6264,10 +6265,11 @@ components:
                 description: >
                   Open-ended bag of column-name → value pairs. Recognised
                   numeric keys include the YTD totals (`'ACE (YTD)'`,
-                  `'NOC (YTD)'`, `'FYCT (YTD)'`, `'% FYCT (YTD)'`,
-                  `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`, `'% FYC (YTD)'`,
-                  `'MDRT SHORTAGE FYC'`) and per-month MTD pairs
-                  (`'JANUARY ACE'`, `'JANUARY NOC'`, etc.). String keys
+                  `'NOC (YTD)'`, `'ACS (YTD)'`, `'FYCT (YTD)'`,
+                  `'% FYCT (YTD)'`, `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`,
+                  `'% FYC (YTD)'`, `'MDRT SHORTAGE FYC'`) and per-month MTD
+                  groups (`'JANUARY ACE'`, `'JANUARY NOC'`,
+                  `'JANUARY ACS'`, etc.). String keys
                   like `'AGENT CODE'` and `'AGENT NAME'` (which the ETL
                   may include as duplicates of the outer fields) are
                   accepted and ignored. Missing or non-numeric values
