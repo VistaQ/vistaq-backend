@@ -30,10 +30,16 @@ tags:
     description: Gamification leaderboard endpoints
   - name: Agent Points
     description: Gamification agent points endpoints
+  - name: Agent Codes
+    description: Tenant-scoped agent code provisioning endpoints
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
+  - name: Sales Reports
+    description: Sales report ingestion, per-agent year rollups, and upload audit endpoints
   - name: Public
     description: Public endpoints that do not require authentication
+  - name: Internal
+    description: Service-to-service operations (cron, retention cleanup) authenticated via ETL_API_KEY rather than user JWTs
 
 ################################################################################
 # Paths
@@ -200,14 +206,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: too_small
-                        minimum: 6
-                        type: string
-                        inclusive: true
-                        exact: false
-                        message: Password must be at least 6 characters
-                        path: [password]
+                    formErrors: []
+                    fieldErrors:
+                      password:
+                        - Password must be at least 6 characters
         '404':
           description: Tenant not found
           content:
@@ -305,11 +307,20 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: invalid_string
-                        validation: email
-                        message: Invalid email
-                        path: [email]
+                    formErrors: []
+                    fieldErrors:
+                      email:
+                        - Invalid email
+        '403':
+          description: >
+            Forbidden. Returned when the user exists but their account has been
+            deactivated by an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Account is inactive
         '404':
           description: Tenant not found
           content:
@@ -492,11 +503,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: invalid_string
-                        validation: email
-                        message: Invalid email
-                        path: [email]
+                    formErrors: []
+                    fieldErrors:
+                      email:
+                        - Invalid email
         '404':
           description: Tenant not found
           content:
@@ -576,14 +586,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 6
-                    type: string
-                    inclusive: true
-                    exact: false
-                    message: Password must be at least 6 characters
-                    path: [newPassword]
+                formErrors: []
+                fieldErrors:
+                  newPassword:
+                    - Password must be at least 6 characters
         '500':
           description: >
             Internal server error. Also returned when the supplied token is
@@ -656,14 +662,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 6
-                    type: string
-                    inclusive: true
-                    exact: false
-                    message: Password must be at least 6 characters
-                    path: [newPassword]
+                formErrors: []
+                fieldErrors:
+                  newPassword:
+                    - Password must be at least 6 characters
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -792,9 +794,8 @@ paths:
         Updates the user record for the given `userId`. The caller must supply
         a valid Bearer token. Non-admin users can only update themselves — a
         403 is returned if they attempt to update another user. Non-admin
-        callers cannot update the `role` or `status` fields; those fields are
-        silently stripped from the request body. At least one field must be
-        provided.
+        callers cannot update the `role` field; it is silently stripped from
+        the request body. At least one field must be provided.
       security:
         - bearerAuth: []
       parameters:
@@ -841,13 +842,12 @@ paths:
                     Only honoured for admin callers. Non-admin callers may
                     include this field but it is silently stripped.
                   example: trainer
-                status:
-                  type: string
-                  enum: [active, inactive]
-                  description: >
-                    Only honoured for admin callers. Non-admin callers may
-                    include this field but it is silently stripped.
-                  example: active
+                sales_target:
+                  type: number
+                  nullable: true
+                  minimum: 0
+                  example: 400000
+                  description: "Annual FYCt sales target in RM. Pass null to clear the target."
       responses:
         '200':
           description: User updated successfully
@@ -872,10 +872,9 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: custom
-                    message: At least one field must be provided
-                    path: []
+                formErrors:
+                  - At least one field must be provided
+                fieldErrors: {}
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -1050,14 +1049,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: too_small
-                        minimum: 8
-                        type: string
-                        inclusive: true
-                        exact: false
-                        message: Password must be at least 8 characters
-                        path: [password]
+                    formErrors: []
+                    fieldErrors:
+                      password:
+                        - Password must be at least 8 characters
                 invalidAgentCode:
                   summary: Invalid or already used agent code
                   value:
@@ -1080,6 +1075,151 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{userId}/deactivate:
+    post:
+      tags: [Users]
+      summary: Deactivate a user
+      description: >
+        Admin-only. Sets the user's status to `inactive`, preventing them from
+        logging in or making authenticated requests. The user's data and group
+        membership are preserved for seamless reactivation. Idempotent —
+        deactivating an already-inactive user returns 200.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: UUID of the user to deactivate.
+          schema:
+            type: string
+            format: uuid
+            example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+      responses:
+        '200':
+          description: User deactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/UserObject'
+        '400':
+          description: >
+            Bad request. Returned when the authenticated admin attempts to
+            deactivate their own account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Admins cannot deactivate themselves
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no user exists for the given `userId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: User not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{userId}/reactivate:
+    post:
+      tags: [Users]
+      summary: Reactivate a user
+      description: >
+        Admin-only. Restores the user's status to `active`, allowing them to
+        log in and make authenticated requests again. Idempotent — reactivating
+        an already-active user returns 200.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: UUID of the user to reactivate.
+          schema:
+            type: string
+            format: uuid
+            example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+      responses:
+        '200':
+          description: User reactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/UserObject'
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no user exists for the given `userId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: User not found
         '500':
           description: Internal server error
           content:
@@ -1209,14 +1349,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: too_small
-                        minimum: 1
-                        type: string
-                        inclusive: true
-                        exact: false
-                        message: String must contain at least 1 character(s)
-                        path: [name]
+                    formErrors: []
+                    fieldErrors:
+                      name:
+                        - String must contain at least 1 character(s)
                 invalidLeaderRole:
                   summary: Leader does not have the agent role
                   value:
@@ -1323,8 +1459,10 @@ paths:
         is supplied and differs from the current leader, the new leader is promoted
         to `group_leader` and the previous leader is demoted back to `agent`. When
         `trainer_ids` is supplied, the existing trainer assignments for the group are replaced with the provided set. When
-        `member_ids` is supplied, the `group_id` field on each referenced user is
-        set to this group. All referenced users must exist within the caller's tenant.
+        `member_ids` is supplied, the group's member set is **replaced** with the provided list — users currently in the
+        group but absent from the new list have their `group_id` set to `null` (unlinked). The current group leader is
+        always retained as a member regardless of whether their UUID appears in `member_ids`. Passing an empty array
+        (`[]`) unlinks all non-leader members. All provided UUIDs must exist within the caller's tenant.
       security:
         - bearerAuth: []
       parameters:
@@ -1374,13 +1512,13 @@ paths:
                     - 3fa85f64-5717-4562-b3fc-2c963f66afa6
                 member_ids:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
-                    Array of user UUIDs to assign to this group. Sets the
-                    `group_id` field on each referenced user. All provided IDs
+                    Replaces the full member set for the group. Users currently in the group but absent from this list
+                    have their `group_id` set to `null`. The current group leader is always retained regardless of
+                    whether their UUID is included. Pass `[]` to unlink all non-leader members. All provided UUIDs
                     must exist within the caller's tenant.
                   example:
                     - a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
@@ -1416,10 +1554,9 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one field must be provided
-                        path: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 invalidLeaderRole:
                   summary: Proposed leader does not have the agent role
                   value:
@@ -1686,14 +1823,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 1
-                    type: string
-                    inclusive: true
-                    exact: false
-                    message: String must contain at least 1 character(s)
-                    path: [fullName]
+                formErrors: []
+                fieldErrors:
+                  fullName:
+                    - String must contain at least 1 character(s)
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -1906,18 +2039,17 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one field must be provided
-                        path: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 missingUnsuccessfulReason:
                   summary: unsuccessfulReason required when salesOutcome is unsuccessful
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: unsuccessfulReason is required when salesOutcome is unsuccessful
-                        path: [unsuccessfulReason]
+                    formErrors: []
+                    fieldErrors:
+                      unsuccessfulReason:
+                        - unsuccessfulReason is required when salesOutcome is unsuccessful
         '401':
           description: >
             Unauthorized. Returned when the `Authorization` header is absent,
@@ -2032,11 +2164,14 @@ paths:
       description: >
         Creates a new event scoped to the authenticated user's tenant. The caller
         must supply a valid Bearer token belonging to a user with the `admin`,
-        `master_trainer`, `trainer`, or `group_leader` role — `agent` users will
-        receive a 403. At least one of `groupIds` or `agentIds` must be provided.
-        For `trainer` users, all supplied `groupIds` must belong to groups that
-        the trainer manages via the `group_trainers` junction table; any unmanaged
-        group IDs result in a 400.
+        `master_trainer`, `trainer`, `group_leader`, or `agent` role. At least
+        one of `groupIds` or `agentIds` must be provided for non-`agent` roles —
+        `agent` users are automatically assigned to their own event and may omit
+        both fields. For `trainer` users, all supplied `groupIds` must belong to
+        groups that the trainer manages via the `group_trainers` junction table;
+        any unmanaged group IDs result in a 400. If `visibility` is not supplied,
+        it defaults to `public` for `agent` and `group_leader` roles, and
+        `private` for all other roles.
       security:
         - bearerAuth: []
       requestBody:
@@ -2087,9 +2222,11 @@ paths:
                   example: 'Face to Face'
                 link:
                   type: string
-                  format: uri
-                  description: Optional URL for the event (e.g. a video call link).
-                  example: 'https://meet.example.com/q2-kickoff'
+                  description: >
+                    Optional URL for an online meeting link. If no protocol is
+                    provided (`http://` or `https://`), the server will
+                    auto-prefix `https://`.
+                  example: 'meet.example.com/q2-kickoff'
                 venue:
                   type: string
                   description: Optional venue or location for the event.
@@ -2099,30 +2236,37 @@ paths:
                   minLength: 1
                   description: Description or agenda for the event.
                   example: Quarterly training kickoff covering Q2 targets and new product modules.
+                visibility:
+                  type: string
+                  enum: [public, private]
+                  description: >
+                    Visibility of the event. Optional. Defaults to `public` for `agent`
+                    and `group_leader` roles, `private` for all other roles.
+                  example: public
                 groupIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
                     Array of group UUIDs the event is associated with. Must
-                    contain at least one UUID if provided, and must not contain
-                    duplicates. For trainers, all IDs must be groups they manage.
-                    At least one of `groupIds` or `agentIds` must be supplied.
+                    not contain duplicates. For trainers, all IDs must be groups
+                    they manage. At least one of `groupIds` or `agentIds` must
+                    be supplied (ignored for `agent` role — agents are always
+                    assigned to their own event automatically).
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
                 agentIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
                     Array of agent user UUIDs to assign individually to the
-                    event via the `event_agents` junction table. Must contain at
-                    least one UUID if provided, and must not contain duplicates.
-                    At least one of `groupIds` or `agentIds` must be supplied.
+                    event via the `event_agents` junction table. Must not contain
+                    duplicates. At least one of `groupIds` or `agentIds` must be
+                    supplied (ignored for `agent` role — agents are always
+                    assigned to their own event automatically).
                   example:
                     - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
@@ -2156,18 +2300,17 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: Date cannot be in the past
-                        path: [date]
+                    formErrors: []
+                    fieldErrors:
+                      title:
+                        - Required
                 missingGroupsOrAgents:
                   summary: Neither groupIds nor agentIds provided
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one of groupIds or agentIds must be provided
-                        path: []
+                    formErrors:
+                      - At least one of groupIds or agentIds must be provided
+                    fieldErrors: {}
                 invalidGroupIds:
                   summary: One or more group IDs do not exist
                   value:
@@ -2188,8 +2331,7 @@ paths:
                 message: Unauthorized
         '403':
           description: >
-            Forbidden. Returned when the authenticated user has the `agent`
-            role, which is not permitted to create events.
+            Forbidden — non-admin attempting to modify another user's event.
           content:
             application/json:
               schema:
@@ -2309,13 +2451,16 @@ paths:
       description: >
         Updates the event identified by `eventId`. The caller must supply a valid
         Bearer token belonging to a user with the `admin`, `master_trainer`,
-        `trainer`, or `group_leader` role — `agent` users will receive a 403.
-        All request body fields are optional, but at least one must be provided.
-        When `groupIds` is supplied, the existing `event_groups` entries for this
-        event are replaced entirely. When `agentIds` is supplied, the existing
-        `event_agents` entries for this event are replaced entirely. For `trainer`
-        users, all supplied `groupIds` must belong to groups they manage; any
-        unmanaged group IDs result in a 400.
+        `trainer`, `group_leader`, or `agent` role. All request body fields are
+        optional, but at least one must be provided. Non-admin users may only
+        update events they created — attempting to modify another user's event
+        returns a 403. `agent` users always remain the sole assigned agent;
+        supplied `groupIds` and `agentIds` are ignored and replaced with the
+        agent's own ID. When `groupIds` is supplied (non-`agent` roles), the
+        existing `event_groups` entries for this event are replaced entirely.
+        When `agentIds` is supplied, the existing `event_agents` entries for this
+        event are replaced entirely. For `trainer` users, all supplied `groupIds`
+        must belong to groups they manage; any unmanaged group IDs result in a 400.
       security:
         - bearerAuth: []
       parameters:
@@ -2365,9 +2510,11 @@ paths:
                   example: Online
                 link:
                   type: string
-                  format: uri
-                  description: Updated URL for the event.
-                  example: 'https://meet.example.com/q2-kickoff-revised'
+                  description: >
+                    Optional URL for an online meeting link. If no protocol is
+                    provided (`http://` or `https://`), the server will
+                    auto-prefix `https://`.
+                  example: 'meet.example.com/q2-kickoff-revised'
                 venue:
                   type: string
                   description: Updated venue or location for the event.
@@ -2377,9 +2524,16 @@ paths:
                   minLength: 1
                   description: Updated description or agenda for the event.
                   example: Updated agenda covering revised Q2 targets.
+                visibility:
+                  type: string
+                  enum: [public, private]
+                  description: >
+                    Updated visibility of the event. Optional. Defaults to `public`
+                    for `agent` and `group_leader` roles, `private` for all other
+                    roles when not supplied on creation.
+                  example: public
                 groupIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
@@ -2387,19 +2541,18 @@ paths:
                     Replacement set of group UUIDs for the event. Existing
                     `event_groups` entries are deleted and replaced with these
                     values. Must not contain duplicates. For trainers, all IDs
-                    must be groups they manage.
+                    must be groups they manage. Ignored for `agent` role.
                   example:
                     - 7c9e6679-7425-40de-944b-e07fc1f90ae7
                 agentIds:
                   type: array
-                  minItems: 1
                   items:
                     type: string
                     format: uuid
                   description: >
                     Replacement set of agent user UUIDs for the event. Existing
                     `event_agents` entries are deleted and replaced with these
-                    values. Must not contain duplicates.
+                    values. Must not contain duplicates. Ignored for `agent` role.
                   example:
                     - a1b2c3d4-e5f6-7890-abcd-ef1234567890
       responses:
@@ -2421,7 +2574,9 @@ paths:
             Bad request. Returned when the request body fails validation (e.g.
             no fields provided, `startDate` is in the past, `endDate` is not
             after `startDate`, a supplied group UUID does not exist, or a
-            trainer supplies a group they do not manage).
+            trainer supplies a group they do not manage). Also returned if
+            `groupIds` or `agentIds` is provided as an empty array (non-agent
+            callers only).
           content:
             application/json:
               schema:
@@ -2433,10 +2588,9 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: custom
-                        message: At least one field must be provided
-                        path: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 invalidDateRange:
                   summary: endDate is not after startDate
                   value:
@@ -2461,8 +2615,7 @@ paths:
                 message: Unauthorized
         '403':
           description: >
-            Forbidden. Returned when the authenticated user has the `agent`
-            role, which is not permitted to update events.
+            Forbidden — non-admin attempting to modify another user's event.
           content:
             application/json:
               schema:
@@ -2475,6 +2628,140 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Event not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Events]
+      summary: Delete an event
+      description: >
+        Permanently deletes the event identified by `eventId`. The caller must
+        supply a valid Bearer token belonging to a user with the `admin`,
+        `master_trainer`, `trainer`, `group_leader`, or `agent` role. Admin
+        users may delete any event within the tenant. Non-admin users may only
+        delete events they themselves created — attempting to delete another
+        user's event returns a 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: UUID of the event to delete.
+          schema:
+            type: string
+            format: uuid
+            example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+      responses:
+        '204':
+          description: Event deleted successfully. No response body is returned.
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: >
+            Forbidden — caller does not have an allowed role (`admin`,
+            `master_trainer`, `trainer`, `group_leader`, `agent`), or a
+            non-admin caller is attempting to delete another user's event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: Not found. Returned when no event exists for the given `eventId`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Event not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /events/{eventId}/public:
+    get:
+      tags: [Events]
+      summary: Get public event details
+      description: >
+        Returns publicly visible details for a single event. No authentication
+        is required. Returns 404 if the event does not exist, has been cancelled,
+        or has `visibility` set to `private`. Successful responses include a
+        `Cache-Control: public, max-age=60` header.
+      security: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: UUID of the event to retrieve.
+          schema:
+            type: string
+            format: uuid
+            example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+      responses:
+        '200':
+          description: Public event details retrieved successfully.
+          headers:
+            Cache-Control:
+              description: Instructs clients and proxies to cache the response for 60 seconds.
+              schema:
+                type: string
+                example: 'public, max-age=60'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PublicEventObject'
+              example:
+                success: true
+                data:
+                  id: b2c3d4e5-f6a7-8901-bcde-f12345678901
+                  event_title: Q2 Agent Networking Night
+                  description: A networking event open to all agents in the region.
+                  start_date: '2026-06-01T18:00:00.000Z'
+                  end_date: '2026-06-01T21:00:00.000Z'
+                  type: 'Face to Face'
+                  venue: Marina Bay Sands Convention Centre
+                  meeting_link: null
+                  created_by_name: Jane Doe
+                  status: upcoming
+        '404':
+          description: >
+            Not found. Returned when no event exists for the given `eventId`,
+            the event has been cancelled, or the event is not public.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    example: Event not found
               example:
                 message: Event not found
         '500':
@@ -2641,10 +2928,10 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors:
-                      - code: invalid_type
-                        path: [activity]
-                        message: Required
+                    formErrors: []
+                    fieldErrors:
+                      activity:
+                        - Required
         '403':
           description: Forbidden. The authenticated user does not have the `admin` role.
           content:
@@ -2757,14 +3044,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors:
-                  - code: too_small
-                    minimum: 1
-                    type: number
-                    inclusive: true
-                    exact: false
-                    message: Points must be greater than 0
-                    path: [points]
+                formErrors: []
+                fieldErrors:
+                  points:
+                    - Points must be greater than 0
         '403':
           description: Forbidden. The authenticated user does not have the `admin` role.
           content:
@@ -2901,7 +3184,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors: []
+                formErrors: []
+                fieldErrors:
+                  period:
+                    - Invalid enum value. Expected 'mtd' | 'ytd'
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -2986,7 +3272,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors: []
+                formErrors: []
+                fieldErrors:
+                  page:
+                    - Expected number, received string
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -3005,6 +3294,465 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # AGENT CODES
+  ##############################################################################
+
+  /agent-codes:
+    post:
+      tags: [Agent Codes]
+      summary: Bulk create agent codes (admin only)
+      description: >
+        Bulk upserts one or more agent codes into the caller's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`
+        role; any other role returns 403. The tenant is derived from the JWT —
+        clients cannot specify it.
+
+
+        The operation is **idempotent**: codes are upserted on the
+        `(tenant_id, agent_code)` conflict target, so re-submitting an existing
+        code returns 200 with the existing row (its `created_at` is preserved
+        and `is_used` is **not** reset). Intra-batch duplicates are deduped
+        server-side, so the returned array length equals the **distinct** count
+        of submitted codes — e.g. submitting `["X", "X", "Y"]` returns 2 rows.
+        Returned order is not guaranteed to match input order.
+
+
+        There is no per-row partial-success path: the whole batch either
+        succeeds (200) or fails (500). The response makes no distinction
+        between freshly-inserted rows and pre-existing ones.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agentCodes]
+              properties:
+                agentCodes:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: string
+                    minLength: 1
+                  description: >
+                    Array of agent code strings to upsert. Must contain between
+                    1 and 500 entries (inclusive); each entry must be a
+                    non-empty string. Codes are stored case-sensitively and
+                    verbatim — no trimming or case-folding is performed
+                    server-side.
+                  example:
+                    - T66701C
+                    - T66702C
+                    - T66703C
+            example:
+              agentCodes:
+                - T66701C
+                - T66702C
+                - T66703C
+      responses:
+        '200':
+          description: >
+            Agent codes upserted successfully. The `data` array contains one
+            entry per distinct submitted code.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentCodeObject'
+              example:
+                success: true
+                data:
+                  - agentCode: T66701C
+                    isUsed: false
+                    createdAt: '2026-05-04T09:41:35.000Z'
+                    updatedAt: '2026-05-04T09:41:35.000Z'
+                  - agentCode: T66702C
+                    isUsed: false
+                    createdAt: '2026-05-04T09:41:35.000Z'
+                    updatedAt: '2026-05-04T09:41:35.000Z'
+                  - agentCode: T66703C
+                    isUsed: false
+                    createdAt: '2026-05-04T09:41:35.000Z'
+                    updatedAt: '2026-05-04T09:41:35.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails Zod validation —
+            e.g. `agentCodes` missing, not an array, empty, exceeds 500 entries,
+            contains a non-string or empty-string entry, or includes an unknown
+            top-level field.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: array
+                    inclusive: true
+                    exact: false
+                    message: Array must contain at least 1 element(s)
+                    path:
+                      - agentCodes
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Agent Codes]
+      summary: List agent codes (admin only)
+      description: >
+        Returns all agent codes provisioned for the caller's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`
+        role; any other role returns 403. The tenant is derived from the JWT —
+        clients cannot specify it.
+
+
+        The optional `isUsed` query parameter filters the result: pass `true`
+        to return only codes that have been claimed by a user, `false` to
+        return only unclaimed codes, or omit it entirely to return all codes.
+        No pagination is applied — the full matching list is returned in a
+        single response.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: isUsed
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: >
+            When provided, filters to only used (`true`) or unused (`false`)
+            codes. Omit to return all codes. Any value that is not a valid
+            boolean returns 400.
+      responses:
+        '200':
+          description: Agent codes retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentCodeListItem'
+              example:
+                success: true
+                data:
+                  - agentCode: T66701C
+                    isUsed: false
+                    userId: null
+                    createdAt: '2025-01-01T00:00:00.000Z'
+                    updatedAt: '2025-01-01T00:00:00.000Z'
+                  - agentCode: T66702C
+                    isUsed: true
+                    userId: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+                    createdAt: '2025-01-01T00:00:00.000Z'
+                    updatedAt: '2025-02-15T08:30:00.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the `isUsed` query parameter is present
+            but is not a valid boolean value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: invalid_type
+                    expected: boolean
+                    received: string
+                    path:
+                      - isUsed
+                    message: Expected boolean, received string
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /agent-codes/{agentCode}:
+    patch:
+      tags: [Agent Codes]
+      summary: Rename an agent code (admin only)
+      description: >
+        Renames an existing agent code within the caller's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`
+        role; any other role returns 403. The tenant is derived from the JWT —
+        clients cannot specify it.
+
+
+        Only the `agent_code` column is updated. The `is_used`, `user_id`, and
+        `created_at` values are left unchanged. Renaming a code that is already
+        in use (`isUsed: true`) is permitted — the associated user's claim is
+        preserved under the new code value.
+
+
+        The path parameter `:agentCode` is the **current** value of the code to
+        rename (case-sensitive). URL-encode it if it contains characters that
+        are not safe in a URI path segment. Returns 404 if no code with that
+        value exists in the tenant. Returns 409 if the requested new value
+        already exists in the tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agentCode
+          in: path
+          required: true
+          schema:
+            type: string
+          description: >
+            The current agent code to rename (case-sensitive, URL-encoded if
+            necessary).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agentCode]
+              properties:
+                agentCode:
+                  type: string
+                  minLength: 1
+                  description: >
+                    The new agent code value. Must be a non-empty string. Must
+                    not already exist in the tenant — a duplicate value returns
+                    409.
+                  example: T77811M
+            example:
+              agentCode: T77811M
+      responses:
+        '200':
+          description: Agent code renamed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/AgentCodeListItem'
+              example:
+                success: true
+                data:
+                  agentCode: T77811M
+                  isUsed: false
+                  userId: null
+                  createdAt: '2025-01-01T00:00:00.000Z'
+                  updatedAt: '2026-05-12T10:00:00.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails Zod validation —
+            e.g. `agentCode` missing, empty string, or an unknown top-level
+            field is present.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: string
+                    inclusive: true
+                    exact: false
+                    message: String must contain at least 1 character(s)
+                    path:
+                      - agentCode
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no agent code matching the path parameter
+            exists in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Agent code not found
+        '409':
+          description: >
+            Conflict. Returned when the requested new `agentCode` value already
+            exists in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Agent code already exists
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Agent Codes]
+      summary: Delete an agent code
+      description: >
+        Deletes an existing agent code within the caller's tenant. The caller
+        must supply a valid Bearer token belonging to a user with the `admin`
+        role; any other role returns 403. The tenant is derived from the JWT —
+        clients cannot specify it.
+
+
+        The path parameter `:agentCode` is the **current** value of the code to
+        delete (case-sensitive). URL-encode it if it contains characters that
+        are not safe in a URI path segment. Returns 404 if no code with that
+        value exists in the tenant. Returns 409 if the code is currently in use
+        (`isUsed: true`) — in-use codes cannot be deleted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agentCode
+          in: path
+          required: true
+          schema:
+            type: string
+          description: >
+            The agent code to delete (case-sensitive, URL-encoded if
+            necessary).
+      responses:
+        '200':
+          description: Agent code deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+              example:
+                success: true
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no agent code matching the path parameter
+            exists in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Agent code not found
+        '409':
+          description: >
+            Conflict. Returned when the agent code is currently in use
+            (`isUsed: true`) and cannot be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Agent code is in use
         '500':
           description: Internal server error
           content:
@@ -3108,7 +3856,10 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
               example:
                 message: Validation failed
-                errors: []
+                formErrors: []
+                fieldErrors:
+                  title:
+                    - Required
         '401':
           description: Unauthorized. No token or invalid token supplied.
           content:
@@ -3318,7 +4069,9 @@ paths:
                   summary: Request body validation failure
                   value:
                     message: Validation failed
-                    errors: []
+                    formErrors:
+                      - At least one field must be provided
+                    fieldErrors: {}
                 invalidDateRange:
                   summary: endDate is not after startDate
                   value:
@@ -3605,6 +4358,530 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  ##############################################################################
+  # SALES REPORTS
+  ##############################################################################
+
+  /reports/upload:
+    post:
+      tags: [Sales Reports]
+      summary: Ingest a sales report ETL result
+      description: >
+        Persists a pre-shaped ETL result produced by the upstream ETL pipeline.
+        Creates a row in `upload_batches` for audit, then bulk-upserts a YTD
+        snapshot for the report month and MTD ACE/NOC rows for every month
+        present in `rowData`. Re-uploading the same `(tenant_id, year, month)`
+        is last-writer-wins on YTD/MTD; both batch rows are retained.
+        Manager-only (`group_leader`, `master_trainer`, or `admin`).
+        `tenant_id` and `uploaded_by` are derived from the JWT and are not
+        accepted from the request body.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadReportRequest'
+      responses:
+        '200':
+          description: >
+            Upload completed. Partial success is allowed: rows that failed
+            validation or whose `agentCode` did not resolve to a user are
+            reported in the `errors` array, while the rest are persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadReportResponse'
+        '400':
+          description: Validation failed (Zod schema mismatch or invalid ETL data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/ingest:
+    post:
+      tags: [Sales Reports]
+      summary: Manual ETL ingest (interim — ETL_API_KEY auth, NOT user JWT)
+      description: >
+        Manual-mode endpoint used while the production HTTP-hosted ETL is
+        being built. The ETL author runs the local Python pipeline on their
+        laptop and POSTs the resulting `etl_result` here directly. Skips the
+        `report_jobs` lifecycle and Storage round-trip entirely; just persists
+        the same audit + YTD/MTD rows that `/reports/upload` does.
+
+        Authenticated with `Authorization: Bearer <ETL_API_KEY>` (the same
+        shared secret the ETL uses for `/reports/jobs/{reference}/complete`).
+        Because there is no JWT, `tenant_id` is supplied in the request body
+        and `uploaded_by` is intentionally recorded as NULL. The
+        consecutive-month guard (409) is inherited from the shared service
+        layer.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestReportRequest'
+      responses:
+        '200':
+          description: >
+            Upload completed. Partial success is allowed: rows whose
+            `agentCode` did not resolve to a user are reported in `errors`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadReportResponse'
+        '400':
+          description: Validation failed (Zod schema mismatch or invalid ETL data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or wrong internal key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports:
+    get:
+      tags: [Sales Reports]
+      summary: Per-agent year rollup for the tenant (role-scoped)
+      description: >
+        Returns one `SalesReport` per agent for the given year. Each entry
+        combines the agent's latest YTD snapshot with monthly arrays for
+        ACE/NOC (from `sales_report_mtd`) and FYC/FYCt (from the
+        `sales_report_mtd_fyc` view, which derives MTD values from YTD via
+        `LAG()`). Tenant-scoped from the JWT.
+
+        The response is additionally filtered to the caller's permitted scope:
+
+        * `admin`, `master_trainer` — see all agents in the tenant.
+        * `trainer` — see only agents whose `users.group_id` is in the set of
+          groups the trainer manages via `group_trainers`. A trainer with
+          zero managed groups receives an empty array (200, not 403).
+        * `group_leader` — see only agents whose `users.group_id` matches the
+          caller's own `users.group_id`. A group_leader with no `group_id`
+          receives an empty array.
+        * `agent` — receives 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+      responses:
+        '200':
+          description: Array of per-agent year rollups for the tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesReportListResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller's role is not entitled to this endpoint (e.g. agent).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports/me:
+    get:
+      tags: [Sales Reports]
+      summary: Caller's own year rollup
+      description: >
+        Returns the calling user's `SalesReport` for the given year. Available
+        to any authenticated user — no role gate. Returns 404 when the user
+        has no YTD row for that year (e.g. they were not part of any upload
+        yet).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+      responses:
+        '200':
+          description: The caller's per-agent year rollup.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesReportSingleResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No sales report exists for the calling user in that year.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: No sales report for this year
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sales-reports/uploads:
+    get:
+      tags: [Sales Reports]
+      summary: Paginated audit list of past uploads
+      description: >
+        Returns past `upload_batches` rows for the tenant, sorted most-recent
+        first. Each row reports its `rows_loaded`, `rows_skipped`, derived
+        `status` (`success` | `partial` | `failed`), and the uploader's
+        display name. `uploader_name` is `null` for manual-mode uploads
+        (POST `/api/reports/ingest`) where there is no JWT to attribute.
+
+        Available to any of the four manager-tier roles (`admin`,
+        `master_trainer`, `trainer`, `group_leader`) — the audit list is
+        tenant-wide because uploads are not group-bound (every xlsx covers
+        the whole tenant). `agent` receives 403.
+
+        NOTE: Failed uploads that never created an `upload_batches` row
+        (e.g. validation rejected the payload before persistence) do not
+        appear in this list. They are visible only in error logs and
+        `report_jobs` (async path only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            example: 2026
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated audit entries with `meta` for pagination state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadAuditListResponse'
+        '400':
+          description: Invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not a manager.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/jobs:
+    post:
+      tags: [Sales Reports]
+      summary: Create an async report-upload job
+      description: >
+        Accepts a raw xlsx file, stores it in Supabase Storage, creates a
+        `report_jobs` row, and kicks off the external ETL service. Returns
+        immediately with a human-readable `reference` identifier
+        (`SALES-REPORT-YYYYMMDDHHMMSSsss`). Manager-only.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, reportYear, reportMonth]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The raw .xlsx file
+                reportYear:
+                  type: integer
+                  minimum: 2000
+                  maximum: 2100
+                reportMonth:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+      responses:
+        '202':
+          description: Job accepted; processing asynchronously
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      reference:
+                        type: string
+                        pattern: '^SALES-REPORT-\d{17}$'
+                        example: SALES-REPORT-20260502143022873
+        '400': { description: Missing file, invalid year/month, or file too large }
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Caller is not a manager }
+        '409':
+          description: Non-consecutive month upload (e.g. month 4 when latest is month 2).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reports/jobs/{reference}:
+    get:
+      tags: [Sales Reports]
+      summary: Poll the status of a report-upload job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+      responses:
+        '200':
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJobResponse'
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Job belongs to another tenant or caller is not a manager }
+        '404': { description: Job not found }
+
+  /reports/jobs/{reference}/complete:
+    post:
+      tags: [Sales Reports]
+      summary: ETL callback (internal-key auth, NOT user JWT)
+      description: >
+        Called by the Python ETL service when processing finishes. Authenticated
+        with `Authorization: Bearer <ETL_API_KEY>`. Triggers persistence
+        on success or marks the job failed on error.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EtlCallbackBody'
+      responses:
+        '204': { description: Callback accepted }
+        '400': { description: Validation failed }
+        '401': { description: Missing or wrong internal key }
+        '404': { description: Job not found }
+
+  /reports/jobs/{reference}/retry:
+    post:
+      tags: [Sales Reports]
+      summary: Retry a failed report job
+      description: >
+        Re-kicks the ETL using the file already in Storage. Only allowed when
+        the job is in `failed` status. Manager-only, tenant-scoped.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+      responses:
+        '202':
+          description: Retry kicked off
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      reference:
+                        type: string
+                        pattern: '^SALES-REPORT-\d{17}$'
+        '401': { description: Missing or invalid bearer token }
+        '403': { description: Caller is not a manager or job belongs to another tenant }
+        '404': { description: Job not found }
+        '409': { description: Job is not in failed status }
+
+  ##############################################################################
+  # INTERNAL
+  ##############################################################################
+
+  /internal/cleanup-old-report-files:
+    post:
+      tags: [Internal]
+      summary: Retention cleanup for raw report files (ETL_API_KEY auth)
+      description: >
+        Deletes raw xlsx files in the `reports-raw` Storage bucket attached to
+        completed `report_jobs` whose `created_at` is older than 30 days, then
+        clears the `report_jobs.storage_path` for those rows so the same files
+        are not re-queued on subsequent runs. The audit row itself is retained.
+
+        Authenticated with `Authorization: Bearer <ETL_API_KEY>`. Designed
+        to be invoked by an external scheduler (Vercel Cron, GitHub Actions,
+        etc.) once per day. Replaces an earlier pg_cron-based approach which
+        deleted only `storage.objects` metadata rows and orphaned the file
+        bytes — this endpoint goes through the Storage HTTP admin API which
+        actually removes the backing bytes.
+
+        The endpoint never throws on per-chunk failures. `failedCount > 0`
+        indicates a partial failure and the next run will retry the affected
+        files (they retain their `storage_path`).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cleanup completed (possibly with per-chunk failures, see response).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      deletedCount:
+                        type: integer
+                        minimum: 0
+                        description: Number of report-job files successfully removed from Storage.
+                      failedCount:
+                        type: integer
+                        minimum: 0
+                        description: Number of report-job files that failed to remove and remain queued for the next run.
+        '401': { description: Missing or wrong internal key }
+        '500':
+          description: Internal server error (unexpected — per-chunk failures are reported in the 200 body, not surfaced as 500).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 ################################################################################
 # Components
 ################################################################################
@@ -3686,6 +4963,82 @@ components:
           example:
             - abc-123-uuid
             - def-456-uuid
+        sales_target:
+          type: number
+          nullable: true
+          example: 400000
+          description: "The agent's personal annual FYCt sales target in RM. Null if the agent has not set a target yet."
+
+    AgentCodeObject:
+      type: object
+      required:
+        - agentCode
+        - isUsed
+        - createdAt
+        - updatedAt
+      properties:
+        agentCode:
+          type: string
+          description: The agent code as stored, case-sensitive and verbatim.
+          example: T66701C
+        isUsed:
+          type: boolean
+          description: >
+            `true` once a user has been onboarded against this code. Newly
+            inserted rows are `false`. On upsert into an existing row, this
+            value is **not** reset.
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          description: >
+            ISO 8601 datetime of original row creation. For an upsert that hit
+            an existing row, this is the original creation time, not the time
+            of the current request.
+          example: '2026-05-04T09:41:35.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime the row was last touched (insert or upsert).
+          example: '2026-05-04T09:41:35.000Z'
+
+    AgentCodeListItem:
+      type: object
+      required:
+        - agentCode
+        - isUsed
+        - userId
+        - createdAt
+        - updatedAt
+      properties:
+        agentCode:
+          type: string
+          description: The agent code as stored, case-sensitive and verbatim.
+          example: T66701C
+        isUsed:
+          type: boolean
+          description: >
+            `true` once a user has been onboarded against this code; `false`
+            for unclaimed codes.
+          example: false
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            UUID of the user who claimed this code, or `null` if the code has
+            not yet been used.
+          example: null
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime of original row creation.
+          example: '2025-01-01T00:00:00.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime the row was last modified.
+          example: '2025-01-01T00:00:00.000Z'
 
     GroupObject:
       type: object
@@ -4112,6 +5465,11 @@ components:
           type: string
           format: date-time
           example: '2026-03-14T08:00:00.000Z'
+        visibility:
+          type: string
+          enum: [public, private]
+          description: Visibility of the event. Defaults to `public` for `agent` and `group_leader` roles, `private` for all other roles.
+          example: private
         groupIds:
           type: array
           items:
@@ -4130,6 +5488,56 @@ components:
           example:
             - d4e5f6a7-b8c9-0123-def0-234567890123
             - e5f6a7b8-c9d0-1234-ef01-345678901234
+
+    PublicEventObject:
+      type: object
+      required:
+        - id
+        - event_title
+        - start_date
+        - type
+        - created_by_name
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        event_title:
+          type: string
+          example: Q2 Agent Networking Night
+        description:
+          type: string
+          nullable: true
+          example: A networking event open to all agents in the region.
+        start_date:
+          type: string
+          format: date-time
+          example: '2026-06-01T18:00:00.000Z'
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-06-01T21:00:00.000Z'
+        type:
+          type: string
+          enum: ['Online', 'Face to Face']
+          example: 'Face to Face'
+        venue:
+          type: string
+          nullable: true
+          example: Marina Bay Sands Convention Centre
+        meeting_link:
+          type: string
+          nullable: true
+          example: 'https://meet.example.com/q2-networking'
+        created_by_name:
+          type: string
+          example: Jane Doe
+        status:
+          type: string
+          enum: [upcoming, completed]
+          example: upcoming
 
     DashboardStatsObject:
       type: object
@@ -4294,6 +5702,10 @@ components:
         - sales_meetings
         - sales_successful
         - total_points
+        - ace
+        - fyc
+        - fyct
+        - acs
       properties:
         user_id:
           type: string
@@ -4336,6 +5748,41 @@ components:
           type: integer
           description: Pre-computed total points for this agent in the period, calculated server-side using the tenant's current point config.
           example: 26
+        ace:
+          type: number
+          description: >
+            Annualized Commission Earnings. For `period=mtd`, the current
+            calendar month's value sourced from `sales_report_mtd_fyc`; for
+            `period=ytd`, the latest available month snapshot for the current
+            year from `sales_report_ytd`. Defaults to 0 if no sales-report
+            data is available.
+          example: 12500.50
+        fyc:
+          type: number
+          description: >
+            First Year Commission. For `period=mtd`, the month-to-date delta
+            derived from the `sales_report_mtd_fyc` LAG view; for `period=ytd`,
+            the cumulative year-to-date value from `sales_report_ytd`.
+            Defaults to 0 if no sales-report data is available.
+          example: 8400
+        fyct:
+          type: number
+          description: >
+            First Year Commission Target. For `period=mtd`, the month-to-date
+            delta derived from the `sales_report_mtd_fyc` LAG view; for
+            `period=ytd`, the cumulative year-to-date value from
+            `sales_report_ytd`. Defaults to 0 if no sales-report data is
+            available.
+          example: 9000
+        acs:
+          type: number
+          description: >
+            Average Case Size for the period. For `period=mtd`, the current
+            calendar month's value sourced from `sales_report_mtd`; for
+            `period=ytd`, the latest available month snapshot for the current
+            year from `sales_report_ytd`. Defaults to 0 when no sales-report
+            data is available.
+          example: 12500.50
 
     LeaderboardStatsGroupObject:
       type: object
@@ -4349,6 +5796,10 @@ components:
         - sales_meetings
         - sales_successful
         - total_points
+        - ace
+        - fyc
+        - fyct
+        - acs
       properties:
         group_id:
           type: string
@@ -4386,6 +5837,42 @@ components:
           type: integer
           description: Aggregated total points for all members of this group in the period, calculated server-side using the tenant's current point config.
           example: 52
+        ace:
+          type: number
+          description: >
+            Aggregated Annualized Commission Earnings across all group
+            members in the period. For `period=mtd`, the current calendar
+            month's value sourced from `sales_report_mtd_fyc`; for
+            `period=ytd`, the latest available month snapshot for the current
+            year from `sales_report_ytd`. Members with no sales-report data
+            contribute 0.
+          example: 62500.50
+        fyc:
+          type: number
+          description: >
+            Aggregated First Year Commission across all group members in the
+            period. For `period=mtd`, the month-to-date delta derived from
+            the `sales_report_mtd_fyc` LAG view; for `period=ytd`, the
+            cumulative year-to-date value from `sales_report_ytd`. Members
+            with no sales-report data contribute 0.
+          example: 42000
+        fyct:
+          type: number
+          description: >
+            Aggregated First Year Commission Target across all group members
+            in the period. For `period=mtd`, the month-to-date delta derived
+            from the `sales_report_mtd_fyc` LAG view; for `period=ytd`, the
+            cumulative year-to-date value from `sales_report_ytd`. Members
+            with no sales-report data contribute 0.
+          example: 45000
+        acs:
+          type: number
+          description: >
+            Average Case Size = ACE / NOC for the period. For period=mtd uses
+            the current month's ACE and NOC; for period=ytd uses the latest
+            cumulative snapshot for the current year. Returns 0 when there are
+            no cases (NOC = 0).
+          example: 18750.25
 
     AgentPointsObject:
       type: object
@@ -4678,13 +6165,464 @@ components:
 
     ValidationErrorResponse:
       type: object
-      required: [message, errors]
+      required: [message, formErrors, fieldErrors]
       properties:
         message:
           type: string
           example: Validation failed
-        errors:
+        formErrors:
           type: array
           items:
-            type: object
+            type: string
+          description: Top-level (non-field) validation error messages.
           example: []
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Per-field validation error messages keyed by field name.
+          example:
+            fieldName:
+              - Error message for the field
+
+    ##########################################################################
+    # Sales Reports
+    ##########################################################################
+
+    EtlResultObject:
+      type: object
+      required:
+        - source
+        - created_at
+        - rows_loaded
+        - months_detected
+        - records
+      description: >
+        ETL pipeline output as produced by the upstream `dynamic_excel_etl`
+        template — the raw artifact, untouched by the caller. The intent
+        metadata `report_year` / `report_month` lives one level up on the
+        request body, not inside this object. Extra top-level fields
+        (`success`, `etl_version`, `template_name`, `upload_id`,
+        `output_excel`, `json_output`, `log_file`, `errors_found`,
+        `columns_detected`, `layout_detected`, `errors`) are accepted and
+        ignored.
+      properties:
+        source:
+          type: string
+          description: Filename or identifier of the original report.
+          example: tests/samples/Book2_ytd_and_months_uploaded.xlsx
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp the ETL pipeline produced this result. Informational only — not used to derive year/month.
+          example: '2026-04-29T16:01:33.114596+00:00'
+        rows_loaded:
+          type: integer
+          minimum: 0
+          description: Number of rows the ETL pipeline read from the source.
+          example: 67
+        months_detected:
+          type: array
+          minItems: 1
+          description: >
+            Uppercase English month names whose ACE/NOC columns are present
+            in the source. Informational only — used by the FE for
+            column-coverage display, not by the backend to derive the
+            report month.
+          items:
+            type: string
+            enum:
+              - JANUARY
+              - FEBRUARY
+              - MARCH
+              - APRIL
+              - MAY
+              - JUNE
+              - JULY
+              - AUGUST
+              - SEPTEMBER
+              - OCTOBER
+              - NOVEMBER
+              - DECEMBER
+        records:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [agentCode, rowData]
+            description: >
+              Per-agent record. Extra fields like `agentName` are accepted
+              and ignored.
+            properties:
+              agentCode:
+                type: string
+                description: The agent code from the source row; resolved server-side to a `users.id`.
+                example: T66701C
+              rowData:
+                type: object
+                description: >
+                  Open-ended bag of column-name → value pairs. Recognised
+                  numeric keys include the YTD totals (`'ACE (YTD)'`,
+                  `'NOC (YTD)'`, `'ACS (YTD)'`, `'FYCT (YTD)'`,
+                  `'% FYCT (YTD)'`, `'MDRT SHORTAGE FYCT'`, `'FYC (YTD)'`,
+                  `'% FYC (YTD)'`, `'MDRT SHORTAGE FYC'`) and per-month MTD
+                  groups (`'JANUARY ACE'`, `'JANUARY NOC'`,
+                  `'JANUARY ACS'`, etc.). String keys
+                  like `'AGENT CODE'` and `'AGENT NAME'` (which the ETL
+                  may include as duplicates of the outer fields) are
+                  accepted and ignored. Missing or non-numeric values
+                  default to 0.
+                additionalProperties: true
+
+    UploadReportRequest:
+      type: object
+      required: [report_year, report_month, etlResult]
+      additionalProperties: false
+      description: >
+        Sync upload body. `report_year` / `report_month` are caller-supplied
+        intent metadata that sit alongside the raw ETL artifact rather than
+        inside it.
+      properties:
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 5
+        etlResult:
+          $ref: '#/components/schemas/EtlResultObject'
+
+    IngestReportRequest:
+      type: object
+      required: [tenant_id, report_year, report_month, etl_result]
+      additionalProperties: false
+      description: >
+        Manual-mode ingest body. Field names use snake_case to mirror the
+        ETL JSON style (the ETL author POSTs this directly from a Python
+        `requests.post(...)` call). `report_year` / `report_month` are
+        siblings of `etl_result` — admin tells the ETL author what month
+        the file covers out-of-band; the ETL itself is unaware of them.
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          description: >
+            Tenant the records belong to. Supplied to the ETL author by an
+            admin out-of-band (Slack/email) — there is no JWT to derive it
+            from in manual mode.
+          example: 00000000-0000-0000-0000-000000000001
+        report_year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+          description: Calendar year the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 2026
+        report_month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Calendar month (1-12) the report covers. Authoritative — supplied by the caller, not derived from the file.
+          example: 5
+        etl_result:
+          $ref: '#/components/schemas/EtlResultObject'
+
+    UploadReportResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          required: [batchId, processed, skipped, errors]
+          properties:
+            batchId:
+              type: string
+              format: uuid
+              example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+            processed:
+              type: integer
+              description: Count of agent rows that were successfully persisted.
+              example: 63
+            skipped:
+              type: integer
+              description: Count of agent rows that were skipped (e.g. unmatched agentCode).
+              example: 2
+            errors:
+              type: array
+              items:
+                type: object
+                required: [agentCode, reason]
+                properties:
+                  agentCode:
+                    type: string
+                    example: T12345A
+                  reason:
+                    type: string
+                    example: User not found
+
+    SalesReport:
+      type: object
+      description: >
+        Per-agent annual sales-report rollup. Combines the latest YTD snapshot
+        of the year with monthly arrays. `id` is the `sales_report_ytd.id` of
+        the latest month for that agent. `agent_id` is the public `users.id`.
+        `imported_at` is the most recent time this YTD snapshot was written
+        or overwritten — corrective re-uploads of the same (tenant, user,
+        year, month) advance this without changing `created_at`. The four
+        `month_*` arrays are 12-element, index 0 = January, index 11 =
+        December; missing months are 0.
+      required:
+        - id
+        - agent_id
+        - agent_code
+        - agent_name
+        - year
+        - imported_at
+        - ace_ytd
+        - noc_ytd
+        - fyct_ytd
+        - fyct_pct
+        - mdrt_shortage_fyct
+        - fyc_ytd
+        - fyc_pct
+        - mdrt_shortage_fyc
+        - month_ace
+        - month_noc
+        - month_fyct
+        - month_fyc
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        agent_code:
+          type: string
+          example: T75040K
+        agent_name:
+          type: string
+          example: MELISSA ADLINA
+        year:
+          type: integer
+          example: 2026
+        imported_at:
+          type: string
+          format: date-time
+          description: >
+            Most recent time this YTD snapshot was written or overwritten.
+            Sourced from `sales_report_ytd.updated_at`; advances on every
+            corrective re-upload while `created_at` stays fixed.
+          example: 2026-04-29T16:01:33.000Z
+        ace_ytd:
+          type: number
+          example: 620000
+        noc_ytd:
+          type: integer
+          example: 18
+        fyct_ytd:
+          type: number
+          example: 295000
+        fyct_pct:
+          type: number
+          example: 0.0132
+        mdrt_shortage_fyct:
+          type: number
+          example: 393112.13
+        fyc_ytd:
+          type: number
+          example: 1222.11
+        fyc_pct:
+          type: number
+          example: 0.0092
+        mdrt_shortage_fyc:
+          type: number
+          example: 131577.89
+        month_ace:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 9118.64, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_noc:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_fyct:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 5287.87, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        month_fyc:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { type: number }
+          example: [0, 0, 1222.11, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    SalesReportListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalesReport'
+
+    SalesReportSingleResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/SalesReport'
+
+    UploadAuditEntry:
+      type: object
+      description: >
+        Audit row for a past upload batch. `imported_at` maps from
+        `upload_batches.created_at`. `uploader_name` is null when the upload
+        was manual-mode (no JWT).
+      required:
+        - id
+        - year
+        - month
+        - file_name
+        - rows_loaded
+        - rows_skipped
+        - status
+        - uploader_name
+        - imported_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+          example: 2026
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          example: 3
+        file_name:
+          type: string
+          example: input.xlsx
+        rows_loaded:
+          type: integer
+          example: 65
+        rows_skipped:
+          type: integer
+          example: 2
+        status:
+          type: string
+          enum: [success, partial, failed]
+          example: partial
+        uploader_name:
+          type: string
+          nullable: true
+          example: Jane Doe
+        imported_at:
+          type: string
+          format: date-time
+          example: 2026-04-29T16:01:33.000Z
+
+    UploadAuditListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadAuditEntry'
+        meta:
+          type: object
+          required: [page, pageSize, total]
+          properties:
+            page:
+              type: integer
+              example: 1
+            pageSize:
+              type: integer
+              example: 50
+            total:
+              type: integer
+              example: 12
+
+    ReportJobObject:
+      type: object
+      description: >
+        Report-job record. The `reference` field is the public-facing,
+        human-readable identifier used in URLs, ETL payloads, callbacks,
+        and polling. The internal UUID `id` is intentionally omitted from
+        external responses.
+      properties:
+        reference:
+          type: string
+          pattern: '^SALES-REPORT-\d{17}$'
+          example: SALES-REPORT-20260502143022873
+        tenant_id: { type: string, format: uuid }
+        uploaded_by: { type: string, format: uuid }
+        storage_path: { type: string }
+        file_name: { type: string }
+        report_year: { type: integer }
+        report_month: { type: integer, minimum: 1, maximum: 12 }
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        result:
+          type: object
+          nullable: true
+          description: IUploadResult on success
+        error_message:
+          type: string
+          nullable: true
+        attempts: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ReportJobResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/ReportJobObject' }
+
+    EtlCallbackBody:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+        etl_result:
+          type: object
+          description: Required when status=success. Full etl_result.json shape.
+        error:
+          type: string
+          description: Required when status=failed

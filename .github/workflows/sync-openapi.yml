@@ -1,0 +1,62 @@
+name: Sync OpenAPI spec to frontend
+
+on:
+  push:
+    branches:
+      - staging
+    paths:
+      - openapi.yaml
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+
+      - name: Checkout frontend
+        uses: actions/checkout@v4
+        with:
+          repository: VistaQ/vistaq_client
+          token: ${{ secrets.FRONTEND_REPO_PAT }}
+          path: vistaq_client
+          ref: staging
+
+      - name: Copy openapi.yaml to frontend
+        run: cp openapi.yaml vistaq_client/openapi.yaml
+
+      - name: Install frontend dependencies
+        working-directory: vistaq_client
+        run: npm ci
+
+      - name: Regenerate types
+        working-directory: vistaq_client
+        run: npm run gen:types
+
+      - name: Commit and push
+        working-directory: vistaq_client
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B chore/sync-openapi-spec
+          git add openapi.yaml types.generated.ts
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: sync openapi spec and regenerate types"
+          git push origin chore/sync-openapi-spec --force
+
+      - name: Open PR if one does not exist
+        env:
+          GH_TOKEN: ${{ secrets.FRONTEND_REPO_PAT }}
+        run: |
+          gh pr create \
+            --repo VistaQ/vistaq_client \
+            --head chore/sync-openapi-spec \
+            --base staging \
+            --title "chore: sync OpenAPI spec from backend" \
+            --body "Automated sync triggered by backend commit [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+          Changes:
+          - \`openapi.yaml\` — updated spec from backend
+          - \`types.generated.ts\` — regenerated via \`npm run gen:types\`" \
+          || true

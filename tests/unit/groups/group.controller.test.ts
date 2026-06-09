@@ -20,6 +20,28 @@ jest.mock('@src/services/logging.service', () => ({
     warn: jest.fn(),
     debug: jest.fn(),
   },
+  asyncLocalStorage: {
+    getStore: jest.fn().mockReturnValue(null),
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Sentry mock
+// ---------------------------------------------------------------------------
+
+jest.mock('@sentry/node', () => ({
+  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+// ---------------------------------------------------------------------------
+// sentry.metrics mock
+// ---------------------------------------------------------------------------
+
+jest.mock('@src/utils/sentry.metrics', () => ({
+  emitErrorCount: jest.fn(),
 }));
 
 // ---------------------------------------------------------------------------

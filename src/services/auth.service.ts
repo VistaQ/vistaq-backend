@@ -2,7 +2,9 @@ import {
   AgentCodeInvalidError,
   InvalidCredentialsError,
   TenantNotFoundError,
+  UserInactiveError,
 } from '@src/models/errors/auth.errors';
+import { UserStatus } from '@src/models/auth/auth.interface';
 import authRepository from '@src/repositories/auth.repository';
 import loggingService from '@src/services/logging.service';
 import EnvVars from '@src/utils/env';
@@ -190,13 +192,20 @@ class AuthService {
         throw new InvalidCredentialsError();
       }
 
+      // Step 5 — Check user is active
+      if (user.status !== 'active') {
+        emitLogin(tenant.id, false);
+        throw new UserInactiveError();
+      }
+
       emitLogin(tenant.id, true);
       return { user, token: signInResult.token };
     } catch (error) {
       // Re-throw domain errors directly so the controller can handle them
       if (
         error instanceof TenantNotFoundError ||
-        error instanceof InvalidCredentialsError
+        error instanceof InvalidCredentialsError ||
+        error instanceof UserInactiveError
       ) {
         throw error;
       }
@@ -215,6 +224,11 @@ class AuthService {
       const user = await authRepository.findUserByEmail(params.email, tenant.id);
       if (!user) {
         // Silently return — do not reveal whether the email exists
+        return;
+      }
+
+      // Prevents probing reset behaviour to distinguish inactive from non-existent accounts
+      if (user.status !== 'active') {
         return;
       }
 
@@ -237,6 +251,16 @@ class AuthService {
       await authRepository.updateAuthUserPassword(userId, params.newPassword);
     } catch (error) {
       return handleServiceError('AuthService.resetPassword', error);
+    }
+  }
+
+  async getUserStatus(userId: string): Promise<UserStatus | null> {
+    try {
+      loggingService.info('AuthService.getUserStatus called', { userId });
+      const status = await authRepository.findUserStatusById(userId);
+      return status;
+    } catch (error) {
+      return handleServiceError('AuthService.getUserStatus', error);
     }
   }
 }

@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { ZodError, ZodSchema } from 'zod';
+import { z, ZodError, ZodSchema } from 'zod';
 
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -15,9 +15,12 @@ export function validate(schema: ZodSchema) {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        res
-          .status(HttpStatusCodes.BAD_REQUEST)
-          .json({ message: 'Validation failed', errors: error.issues });
+        const flat = z.flattenError(error);
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          message: 'Validation failed',
+          formErrors: flat.formErrors,
+          fieldErrors: flat.fieldErrors,
+        });
         return;
       }
       next(error);

@@ -27,6 +27,7 @@ export type IUser = Pick<
   | 'group_id'
   | 'phone'
   | 'agency'
+  | 'sales_target'
   | 'status'
   | 'created_at'
   | 'updated_at'

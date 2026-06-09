@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import * as Sentry from '@sentry/node';
 
 import { RouteError } from '@src/models/errors/route.error';
+import authService from '@src/services/auth.service';
 import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -68,6 +69,13 @@ export async function authenticate(
       loggingService.error('Token contains invalid group_id claim', undefined, {
         groupId,
       });
+      next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
+      return;
+    }
+
+    const userStatus = await authService.getUserStatus(userId);
+    if (!userStatus || userStatus !== 'active') {
+      loggingService.warn('Authentication rejected — user is not active', { userId, userStatus });
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
     }

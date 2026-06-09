@@ -22,8 +22,8 @@ interface IUpdateUserParams {
     agency?: string;
     location?: string;
     role?: string;
-    status?: string;
     group_id?: string | null;
+    sales_target?: number | null;
   };
 }
 
@@ -44,11 +44,11 @@ interface ICreateUserParams {
 class UserService {
   private async enrichWithManagedGroupIds(
     users: IUser[],
-    token: string,
   ): Promise<IUserWithManagedGroups[]> {
     try {
       const userIds = users.map((u) => u.id);
-      const managedGroupMap = await userRepository.findManagedGroupIdsByUserIds(userIds, token);
+      const managedGroupMap =
+        await userRepository.findManagedGroupIdsByUserIds(userIds);
       return users.map((user) => ({
         ...user,
         managed_group_ids: managedGroupMap.get(user.id) ?? [],
@@ -61,7 +61,7 @@ class UserService {
   async getUsers(token: string): Promise<IUserWithManagedGroups[]> {
     try {
       const users = await userRepository.findAll(token);
-      return await this.enrichWithManagedGroupIds(users, token);
+      return await this.enrichWithManagedGroupIds(users);
     } catch (error) {
       return handleServiceError('UserService.getUsers', error);
     }
@@ -71,7 +71,7 @@ class UserService {
     try {
       const user = await userRepository.findById(userId, token);
       if (!user) return null;
-      const [enriched] = await this.enrichWithManagedGroupIds([user], token);
+      const [enriched] = await this.enrichWithManagedGroupIds([user]);
       return enriched;
     } catch (error) {
       return handleServiceError('UserService.getUserById', error);
@@ -84,7 +84,6 @@ class UserService {
       const updateData = { ...params.data };
       if (params.callerRole !== 'admin') {
         delete updateData.role;
-        delete updateData.status;
       }
 
       // Fetch existing user
@@ -183,7 +182,7 @@ class UserService {
     }
   }
 
-  async updateUsersGroupId(userIds: string[], groupId: string, token: string): Promise<void> {
+  async updateUsersGroupId(userIds: string[], groupId: string | null, token: string): Promise<void> {
     try {
       await userRepository.updateGroupIdForUsers(userIds, groupId, token);
     } catch (error) {
@@ -196,6 +195,30 @@ class UserService {
       await userRepository.updateAuthUserPassword(userId, newPassword);
     } catch (error) {
       return handleServiceError('UserService.changePassword', error);
+    }
+  }
+
+  async setUserStatus(userId: string, status: 'active' | 'inactive', token: string): Promise<IUser> {
+    try {
+      loggingService.info('UserService.setUserStatus called', { userId, status });
+
+      const existingUser = await userRepository.findById(userId, token);
+      if (!existingUser) {
+        throw new UserNotFoundError();
+      }
+
+      if (existingUser.status === status) {
+        loggingService.info('UserService.setUserStatus — status unchanged, skipping update', { userId, status });
+        return existingUser;
+      }
+
+      const updatedUser = await userRepository.updateUser(userId, { status }, token);
+      return updatedUser;
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        throw error;
+      }
+      return handleServiceError('UserService.setUserStatus', error);
     }
   }
 

@@ -22,6 +22,28 @@ jest.mock('@src/services/logging.service', () => ({
     warn: jest.fn(),
     debug: jest.fn(),
   },
+  asyncLocalStorage: {
+    getStore: jest.fn().mockReturnValue(null),
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Sentry mock
+// ---------------------------------------------------------------------------
+
+jest.mock('@sentry/node', () => ({
+  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
+  setTag: jest.fn(),
+  setUser: jest.fn(),
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+}));
+
+// ---------------------------------------------------------------------------
+// sentry.metrics mock
+// ---------------------------------------------------------------------------
+
+jest.mock('@src/utils/sentry.metrics', () => ({
+  emitErrorCount: jest.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -81,6 +103,7 @@ const mockUser: IUser = {
   group_id: GROUP_ID,
   phone: null,
   agency: null,
+  sales_target: null,
   status: 'active',
   created_at: '2024-01-01T00:00:00.000Z',
   updated_at: '2024-01-01T00:00:00.000Z',

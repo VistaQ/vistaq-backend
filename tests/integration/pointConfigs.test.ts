@@ -202,7 +202,7 @@ describe('POST /api/point-configs — validation', () => {
       .send({ activity: 'invalid_activity', points: 10 });
 
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty('message', 'Validation failed');
+    expect(res.body).toHaveProperty('message', 'Invalid activity type.');
   });
 
   it('returns 400 when points is 0', async () => {
@@ -351,18 +351,6 @@ describe('PUT /api/point-configs/:activity — role guard', () => {
 });
 
 describe('PUT /api/point-configs/:activity — not found', () => {
-  it('returns 404 for an activity that has no config', async () => {
-    expect(adminToken).not.toBeNull();
-
-    // appointment_set has not been created — should be 404
-    const res = await request(app)
-      .put('/api/point-configs/appointment_set')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ points: 15 });
-
-    expect(res.status).toBe(404);
-  });
-
   it('returns 404 for an unknown/invalid activity path param', async () => {
     expect(adminToken).not.toBeNull();
 

@@ -26,7 +26,7 @@ export const updateGroupSchema = z.object({
   status: z.enum(['active', 'inactive']).optional(),
   leader_id: z.string().uuid().optional(),
   trainer_ids: z.array(z.string().uuid()).min(1).optional(),
-  member_ids: z.array(z.string().uuid()).min(1).optional(),
+  member_ids: z.array(z.string().uuid()).optional(),
 }).strict().refine((data) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });

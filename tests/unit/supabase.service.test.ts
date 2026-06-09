@@ -13,7 +13,6 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 // ---------------------------------------------------------------------------
 
 // Chainable builder returned by from()
-const mockEq = jest.fn();
 const mockSelect = jest.fn();
 const mockInsert = jest.fn();
 const mockUpdate = jest.fn();
@@ -385,5 +384,167 @@ describe('SupabaseService.delete()', () => {
     } catch (err) {
       expect((err as SupabaseServiceError).cause).toBe(unexpectedError);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// adminUpsert
+// ---------------------------------------------------------------------------
+
+describe('SupabaseService.adminUpsert', () => {
+  it('calls upsert with onConflict and returns the response', async () => {
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockResolvedValue({ data: [{ id: '1' }], error: null }),
+    });
+    const fromMock = jest.fn().mockReturnValue({ upsert: upsertMock });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: fromMock,
+    } as never;
+
+    const response = await supabaseService.adminUpsert(
+      'tenants',
+      { id: '1', slug: 's', name: 'n' } as never,
+      'id',
+    );
+
+    expect(fromMock).toHaveBeenCalledWith('tenants');
+    expect(upsertMock).toHaveBeenCalledWith({ id: '1', slug: 's', name: 'n' }, { onConflict: 'id' });
+    expect(response.data).toEqual([{ id: '1' }]);
+    expect(response.error).toBeNull();
+  });
+
+  it('wraps thrown errors in SupabaseServiceError', async () => {
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: jest.fn().mockReturnValue({ upsert: upsertMock }),
+    } as never;
+
+    await expect(
+      supabaseService.adminUpsert('tenants', { id: '1' } as never, 'id'),
+    ).rejects.toThrow('Admin upsert operation failed in SupabaseService');
+  });
+
+  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+    const supabaseError = { message: 'upsert conflict', code: '23505' };
+    const fakeResponse = { data: null, error: supabaseError };
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockResolvedValue(fakeResponse),
+    });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: jest.fn().mockReturnValue({ upsert: upsertMock }),
+    } as never;
+
+    await expect(
+      supabaseService.adminUpsert('tenants', { id: '1', slug: 's', name: 'n' } as never, 'id'),
+    ).resolves.toBe(fakeResponse);
+
+    expect(mockLoggingError).toHaveBeenCalledWith(
+      'SupabaseService.adminUpsert query error',
+      supabaseError,
+      expect.objectContaining({ table: 'tenants' }),
+    );
+  });
+
+  it('preserves the original error as cause on the SupabaseServiceError', async () => {
+    const originalError = new Error('network timeout');
+    const upsertMock = jest.fn().mockReturnValue({
+      select: jest.fn().mockRejectedValue(originalError),
+    });
+    (supabaseService as unknown as { adminClient: { from: jest.Mock } }).adminClient = {
+      from: jest.fn().mockReturnValue({ upsert: upsertMock }),
+    } as never;
+
+    try {
+      await supabaseService.adminUpsert('tenants', { id: '1' } as never, 'id');
+      fail('Expected SupabaseServiceError to be thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(SupabaseServiceError);
+      expect((err as SupabaseServiceError).cause).toBe(originalError);
+    }
+  });
+});
+
+describe('SupabaseService.uploadToStorage', () => {
+  it('uploads to the given bucket and path, returning the response', async () => {
+    const uploadMock = jest.fn().mockResolvedValue({ data: { path: 'abc.xlsx' }, error: null });
+    const fromMock = jest.fn().mockReturnValue({ upload: uploadMock });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    const buf = Buffer.from('fake');
+    const res = await supabaseService.uploadToStorage(
+      'reports-raw',
+      'jobs/1.xlsx',
+      buf,
+      'application/octet-stream',
+    );
+
+    expect(fromMock).toHaveBeenCalledWith('reports-raw');
+    expect(uploadMock).toHaveBeenCalledWith('jobs/1.xlsx', buf, {
+      contentType: 'application/octet-stream',
+      upsert: false,
+    });
+    expect(res.data?.path).toBe('abc.xlsx');
+  });
+
+  it('wraps thrown errors in SupabaseServiceError', async () => {
+    const fromMock = jest.fn().mockReturnValue({
+      upload: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    await expect(
+      supabaseService.uploadToStorage('reports-raw', 'x', Buffer.alloc(1), 'application/octet-stream'),
+    ).rejects.toThrow('Storage upload failed in SupabaseService');
+  });
+});
+
+describe('SupabaseService.createSignedDownloadUrl', () => {
+  it('returns the signed URL', async () => {
+    const signedMock = jest.fn().mockResolvedValue({
+      data: { signedUrl: 'https://signed/' },
+      error: null,
+    });
+    const fromMock = jest.fn().mockReturnValue({ createSignedUrl: signedMock });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    const url = await supabaseService.createSignedDownloadUrl('reports-raw', 'jobs/1.xlsx', 300);
+
+    expect(signedMock).toHaveBeenCalledWith('jobs/1.xlsx', 300);
+    expect(url).toBe('https://signed/');
+  });
+
+  it('throws SupabaseServiceError when signing returns an error', async () => {
+    const fromMock = jest.fn().mockReturnValue({
+      createSignedUrl: jest.fn().mockResolvedValue({ data: null, error: { message: 'nope' } }),
+    });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    await expect(
+      supabaseService.createSignedDownloadUrl('reports-raw', 'jobs/1.xlsx', 300),
+    ).rejects.toThrow('Create signed download URL failed');
+  });
+});
+
+describe('SupabaseService.removeFromStorage', () => {
+  it('calls remove on the bucket with the given paths', async () => {
+    const removeMock = jest.fn().mockResolvedValue({ data: [], error: null });
+    const fromMock = jest.fn().mockReturnValue({ remove: removeMock });
+    (supabaseService as unknown as { adminClient: { storage: { from: jest.Mock } } }).adminClient = {
+      storage: { from: fromMock },
+    } as never;
+
+    await supabaseService.removeFromStorage('reports-raw', ['jobs/1.xlsx']);
+
+    expect(removeMock).toHaveBeenCalledWith(['jobs/1.xlsx']);
   });
 });

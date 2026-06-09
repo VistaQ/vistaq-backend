@@ -401,7 +401,7 @@ class CoachingSessionRepository {
       const response = await supabaseService.userSelectIn(
         userToken,
         'users',
-        'id,role,tenant_id',
+        'id,role,tenant_id,status',
         'id',
         userIds,
       );
@@ -414,8 +414,11 @@ class CoachingSessionRepository {
         id: string;
         role: string;
         tenant_id: string;
+        status: string;
       }[];
-      return rows;
+      return rows
+        .filter((r) => r.status === 'active')
+        .map(({ id, role, tenant_id }) => ({ id, role, tenant_id }));
     } catch (error) {
       return handleRepositoryError(
         'CoachingSessionRepository.findUsersByIdsAndRoles',
@@ -675,7 +678,7 @@ class CoachingSessionRepository {
         'id, name, email, role, group_id',
         'group_id',
         groupIds,
-        { tenant_id: tenantId } as Partial<
+        { tenant_id: tenantId, status: 'active' } as Partial<
           Database['public']['Tables']['users']['Row']
         >,
       );
@@ -774,7 +777,7 @@ class CoachingSessionRepository {
         'id, name, email, group_id',
         'role',
         ['agent', 'group_leader'],
-        { tenant_id: tenantId } as Partial<
+        { tenant_id: tenantId, status: 'active' } as Partial<
           Database['public']['Tables']['users']['Row']
         >,
       );

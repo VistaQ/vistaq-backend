@@ -173,7 +173,7 @@ class GroupRepository {
       return await supabaseService.userCountWithEq(
         token,
         'users',
-        { group_id: groupId },
+        { group_id: groupId, status: 'active' },
         'role',
         ['agent', 'group_leader'],
       );

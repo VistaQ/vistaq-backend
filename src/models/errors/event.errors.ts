@@ -36,3 +36,10 @@ export class InvalidDateRangeError extends Error {
     this.name = 'InvalidDateRangeError';
   }
 }
+
+export class ForbiddenEventAccessError extends Error {
+  public constructor(message = 'Forbidden') {
+    super(message);
+    this.name = 'ForbiddenEventAccessError';
+  }
+}

@@ -45,4 +45,16 @@ VALUES
     'coaching_2_hours_online_attended',
     'coaching', '2 Hours Online Seminar Attended',
     'coaching_session'
+  ),
+  (
+    'sales_noc', 'sales', 'Issuance Certificate',
+    'upload_batch'
+  ),
+  (
+    'sales_fyct', 'sales', 'FYCt (per RM1,000)',
+    'upload_batch'
+  ),
+  (
+    'sales_ace', 'sales', 'ACE (per RM1,000)',
+    'upload_batch'
   );

@@ -4,8 +4,10 @@ import { IPointConfig } from '@src/types/pointConfig.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type PointConfigsRow = Database['public']['Tables']['point_configs']['Row'];
-type PointConfigsInsert = Database['public']['Tables']['point_configs']['Insert'];
-type PointConfigsUpdate = Database['public']['Tables']['point_configs']['Update'];
+type PointConfigsInsert =
+  Database['public']['Tables']['point_configs']['Insert'];
+type PointConfigsUpdate =
+  Database['public']['Tables']['point_configs']['Update'];
 
 /******************************************************************************
                             PointConfigRepository
@@ -46,7 +48,10 @@ class PointConfigRepository {
       const row = response.data[0] as unknown as PointConfigsRow;
       return this.mapRowToPointConfig(row);
     } catch (error) {
-      return handleRepositoryError('PointConfigRepository.insertPointConfig', error);
+      return handleRepositoryError(
+        'PointConfigRepository.insertPointConfig',
+        error,
+      );
     }
   }
 
@@ -69,7 +74,41 @@ class PointConfigRepository {
       const rows = (response.data ?? []) as unknown as PointConfigsRow[];
       return rows.map((row) => this.mapRowToPointConfig(row));
     } catch (error) {
-      return handleRepositoryError('PointConfigRepository.findByTenantId', error);
+      return handleRepositoryError(
+        'PointConfigRepository.findByTenantId',
+        error,
+      );
+    }
+  }
+
+  /**
+   * Admin variant: returns every point_configs row for a tenant + category.
+   * Used by background flows (e.g. sales-points awarding after a sales-report
+   * ingest) which run without a user JWT — manual ingests authenticate via
+   * ETL_API_KEY rather than a Bearer token, so the user-scoped helpers
+   * can't be used.
+   */
+  async findByTenantAndCategoryAdmin(
+    tenantId: string,
+    category: string,
+  ): Promise<IPointConfig[]> {
+    try {
+      const response = await supabaseService.adminSelect('point_configs', '*', {
+        tenant_id: tenantId,
+        category,
+      } as Partial<PointConfigsRow>);
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const rows = (response.data ?? []) as unknown as PointConfigsRow[];
+      return rows.map((row) => this.mapRowToPointConfig(row));
+    } catch (error) {
+      return handleRepositoryError(
+        'PointConfigRepository.findByTenantAndCategoryAdmin',
+        error,
+      );
     }
   }
 
@@ -97,7 +136,10 @@ class PointConfigRepository {
       const row = response.data[0] as unknown as PointConfigsRow;
       return this.mapRowToPointConfig(row);
     } catch (error) {
-      return handleRepositoryError('PointConfigRepository.findByTenantAndActivity', error);
+      return handleRepositoryError(
+        'PointConfigRepository.findByTenantAndActivity',
+        error,
+      );
     }
   }
 
@@ -126,7 +168,10 @@ class PointConfigRepository {
       const row = response.data[0] as unknown as PointConfigsRow;
       return this.mapRowToPointConfig(row);
     } catch (error) {
-      return handleRepositoryError('PointConfigRepository.updatePointConfig', error);
+      return handleRepositoryError(
+        'PointConfigRepository.updatePointConfig',
+        error,
+      );
     }
   }
 }

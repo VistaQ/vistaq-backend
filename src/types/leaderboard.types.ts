@@ -24,6 +24,10 @@ export type ILeaderboardStatsIndividual = {
   sales_meetings: number;
   sales_successful: number;
   total_points: number;
+  ace: number;
+  fyc: number;
+  fyct: number;
+  acs: number;
 };
 
 export type ILeaderboardStatsGroup = {
@@ -36,6 +40,10 @@ export type ILeaderboardStatsGroup = {
   sales_meetings: number;
   sales_successful: number;
   total_points: number;
+  ace: number;
+  fyc: number;
+  fyct: number;
+  acs: number;
 };
 
 export type ILeaderboardStats = {
