@@ -17,6 +17,7 @@ import reportJobRoutes from '@src/routes/reportJob.routes';
 import salesReportRoutes from '@src/routes/salesReport.routes';
 import salesReportReadRoutes from '@src/routes/salesReportRead.routes';
 import taxonomyRoutes from '@src/routes/taxonomy.routes';
+import tenantLabelRoutes from '@src/routes/tenantLabel.routes';
 import userRoutes from '@src/routes/user.routes';
 
 const router = express.Router();
@@ -38,6 +39,7 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/point-activity-types', pointActivityTypeRoutes);
 router.use('/point-configs', pointConfigRoutes);
 router.use('/taxonomies', taxonomyRoutes);
+router.use('/labels', tenantLabelRoutes);
 router.use('/leaderboard', leaderboardRoutes);
 router.use('/agent-points', agentPointsRoutes);
 router.use('/agent-codes', agentCodeRoutes);
