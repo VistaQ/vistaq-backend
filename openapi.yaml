@@ -34,6 +34,8 @@ tags:
     description: Tenant-scoped agent code provisioning endpoints
   - name: Taxonomies
     description: Tenant-configurable lookup values for dropdowns, grouped by type
+  - name: Labels
+    description: Tenant-scoped i18n-style display label resolution for stable internal keys
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
   - name: Sales Reports
@@ -4175,6 +4177,72 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Taxonomy not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
+  # LABELS
+  ##############################################################################
+
+  /labels:
+    get:
+      tags: [Labels]
+      summary: Get tenant labels
+      description: >
+        Returns the resolved key→value display-label map for the authenticated
+        tenant. Labels provide i18n-style resolution where the tenant acts as the
+        locale: code references stable internal keys (e.g. `metric.ace`) and this
+        endpoint resolves them to per-tenant display strings. The tenant is
+        derived from the JWT — clients cannot specify it. All authenticated roles
+        may read.
+
+
+        The response is a single merged map: a default label set provides
+        fallbacks, and the tenant's own overrides (from the `tenant_labels` table)
+        take precedence over the defaults.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Tenant labels retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    description: >
+                      Map of stable internal label keys to their resolved
+                      per-tenant display strings.
+                    additionalProperties:
+                      type: string
+              example:
+                success: true
+                data:
+                  metric.ace: ACE
+                  metric.fyc: FYC
+                  metric.fyct: FYCt
+                  metric.acs: ACS (ACE/NOC)
+                  action.create_coaching: Create Peer Circle Meeting
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
         '500':
           description: Internal server error
           content:
