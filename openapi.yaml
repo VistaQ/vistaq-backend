@@ -32,6 +32,8 @@ tags:
     description: Gamification agent points endpoints
   - name: Agent Codes
     description: Tenant-scoped agent code provisioning endpoints
+  - name: Taxonomies
+    description: Tenant-configurable lookup values for dropdowns, grouped by type
   - name: Coaching Sessions
     description: Coaching session management and attendance endpoints
   - name: Sales Reports
@@ -3761,6 +3763,426 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   ##############################################################################
+  # TAXONOMIES
+  ##############################################################################
+
+  /taxonomies:
+    get:
+      tags: [Taxonomies]
+      summary: List taxonomy values
+      description: >
+        Returns the taxonomy lookup values provisioned for the authenticated
+        user's tenant, ordered by `sort_order` ascending and then `value`
+        ascending. The tenant is derived from the JWT — clients cannot specify
+        it. All authenticated roles may access this endpoint.
+
+
+        The optional `type` query parameter filters the result to a single
+        category (e.g. `lead_source`). When provided it must be a non-empty
+        string; omit it to return every taxonomy value for the tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+          description: >
+            When provided, filters taxonomy values to the given category. Must
+            be a non-empty string; an empty value returns 400.
+      responses:
+        '200':
+          description: Taxonomy values retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaxonomyObject'
+              example:
+                success: true
+                data:
+                  - id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    type: lead_source
+                    value: Referral
+                    sort_order: 0
+                    created_at: '2026-06-01T08:00:00.000Z'
+                    updated_at: '2026-06-01T08:00:00.000Z'
+                  - id: b2c3d4e5-f6a7-8901-bcde-f12345678901
+                    tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    type: lead_source
+                    value: Walk-in
+                    sort_order: 1
+                    created_at: '2026-06-01T08:00:00.000Z'
+                    updated_at: '2026-06-01T08:00:00.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the `type` query parameter is present but
+            is an empty string.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: string
+                    inclusive: true
+                    exact: false
+                    message: String must contain at least 1 character(s)
+                    path:
+                      - type
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags: [Taxonomies]
+      summary: Create a taxonomy value (admin only)
+      description: >
+        Creates a new taxonomy lookup value under the authenticated user's
+        tenant. The caller must supply a valid Bearer token belonging to a user
+        with the `admin` role; any other role returns 403. The tenant is derived
+        from the JWT — clients cannot specify it.
+
+
+        The combination of `(tenant_id, type, value)` must be unique within the
+        tenant — submitting a duplicate returns 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, value]
+              properties:
+                type:
+                  type: string
+                  minLength: 1
+                  description: >
+                    The taxonomy category this value belongs to (e.g.
+                    `lead_source`). Required; must be a non-empty string.
+                  example: lead_source
+                value:
+                  type: string
+                  minLength: 1
+                  description: >
+                    The dropdown value to store. Required; must be a non-empty
+                    string.
+                  example: Referral
+                sort_order:
+                  type: integer
+                  default: 0
+                  description: >
+                    Sort position used when ordering values within a category.
+                    Optional; defaults to 0 when omitted.
+                  example: 0
+            example:
+              type: lead_source
+              value: Referral
+              sort_order: 0
+      responses:
+        '201':
+          description: Taxonomy value created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/TaxonomyObject'
+              example:
+                success: true
+                data:
+                  id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  type: lead_source
+                  value: Referral
+                  sort_order: 0
+                  created_at: '2026-06-01T08:00:00.000Z'
+                  updated_at: '2026-06-01T08:00:00.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails Zod validation —
+            e.g. `type` or `value` missing or empty, `sort_order` not an
+            integer, or an unknown top-level field is present.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: too_small
+                    minimum: 1
+                    type: string
+                    inclusive: true
+                    exact: false
+                    message: String must contain at least 1 character(s)
+                    path:
+                      - value
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '409':
+          description: >
+            Conflict. Returned when a taxonomy value with the same
+            `(type, value)` already exists in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: A taxonomy value with this type already exists
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /taxonomies/{id}:
+    put:
+      tags: [Taxonomies]
+      summary: Update a taxonomy value (admin only)
+      description: >
+        Updates the `value` and/or `sort_order` of an existing taxonomy value
+        within the authenticated user's tenant. The caller must supply a valid
+        Bearer token belonging to a user with the `admin` role; any other role
+        returns 403. The tenant is derived from the JWT — clients cannot specify
+        it.
+
+
+        At least one of `value` or `sort_order` must be supplied; an empty body
+        returns 400. Returns 404 if no taxonomy value with the given `id` exists
+        in the tenant. Returns 409 if the new `value` collides with an existing
+        `(type, value)` pair in the tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the taxonomy value to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              description: >
+                At least one of `value` or `sort_order` must be provided.
+              properties:
+                value:
+                  type: string
+                  minLength: 1
+                  description: New dropdown value. Must be a non-empty string when provided.
+                  example: Referral (updated)
+                sort_order:
+                  type: integer
+                  description: New sort position within the category.
+                  example: 5
+            example:
+              value: Referral (updated)
+              sort_order: 5
+      responses:
+        '200':
+          description: Taxonomy value updated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/TaxonomyObject'
+              example:
+                success: true
+                data:
+                  id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  type: lead_source
+                  value: Referral (updated)
+                  sort_order: 5
+                  created_at: '2026-06-01T08:00:00.000Z'
+                  updated_at: '2026-06-02T09:30:00.000Z'
+        '400':
+          description: >
+            Bad request. Returned when the request body fails Zod validation —
+            e.g. an empty body, neither `value` nor `sort_order` provided, an
+            empty `value`, `sort_order` not an integer, or an unknown top-level
+            field is present.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+              example:
+                message: Validation failed
+                errors:
+                  - code: custom
+                    message: At least one of value or sort_order must be provided
+                    path: []
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no taxonomy value matching the `id` path
+            parameter exists in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Taxonomy not found
+        '409':
+          description: >
+            Conflict. Returned when the new `value` collides with an existing
+            `(type, value)` pair in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: A taxonomy value with this type already exists
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Taxonomies]
+      summary: Delete a taxonomy value (admin only)
+      description: >
+        Deletes an existing taxonomy value within the authenticated user's
+        tenant. The caller must supply a valid Bearer token belonging to a user
+        with the `admin` role; any other role returns 403. The tenant is derived
+        from the JWT — clients cannot specify it.
+
+
+        Returns 404 if no taxonomy value with the given `id` exists in the
+        tenant. On success the endpoint returns 204 with no response body.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the taxonomy value to delete.
+      responses:
+        '204':
+          description: Taxonomy value deleted successfully. No response body.
+        '401':
+          description: >
+            Unauthorized. Returned when the `Authorization` header is absent,
+            malformed, or contains an invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Unauthorized
+        '403':
+          description: Forbidden. Returned when the authenticated user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Forbidden
+        '404':
+          description: >
+            Not found. Returned when no taxonomy value matching the `id` path
+            parameter exists in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Taxonomy not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  ##############################################################################
   # COACHING SESSIONS
   ##############################################################################
 
@@ -5039,6 +5461,46 @@ components:
           format: date-time
           description: ISO 8601 datetime the row was last modified.
           example: '2025-01-01T00:00:00.000Z'
+
+    TaxonomyObject:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - type
+        - value
+        - sort_order
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        tenant_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        type:
+          type: string
+          description: The taxonomy category this value belongs to.
+          example: lead_source
+        value:
+          type: string
+          description: The dropdown value stored for the category.
+          example: Referral
+        sort_order:
+          type: integer
+          description: Sort position used when ordering values within a category.
+          example: 0
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-06-01T08:00:00.000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-06-01T08:00:00.000Z'
 
     GroupObject:
       type: object
