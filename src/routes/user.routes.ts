@@ -26,6 +26,8 @@ export const updateUserSchema = z
     location: z.string().min(1).optional(),
     role: z.enum(['admin', 'master_trainer', 'trainer', 'agent']).optional(),
     sales_target: z.number().min(0).nullable().optional(),
+    fyct_target: z.number().positive().nullable().optional(),
+    fyc_target: z.number().positive().nullable().optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {

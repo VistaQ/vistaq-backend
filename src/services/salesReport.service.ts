@@ -374,7 +374,13 @@ class SalesReportService {
     }[],
     userById: Map<
       string,
-      { id: string; name: string; agent_code: string | null }
+      {
+        id: string;
+        name: string;
+        agent_code: string | null;
+        fyct_target: number | null;
+        fyc_target: number | null;
+      }
     >,
   ): ISalesReport {
     const monthAce = new Array<number>(12).fill(0);
@@ -421,6 +427,8 @@ class SalesReportService {
       month_noc: monthNoc,
       month_fyct: monthFyct,
       month_fyc: monthFyc,
+      fyct_target: user?.fyct_target != null ? Number(user.fyct_target) : null,
+      fyc_target: user?.fyc_target != null ? Number(user.fyc_target) : null,
     };
   }
 }

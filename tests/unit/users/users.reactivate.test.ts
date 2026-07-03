@@ -115,6 +115,8 @@ const mockInactiveUser: IUser = {
   phone: null,
   agency: null,
   sales_target: null,
+  fyct_target: null,
+  fyc_target: null,
   status: 'inactive',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',

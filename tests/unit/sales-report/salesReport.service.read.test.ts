@@ -151,6 +151,74 @@ describe('SalesReportService.getYearReports', () => {
     expect(out[0].agent_name).toBe('');
     expect(out[0].agent_code).toBe('');
   });
+
+  it('assembles fyct_target/fyc_target as numbers when the user has set them', async () => {
+    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+      {
+        id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
+        ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+        created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-29T16:01:33.000Z',
+      },
+    ]);
+    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    // NUMERIC columns come back from Postgres as strings — mirrors the existing
+    // Number(...) coercion pattern used elsewhere in this file (ace/fyc/etc).
+    (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
+      { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: '300000.00', fyc_target: '250000.00' },
+    ]);
+
+    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+
+    expect(out[0].fyct_target).toBe(300000);
+    expect(out[0].fyc_target).toBe(250000);
+    expect(typeof out[0].fyct_target).toBe('number');
+    expect(typeof out[0].fyc_target).toBe('number');
+  });
+
+  it('assembles fyct_target/fyc_target as null (not 0) when the user has not set them', async () => {
+    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+      {
+        id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
+        ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+        created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-29T16:01:33.000Z',
+      },
+    ]);
+    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
+      { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: null, fyc_target: null },
+    ]);
+
+    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+
+    expect(out[0].fyct_target).toBeNull();
+    expect(out[0].fyc_target).toBeNull();
+  });
+
+  it('assembles fyct_target/fyc_target as null when the user row is missing entirely (orphaned YTD row)', async () => {
+    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+      {
+        id: 'ytd-u1', user_id: 'u-orphan', year: 2026, month: 3,
+        ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
+        fyc: 0, fyc_pct: 0, mdrt_shortage_fyc: 0,
+        created_at: '2026-04-29T16:01:33.000Z',
+        updated_at: '2026-04-29T16:01:33.000Z',
+      },
+    ]);
+    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([]);
+
+    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+
+    expect(out[0].fyct_target).toBeNull();
+    expect(out[0].fyc_target).toBeNull();
+  });
 });
 
 describe('SalesReportService.getMyYearReport', () => {
@@ -196,6 +264,52 @@ describe('SalesReportService.getMyYearReport', () => {
     // Per-user filter must be passed through to the MTD repos.
     expect(salesReportMtdRepository.findAceNocByTenantYear).toHaveBeenCalledWith('t1', 2026, ['u1']);
     expect(salesReportMtdRepository.findFycByTenantYear).toHaveBeenCalledWith('t1', 2026, ['u1']);
+  });
+
+  it('assembles fyct_target/fyc_target as numbers when the caller has set them', async () => {
+    (salesReportYtdRepository.findLatestYtdForUserYear as jest.Mock).mockResolvedValue({
+      id: 'ytd-u1', user_id: 'u1', year: 2026, month: 5,
+      ace: 100, noc: 5, fyct: 80, fyct_pct: 0.4, mdrt_shortage_fyct: 20,
+      fyc: 70, fyc_pct: 0.35, mdrt_shortage_fyc: 30,
+      created_at: '2026-06-01T00:00:00Z',
+      updated_at: '2026-06-02T10:00:00Z',
+    });
+    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
+      { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: 300000, fyc_target: 250000 },
+    ]);
+
+    const out = await salesReportService.getMyYearReport({
+      tenantId: 't1', userId: 'u1', year: 2026,
+    });
+
+    expect(out).not.toBeNull();
+    expect(out!.fyct_target).toBe(300000);
+    expect(out!.fyc_target).toBe(250000);
+  });
+
+  it('assembles fyct_target/fyc_target as null (not 0) when the caller has not set them', async () => {
+    (salesReportYtdRepository.findLatestYtdForUserYear as jest.Mock).mockResolvedValue({
+      id: 'ytd-u1', user_id: 'u1', year: 2026, month: 5,
+      ace: 100, noc: 5, fyct: 80, fyct_pct: 0.4, mdrt_shortage_fyct: 20,
+      fyc: 70, fyc_pct: 0.35, mdrt_shortage_fyc: 30,
+      created_at: '2026-06-01T00:00:00Z',
+      updated_at: '2026-06-02T10:00:00Z',
+    });
+    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
+      { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: null, fyc_target: null },
+    ]);
+
+    const out = await salesReportService.getMyYearReport({
+      tenantId: 't1', userId: 'u1', year: 2026,
+    });
+
+    expect(out).not.toBeNull();
+    expect(out!.fyct_target).toBeNull();
+    expect(out!.fyc_target).toBeNull();
   });
 });
 

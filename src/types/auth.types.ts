@@ -28,6 +28,8 @@ export type IUser = Pick<
   | 'phone'
   | 'agency'
   | 'sales_target'
+  | 'fyct_target'
+  | 'fyc_target'
   | 'status'
   | 'created_at'
   | 'updated_at'

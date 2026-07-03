@@ -101,6 +101,8 @@ class UserRepository {
         phone: row.phone,
         agency: row.agency,
         sales_target: row.sales_target,
+        fyct_target: row.fyct_target,
+        fyc_target: row.fyc_target,
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -137,6 +139,8 @@ class UserRepository {
         phone: row.phone,
         agency: row.agency,
         sales_target: row.sales_target,
+        fyct_target: row.fyct_target,
+        fyc_target: row.fyc_target,
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -181,6 +185,8 @@ class UserRepository {
         phone: row.phone,
         agency: row.agency,
         sales_target: row.sales_target,
+        fyct_target: row.fyct_target,
+        fyc_target: row.fyc_target,
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -242,6 +248,8 @@ class UserRepository {
         phone: row.phone,
         agency: row.agency,
         sales_target: row.sales_target,
+        fyct_target: row.fyct_target,
+        fyc_target: row.fyc_target,
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -280,6 +288,8 @@ class UserRepository {
         phone: row.phone,
         agency: row.agency,
         sales_target: row.sales_target,
+        fyct_target: row.fyct_target,
+        fyc_target: row.fyc_target,
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -317,6 +327,8 @@ class UserRepository {
         phone: row.phone,
         agency: row.agency,
         sales_target: row.sales_target,
+        fyct_target: row.fyct_target,
+        fyc_target: row.fyc_target,
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -494,7 +506,15 @@ class UserRepository {
   async findIdNameAgentCodeByIds(
     userIds: string[],
     groupIds?: string[],
-  ): Promise<{ id: string; name: string; agent_code: string | null }[]> {
+  ): Promise<
+    {
+      id: string;
+      name: string;
+      agent_code: string | null;
+      fyct_target: number | null;
+      fyc_target: number | null;
+    }[]
+  > {
     try {
       if (userIds.length === 0) return [];
       if (groupIds !== undefined && groupIds.length === 0) return [];
@@ -506,7 +526,7 @@ class UserRepository {
 
       const response = await supabaseService.adminSelectInIn(
         'users',
-        'id, name, agent_code',
+        'id, name, agent_code, fyct_target, fyc_target',
         inFilters,
       );
 
@@ -515,6 +535,8 @@ class UserRepository {
         id: string;
         name: string;
         agent_code: string | null;
+        fyct_target: number | null;
+        fyc_target: number | null;
       }[];
     } catch (error) {
       handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
