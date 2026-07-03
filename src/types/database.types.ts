@@ -1034,6 +1034,8 @@ export type Database = {
           agent_code: string | null
           created_at: string
           email: string
+          fyc_target: number | null
+          fyct_target: number | null
           group_id: string | null
           id: string
           location: string | null
@@ -1050,6 +1052,8 @@ export type Database = {
           agent_code?: string | null
           created_at?: string
           email: string
+          fyc_target?: number | null
+          fyct_target?: number | null
           group_id?: string | null
           id: string
           location?: string | null
@@ -1066,6 +1070,8 @@ export type Database = {
           agent_code?: string | null
           created_at?: string
           email?: string
+          fyc_target?: number | null
+          fyct_target?: number | null
           group_id?: string | null
           id?: string
           location?: string | null

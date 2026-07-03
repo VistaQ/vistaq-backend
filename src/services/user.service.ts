@@ -24,6 +24,8 @@ interface IUpdateUserParams {
     role?: string;
     group_id?: string | null;
     sales_target?: number | null;
+    fyct_target?: number | null;
+    fyc_target?: number | null;
   };
 }
 
