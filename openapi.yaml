@@ -7024,6 +7024,20 @@ components:
           maxItems: 12
           items: { type: number }
           example: [0, 0, 1222.11, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        fyct_target:
+          type: number
+          nullable: true
+          description: >
+            The agent's FYCt annual target (set on their Profile via
+            PUT /users/{userId}). Null if unset.
+          example: 300000
+        fyc_target:
+          type: number
+          nullable: true
+          description: >
+            The agent's FYC annual target (set on their Profile via
+            PUT /users/{userId}). Null if unset.
+          example: 250000
 
     SalesReportListResponse:
       type: object
