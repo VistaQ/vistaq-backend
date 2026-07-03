@@ -852,6 +852,18 @@ paths:
                   minimum: 0
                   example: 400000
                   description: "Annual FYCt sales target in RM. Pass null to clear the target."
+                fyct_target:
+                  type: number
+                  nullable: true
+                  exclusiveMinimum: 0
+                  example: 300000
+                  description: "The agent's FYCt annual target. Must be greater than 0 when provided. Pass null to clear the target."
+                fyc_target:
+                  type: number
+                  nullable: true
+                  exclusiveMinimum: 0
+                  example: 250000
+                  description: "The agent's FYC annual target. Must be greater than 0 when provided. Pass null to clear the target."
       responses:
         '200':
           description: User updated successfully
@@ -5458,6 +5470,16 @@ components:
           nullable: true
           example: 400000
           description: "The agent's personal annual FYCt sales target in RM. Null if the agent has not set a target yet."
+        fyct_target:
+          type: number
+          nullable: true
+          example: 300000
+          description: "The agent's FYCt annual target (set via PUT /users/{userId}). Null if the agent has not set a target yet."
+        fyc_target:
+          type: number
+          nullable: true
+          example: 250000
+          description: "The agent's FYC annual target (set via PUT /users/{userId}). Null if the agent has not set a target yet."
 
     AgentCodeObject:
       type: object
