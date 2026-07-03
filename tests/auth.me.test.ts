@@ -93,6 +93,8 @@ const mockUser: IUser = {
   phone: null,
   agency: null,
   sales_target: null,
+  fyct_target: null,
+  fyc_target: null,
   status: 'active',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',

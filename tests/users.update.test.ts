@@ -105,6 +105,8 @@ const mockUser: IUser = {
   phone: null,
   agency: null,
   sales_target: null,
+  fyct_target: null,
+  fyc_target: null,
   status: 'active',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -304,6 +306,62 @@ describe('UserController.update', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true, data: userClearedTarget });
     expect(next).not.toHaveBeenCalled();
   });
+
+  // 8. Self-update with numeric fyct_target/fyc_target → 200, service called with both fields unmodified
+  it('returns 200 and passes fyct_target/fyc_target through to service when provided', async () => {
+    const userWithTargets: IUser = { ...mockUser, fyct_target: 300000, fyc_target: 250000 };
+    (userService.updateUser as jest.Mock).mockResolvedValue(userWithTargets);
+
+    const req = buildUpdateReq({
+      role: 'agent',
+      callerId: 'user-001',
+      userId: 'user-001',
+      body: { fyct_target: 300000, fyc_target: 250000 },
+    });
+    const res = buildRes();
+    const next = buildNext();
+
+    await userController.update(req, res, next);
+
+    expect(userService.updateUser).toHaveBeenCalledTimes(1);
+    expect(userService.updateUser).toHaveBeenCalledWith({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', fyct_target: 300000, fyc_target: 250000 },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: userWithTargets });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // 9. Self-update with fyct_target/fyc_target: null → 200, service called with both explicitly nulled (clear semantics)
+  it('returns 200 and passes fyct_target: null and fyc_target: null to service when explicitly nulled', async () => {
+    const userClearedTargets: IUser = { ...mockUser, fyct_target: null, fyc_target: null };
+    (userService.updateUser as jest.Mock).mockResolvedValue(userClearedTargets);
+
+    const req = buildUpdateReq({
+      role: 'agent',
+      callerId: 'user-001',
+      userId: 'user-001',
+      body: { fyct_target: null, fyc_target: null },
+    });
+    const res = buildRes();
+    const next = buildNext();
+
+    await userController.update(req, res, next);
+
+    expect(userService.updateUser).toHaveBeenCalledTimes(1);
+    expect(userService.updateUser).toHaveBeenCalledWith({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', fyct_target: null, fyc_target: null },
+    });
+    expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: userClearedTargets });
+    expect(next).not.toHaveBeenCalled();
+  });
 });
 
 /******************************************************************************
@@ -476,6 +534,73 @@ describe('UserService.updateUser', () => {
     expect(updateData).toHaveProperty('sales_target', 500000);
     expect(updateData).not.toHaveProperty('role');
   });
+
+  // 8. fyct_target/fyc_target pass through to repository unmodified for non-admin callers
+  it('passes fyct_target/fyc_target through to userRepository.updateUser and does not strip them for non-admin callers', async () => {
+    (userRepository.findById as jest.Mock).mockResolvedValue(mockUser);
+    (userRepository.updateUser as jest.Mock).mockResolvedValue({
+      ...mockUser,
+      fyct_target: 300000,
+      fyc_target: 250000,
+    });
+
+    await realService.updateUser({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', fyct_target: 300000, fyc_target: 250000 },
+    });
+
+    expect(userRepository.updateUser).toHaveBeenCalledTimes(1);
+    const updateData = (userRepository.updateUser as jest.Mock).mock.calls[0][1];
+    expect(updateData).toHaveProperty('fyct_target', 300000);
+    expect(updateData).toHaveProperty('fyc_target', 250000);
+    expect(updateData).not.toHaveProperty('role');
+  });
+
+  // 9. fyct_target/fyc_target pass through to repository unmodified for admin callers too
+  it('passes fyct_target/fyc_target through to userRepository.updateUser for admin callers', async () => {
+    (userRepository.findById as jest.Mock).mockResolvedValue(mockUser);
+    (userRepository.updateUser as jest.Mock).mockResolvedValue({
+      ...mockUser,
+      fyct_target: 300000,
+      fyc_target: 250000,
+    });
+
+    await realService.updateUser({
+      userId: 'user-001',
+      callerRole: 'admin',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', fyct_target: 300000, fyc_target: 250000 },
+    });
+
+    expect(userRepository.updateUser).toHaveBeenCalledTimes(1);
+    const updateData = (userRepository.updateUser as jest.Mock).mock.calls[0][1];
+    expect(updateData).toHaveProperty('fyct_target', 300000);
+    expect(updateData).toHaveProperty('fyc_target', 250000);
+  });
+
+  // 10. fyct_target/fyc_target: null clears both fields — passed through as null, not stripped
+  it('passes fyct_target: null and fyc_target: null through to userRepository.updateUser', async () => {
+    (userRepository.findById as jest.Mock).mockResolvedValue(mockUser);
+    (userRepository.updateUser as jest.Mock).mockResolvedValue({
+      ...mockUser,
+      fyct_target: null,
+      fyc_target: null,
+    });
+
+    await realService.updateUser({
+      userId: 'user-001',
+      callerRole: 'agent',
+      token: 'mock-token-abc',
+      data: { name: 'Alice Updated', fyct_target: null, fyc_target: null },
+    });
+
+    expect(userRepository.updateUser).toHaveBeenCalledTimes(1);
+    const updateData = (userRepository.updateUser as jest.Mock).mock.calls[0][1];
+    expect(updateData).toHaveProperty('fyct_target', null);
+    expect(updateData).toHaveProperty('fyc_target', null);
+  });
 });
 
 /******************************************************************************
@@ -508,6 +633,80 @@ describe('updateUserSchema validation', () => {
   // 4. sales_target: 500000 should pass
   it('accepts sales_target: 500000 (positive number)', () => {
     const result = updateUserSchema.safeParse({ sales_target: 500000 });
+    expect(result.success).toBe(true);
+  });
+
+  // 5. fyct_target: 300000 should pass
+  it('accepts fyct_target: 300000 (positive number)', () => {
+    const result = updateUserSchema.safeParse({ fyct_target: 300000 });
+    expect(result.success).toBe(true);
+  });
+
+  // 6. fyct_target: null should pass (nullable clears the field)
+  it('accepts fyct_target: null', () => {
+    const result = updateUserSchema.safeParse({ fyct_target: null });
+    expect(result.success).toBe(true);
+  });
+
+  // 7. fyct_target: 0 should be rejected (.positive() excludes 0, unlike sales_target's .min(0))
+  it('rejects fyct_target: 0 with a validation error', () => {
+    const result = updateUserSchema.safeParse({ fyct_target: 0 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((e) => e.path.join('.'));
+      expect(paths).toContain('fyct_target');
+    }
+  });
+
+  // 8. fyct_target: -1 should be rejected
+  it('rejects fyct_target: -1 with a validation error', () => {
+    const result = updateUserSchema.safeParse({ fyct_target: -1 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((e) => e.path.join('.'));
+      expect(paths).toContain('fyct_target');
+    }
+  });
+
+  // 9. fyc_target: 250000 should pass
+  it('accepts fyc_target: 250000 (positive number)', () => {
+    const result = updateUserSchema.safeParse({ fyc_target: 250000 });
+    expect(result.success).toBe(true);
+  });
+
+  // 10. fyc_target: null should pass (nullable clears the field)
+  it('accepts fyc_target: null', () => {
+    const result = updateUserSchema.safeParse({ fyc_target: null });
+    expect(result.success).toBe(true);
+  });
+
+  // 11. fyc_target: 0 should be rejected (.positive() excludes 0)
+  it('rejects fyc_target: 0 with a validation error', () => {
+    const result = updateUserSchema.safeParse({ fyc_target: 0 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((e) => e.path.join('.'));
+      expect(paths).toContain('fyc_target');
+    }
+  });
+
+  // 12. fyc_target: -1 should be rejected
+  it('rejects fyc_target: -1 with a validation error', () => {
+    const result = updateUserSchema.safeParse({ fyc_target: -1 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((e) => e.path.join('.'));
+      expect(paths).toContain('fyc_target');
+    }
+  });
+
+  // 13. Both fyct_target and fyc_target set together with other fields should pass
+  it('accepts fyct_target and fyc_target set together alongside other fields', () => {
+    const result = updateUserSchema.safeParse({
+      name: 'Alice',
+      fyct_target: 300000,
+      fyc_target: 250000,
+    });
     expect(result.success).toBe(true);
   });
 });
