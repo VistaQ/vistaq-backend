@@ -74,6 +74,10 @@ export interface ISalesReport {
   month_fyct: number[];
   /** 12-element array, index 0 = January, index 11 = December. */
   month_fyc: number[];
+  /** Per-agent FYCt target (self-set); null when the agent has not set one. */
+  fyct_target: number | null;
+  /** Per-agent FYC target (self-set); null when the agent has not set one. */
+  fyc_target: number | null;
 }
 
 /**
