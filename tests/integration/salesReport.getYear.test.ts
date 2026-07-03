@@ -127,6 +127,8 @@ describe('GET /api/sales-reports — happy path', () => {
       expect(r.month_fyc).toHaveLength(12);
       expect(Array.isArray(r.month_fyct)).toBe(true);
       expect(r.month_fyct).toHaveLength(12);
+      expect(r).toHaveProperty('fyct_target');
+      expect(r).toHaveProperty('fyc_target');
     }
   });
 });

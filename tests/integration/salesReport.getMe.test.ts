@@ -119,3 +119,67 @@ describe('GET /api/sales-reports/me — guards', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('fyct_target/fyc_target — round trip through PUT /api/users/:userId and GET /api/sales-reports/me', () => {
+  const AGENT_ID = manifest.users.mdrt_stars_agent.id;
+
+  afterAll(async () => {
+    // Restore seeded state so other suites relying on this agent's row see a clean slate.
+    if (!agentToken) return;
+    await request(app)
+      .put(`/api/users/${AGENT_ID}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ fyct_target: null, fyc_target: null });
+  });
+
+  it('persists fyct_target/fyc_target via self-update and echoes them on the sales report read path', async () => {
+    if (!agentToken) throw new Error('Could not log in as agent; check seed data');
+
+    const putRes = await request(app)
+      .put(`/api/users/${AGENT_ID}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ fyct_target: 300000, fyc_target: 250000 });
+
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.success).toBe(true);
+    expect(putRes.body.data.fyct_target).toBe(300000);
+    expect(putRes.body.data.fyc_target).toBe(250000);
+
+    const getRes = await request(app)
+      .get('/api/sales-reports/me?year=2026')
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.data.fyct_target).toBe(300000);
+    expect(getRes.body.data.fyc_target).toBe(250000);
+  });
+
+  it('rejects fyct_target: 0 and fyc_target: -1 with 400 validation errors', async () => {
+    if (!agentToken) throw new Error('Could not log in as agent');
+
+    const zeroRes = await request(app)
+      .put(`/api/users/${AGENT_ID}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ fyct_target: 0 });
+    expect(zeroRes.status).toBe(400);
+
+    const negativeRes = await request(app)
+      .put(`/api/users/${AGENT_ID}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ fyc_target: -1 });
+    expect(negativeRes.status).toBe(400);
+  });
+
+  it('clears fyct_target/fyc_target back to null when explicitly nulled', async () => {
+    if (!agentToken) throw new Error('Could not log in as agent');
+
+    const clearRes = await request(app)
+      .put(`/api/users/${AGENT_ID}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ fyct_target: null, fyc_target: null });
+
+    expect(clearRes.status).toBe(200);
+    expect(clearRes.body.data.fyct_target).toBeNull();
+    expect(clearRes.body.data.fyc_target).toBeNull();
+  });
+});
