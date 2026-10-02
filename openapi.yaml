@@ -448,6 +448,14 @@ paths:
         unauthenticated. If the email address does not exist within the tenant,
         the response is still `200 OK` — this is intentional to prevent user
         enumeration.
+
+
+        The link in the reset email targets the calling frontend. The `Origin`
+        request header is normalised (scheme, host and port only) and, when it
+        is listed in the server's `ALLOWED_ORIGINS`, the link points to
+        `<origin>/reset-password`. If the `Origin` header is absent, malformed,
+        or not in `ALLOWED_ORIGINS`, the link falls back to the server's
+        configured `FRONTEND_RESET_PASSWORD_URL`.
       security: []
       parameters:
         - name: X-Tenant-Slug
@@ -460,6 +468,17 @@ paths:
           schema:
             type: string
             example: acme-insurance
+        - name: Origin
+          in: header
+          required: false
+          description: >
+            Origin of the calling frontend (normally set automatically by
+            browsers). If it is listed in the server's `ALLOWED_ORIGINS`, the
+            reset-password email link is `<origin>/reset-password`; otherwise
+            the server falls back to `FRONTEND_RESET_PASSWORD_URL`.
+          schema:
+            type: string
+            example: https://app.example.com
       requestBody:
         required: true
         content:
