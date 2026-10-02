@@ -3,6 +3,7 @@ process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
+process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects
@@ -210,6 +211,40 @@ describe('AuthController.forgotPassword', () => {
       message: 'Password reset email sent',
     });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes req.headers.origin to authService.forgotPassword', async () => {
+    const spy = jest.spyOn(authService, 'forgotPassword').mockResolvedValue(undefined);
+
+    const req = {
+      headers: { 'x-tenant-slug': 'acme', origin: 'https://app.example.com' },
+      body: { email: 'user@example.com' },
+    } as unknown as IForgotPasswordReq;
+
+    await authController.forgotPassword(req, makeRes(), makeNext() as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({
+      tenantSlug: 'acme',
+      email: 'user@example.com',
+      origin: 'https://app.example.com',
+    });
+  });
+
+  it('passes origin undefined to the service when no Origin header is present', async () => {
+    const spy = jest.spyOn(authService, 'forgotPassword').mockResolvedValue(undefined);
+
+    const req = {
+      headers: { 'x-tenant-slug': 'acme' },
+      body: { email: 'user@example.com' },
+    } as unknown as IForgotPasswordReq;
+
+    await authController.forgotPassword(req, makeRes(), makeNext() as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({
+      tenantSlug: 'acme',
+      email: 'user@example.com',
+      origin: undefined,
+    });
   });
 });
 
