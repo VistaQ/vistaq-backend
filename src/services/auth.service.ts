@@ -45,6 +45,7 @@ interface ILoginResult {
 interface IForgotPasswordParams {
   tenantSlug: string;
   email: string;
+  origin?: string;
 }
 
 interface IResetPasswordParams {
@@ -232,15 +233,48 @@ class AuthService {
         return;
       }
 
-      await authRepository.resetPasswordForEmail(
-        params.email,
-        EnvVars.FrontendResetPasswordUrl,
-      );
+      const redirectTo = this.resolveResetPasswordUrl(params.origin);
+
+      await authRepository.resetPasswordForEmail(params.email, redirectTo);
     } catch (error) {
       if (error instanceof TenantNotFoundError) {
         throw error;
       }
       return handleServiceError('AuthService.forgotPassword', error);
+    }
+  }
+
+  /**
+   * Builds the Supabase redirectTo URL from the request Origin when it is
+   * allowlisted; otherwise falls back to the configured env URL.
+   */
+  private resolveResetPasswordUrl(origin?: string): string {
+    try {
+      let normalisedOrigin: string | null = null;
+      if (origin) {
+        try {
+          normalisedOrigin = new URL(origin).origin;
+        } catch {
+          normalisedOrigin = null;
+        }
+      }
+
+      if (normalisedOrigin && EnvVars.AllowedOrigins.includes(normalisedOrigin)) {
+        const url = `${normalisedOrigin}/reset-password`;
+        loggingService.info('AuthService.resolveResetPasswordUrl — using request origin', {
+          source: 'origin',
+          url,
+        });
+        return url;
+      }
+
+      loggingService.info('AuthService.resolveResetPasswordUrl — using fallback URL', {
+        source: 'fallback',
+        url: EnvVars.FrontendResetPasswordUrl,
+      });
+      return EnvVars.FrontendResetPasswordUrl;
+    } catch (error) {
+      return handleServiceError('AuthService.resolveResetPasswordUrl', error);
     }
   }
 
