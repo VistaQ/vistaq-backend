@@ -288,7 +288,9 @@ class AuthController {
 
       const { email } = req.body;
 
-      await authService.forgotPassword({ tenantSlug, email });
+      const origin = req.headers.origin;
+
+      await authService.forgotPassword({ tenantSlug, email, origin });
 
       const responseBody: IForgotPasswordRes = {
         success: true,

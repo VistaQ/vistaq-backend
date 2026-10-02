@@ -3,6 +3,7 @@ process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
+process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects
@@ -342,6 +343,71 @@ describe('AuthService.forgotPassword', () => {
     await expect(
       authService.forgotPassword(FORGOT_PASSWORD_PARAMS),
     ).rejects.toBeInstanceOf(TenantNotFoundError);
+  });
+
+  describe('redirectTo resolution from Origin', () => {
+    const FALLBACK = 'https://test.example.com/reset-password';
+
+    async function redirectFor(origin?: string): Promise<string> {
+      jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
+      jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(mockUser);
+      const resetSpy = jest
+        .spyOn(authRepository, 'resetPasswordForEmail')
+        .mockResolvedValue(undefined);
+
+      await authService.forgotPassword({ ...FORGOT_PASSWORD_PARAMS, origin });
+
+      expect(resetSpy).toHaveBeenCalledTimes(1);
+      return resetSpy.mock.calls[0][1] as string;
+    }
+
+    it('uses <origin>/reset-password for an allowlisted origin', async () => {
+      expect(await redirectFor('https://app.example.com')).toBe(
+        'https://app.example.com/reset-password',
+      );
+    });
+
+    it('supports a second allowlisted origin (localhost with port)', async () => {
+      expect(await redirectFor('http://localhost:5173')).toBe(
+        'http://localhost:5173/reset-password',
+      );
+    });
+
+    it('falls back to FRONTEND_RESET_PASSWORD_URL for a non-allowlisted origin', async () => {
+      expect(await redirectFor('https://evil.example.com')).toBe(FALLBACK);
+    });
+
+    it('falls back when origin is undefined', async () => {
+      expect(await redirectFor(undefined)).toBe(FALLBACK);
+    });
+
+    it('falls back when origin is an empty string', async () => {
+      expect(await redirectFor('')).toBe(FALLBACK);
+    });
+
+    it('falls back when origin is malformed', async () => {
+      expect(await redirectFor('not a url')).toBe(FALLBACK);
+    });
+
+    it('normalises an allowlisted origin with a trailing slash', async () => {
+      expect(await redirectFor('https://app.example.com/')).toBe(
+        'https://app.example.com/reset-password',
+      );
+    });
+
+    it('normalises an allowlisted origin with a path', async () => {
+      expect(await redirectFor('https://app.example.com/some/path?x=1')).toBe(
+        'https://app.example.com/reset-password',
+      );
+    });
+
+    it('does not match a different scheme of an allowlisted host', async () => {
+      expect(await redirectFor('http://app.example.com')).toBe(FALLBACK);
+    });
+
+    it('does not match a different port of an allowlisted host', async () => {
+      expect(await redirectFor('http://localhost:3000')).toBe(FALLBACK);
+    });
   });
 });
 

@@ -3,6 +3,7 @@ process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
+process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects
@@ -77,7 +78,7 @@ jest.mock('@src/services/supabase.service', () => ({
 import type { Response, NextFunction } from 'express';
 
 import { authController } from '@src/controllers/auth.controller';
-import type { IRegisterReq, ILoginReq, ILogoutReq } from '@src/controllers/auth.controller';
+import type { IRegisterReq, ILoginReq, ILogoutReq, IForgotPasswordReq } from '@src/controllers/auth.controller';
 import { authService } from '@src/services/auth.service';
 import { RouteError } from '@src/models/errors/route.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
@@ -472,5 +473,43 @@ describe('AuthController.logout', () => {
 
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/******************************************************************************
+  Test suite — AuthController.forgotPassword (origin forwarding)
+******************************************************************************/
+
+describe('AuthController.forgotPassword origin forwarding', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('passes req.headers.origin to authService.forgotPassword', async () => {
+    const spy = jest.spyOn(authService, 'forgotPassword').mockResolvedValue(undefined);
+    const req = {
+      headers: { 'x-tenant-slug': 'acme', origin: 'https://app.example.com' },
+      body: { email: 'user@example.com' },
+    } as unknown as IForgotPasswordReq;
+    const res = makeRes();
+
+    await authController.forgotPassword(req, res, jest.fn() as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith({
+      tenantSlug: 'acme',
+      email: 'user@example.com',
+      origin: 'https://app.example.com',
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('passes undefined origin when header is absent', async () => {
+    const spy = jest.spyOn(authService, 'forgotPassword').mockResolvedValue(undefined);
+    const req = {
+      headers: { 'x-tenant-slug': 'acme' },
+      body: { email: 'user@example.com' },
+    } as unknown as IForgotPasswordReq;
+
+    await authController.forgotPassword(req, makeRes(), jest.fn() as NextFunction);
+
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ origin: undefined }));
   });
 });
