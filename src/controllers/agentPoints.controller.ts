@@ -1,10 +1,10 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import agentPointsService from '@src/services/agentPoints.service';
-import { IAgentPointsResponse } from '@src/types/agentPoints.types';
+import type { IAgentPointsResponse } from '@src/types/agentPoints.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

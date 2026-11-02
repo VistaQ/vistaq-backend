@@ -2,12 +2,13 @@ import express from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 
-import reportJobController, {
+import type {
   ICompleteJobReq,
   ICreateJobReq,
   IGetJobReq,
   IRetryJobReq,
 } from '@src/controllers/reportJob.controller';
+import reportJobController from '@src/controllers/reportJob.controller';
 import { authenticate } from '@src/middleware/auth';
 import { internalKey } from '@src/middleware/internalKey';
 import { validate } from '@src/middleware/validate';

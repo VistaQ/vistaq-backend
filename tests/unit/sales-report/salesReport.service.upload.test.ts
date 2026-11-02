@@ -4,7 +4,7 @@ import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
-import { IEtlResult } from '@src/types/salesReport.types';
+import type { IEtlResult } from '@src/types/salesReport.types';
 import {
   InvalidEtlResultError,
   NonConsecutiveUploadError,

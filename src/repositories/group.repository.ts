@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { IGroup, IGroupTrainer } from '@src/types/auth.types';
-import { Database } from '@src/types/database.types';
+import type { IGroup, IGroupTrainer } from '@src/types/auth.types';
+import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type GroupsRow = Database['public']['Tables']['groups']['Row'];

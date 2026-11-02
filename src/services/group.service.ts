@@ -13,14 +13,14 @@ import groupRepository from '@src/repositories/group.repository';
 import userRepository from '@src/repositories/user.repository';
 import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
-import { IGroup } from '@src/types/auth.types';
-import { IDashboardPeriodStats } from '@src/types/dashboard.types';
-import { Database } from '@src/types/database.types';
-import {
+import type { IGroup } from '@src/types/auth.types';
+import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
+import type { Database } from '@src/types/database.types';
+import type {
   IAgentStats,
   IGroupDetailStats,
 } from '@src/types/group-detail-stats.types';
-import { IGroupStats } from '@src/types/group-stats.types';
+import type { IGroupStats } from '@src/types/group-stats.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { withServiceSpan } from '@src/utils/sentry.metrics';
 

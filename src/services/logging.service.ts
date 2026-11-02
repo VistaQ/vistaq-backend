@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
-import pino, { Logger } from 'pino';
+import type { Logger } from 'pino';
+import pino from 'pino';
 import * as Sentry from '@sentry/node';
 
 import EnvVars, { NodeEnvs } from '@src/utils/env';

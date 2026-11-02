@@ -1,8 +1,8 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import pointActivityTypeService from '@src/services/pointActivityType.service';
-import { IPointActivityType } from '@src/types/pointActivityType.types';
+import type { IPointActivityType } from '@src/types/pointActivityType.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

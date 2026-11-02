@@ -7,7 +7,7 @@ import {
   UnauthorizedSessionAccessError,
 } from '@src/models/errors/coachingSession.errors';
 import coachingSessionRepository from '@src/repositories/coachingSession.repository';
-import { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
+import type { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { emitSessionJoin, withServiceSpan } from '@src/utils/sentry.metrics';
 

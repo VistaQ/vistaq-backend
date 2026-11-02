@@ -4,7 +4,7 @@ import {
 } from '@src/models/errors/auth.errors';
 import userRepository from '@src/repositories/user.repository';
 import loggingService from '@src/services/logging.service';
-import { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
+import type { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************

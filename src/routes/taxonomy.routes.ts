@@ -1,14 +1,15 @@
 import express from 'express';
 import { z } from 'zod';
 
-import taxonomyController, {
+import type {
   ICreateTaxonomyReq,
   IDeleteTaxonomyReq,
   IUpdateTaxonomyReq,
 } from '@src/controllers/taxonomy.controller';
+import taxonomyController from '@src/controllers/taxonomy.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Zod Schemas

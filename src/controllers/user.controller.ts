@@ -1,13 +1,13 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import {
   AgentCodeInvalidError,
   UserNotFoundError,
 } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import userService from '@src/services/user.service';
-import { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
+import type { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

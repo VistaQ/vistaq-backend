@@ -7,14 +7,15 @@ process.env.ETL_SERVICE_URL = process.env.ETL_SERVICE_URL || 'http://etl';
 process.env.ETL_API_KEY = process.env.ETL_API_KEY || 'test-key';
 process.env.BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || 'http://api';
 
-import { NextFunction, Response } from 'express';
-import reportJobController, {
+import type { NextFunction, Response } from 'express';
+import type {
   ICreateJobReq, IGetJobReq, IRetryJobReq, ICompleteJobReq,
 } from '@src/controllers/reportJob.controller';
+import reportJobController from '@src/controllers/reportJob.controller';
 import reportJobService from '@src/services/reportJob.service';
 import { ReportJobNotFoundError, JobNotRetryableError } from '@src/models/errors/reportJob.errors';
 import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
-import { RouteError } from '@src/models/errors/route.error';
+import type { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 jest.mock('@src/services/reportJob.service', () => ({

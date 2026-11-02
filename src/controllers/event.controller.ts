@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 
 import {
@@ -10,9 +10,9 @@ import {
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import eventService from '@src/services/event.service';
-import { IEvent, IPublicEvent } from '@src/types/event.types';
+import type { IEvent, IPublicEvent } from '@src/types/event.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

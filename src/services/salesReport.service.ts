@@ -5,26 +5,29 @@ import {
   NonConsecutiveUploadError,
 } from '@src/models/errors/salesReport.errors';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
-import salesReportYtdRepository, {
+import type {
   YtdRollupRow,
 } from '@src/repositories/salesReportYtd.repository';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
 import loggingService from '@src/services/logging.service';
-import salesPointsService, {
+import type {
   IAgentResolution,
 } from '@src/services/salesPoints.service';
-import { Scope } from '@src/services/scope.service';
-import {
+import salesPointsService from '@src/services/salesPoints.service';
+import type { Scope } from '@src/services/scope.service';
+import type {
   IEtlResult,
   IEtlRowData,
   IPaginatedUploadAudit,
   ISalesReport,
   IUploadResult,
-  MONTH_MAP,
   SalesReportMtdIns,
   SalesReportYtdIns,
-  UploadStatus,
+  UploadStatus} from '@src/types/salesReport.types';
+import {
+  MONTH_MAP
 } from '@src/types/salesReport.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 

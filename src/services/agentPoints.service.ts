@@ -1,6 +1,6 @@
 import agentPointsRepository from '@src/repositories/agentPoints.repository';
 import pointActivityTypeService from '@src/services/pointActivityType.service';
-import {
+import type {
   IAgentPointsBreakdownItem,
   IAgentPointsResponse,
   PointCategory,

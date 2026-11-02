@@ -82,9 +82,9 @@ import userController from '@src/controllers/user.controller';
 import { ControllerError, RepositoryError, ServiceError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { UserNotFoundError } from '@src/models/errors/auth.errors';
-import { IUser } from '@src/types/auth.types';
+import type { IUser } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
-import { IDeleteUserReq } from '@src/controllers/user.controller';
+import type { IDeleteUserReq } from '@src/controllers/user.controller';
 
 /******************************************************************************
   Shared Fixtures

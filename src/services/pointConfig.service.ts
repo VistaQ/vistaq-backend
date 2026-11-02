@@ -1,7 +1,7 @@
 import { RouteError } from '@src/models/errors/route.error';
 import pointConfigRepository from '@src/repositories/pointConfig.repository';
 import pointActivityTypeService from '@src/services/pointActivityType.service';
-import { IPointConfig } from '@src/types/pointConfig.types';
+import type { IPointConfig } from '@src/types/pointConfig.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

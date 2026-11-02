@@ -1,13 +1,14 @@
 import express from 'express';
 import { z } from 'zod';
 
-import groupController, {
+import type {
   ICreateGroupReq,
   IGetGroupByIdReq,
   IGetGroupStatsByIdReq,
   IUpdateGroupReq,
 } from '@src/controllers/group.controller';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import groupController from '@src/controllers/group.controller';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
 

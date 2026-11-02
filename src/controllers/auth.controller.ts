@@ -1,4 +1,4 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import {
   AgentCodeInvalidError,
@@ -7,10 +7,10 @@ import {
   UserInactiveError,
 } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import authService from '@src/services/auth.service';
 import loggingService from '@src/services/logging.service';
-import { IUser } from '@src/types/auth.types';
+import type { IUser } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

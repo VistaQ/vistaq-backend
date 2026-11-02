@@ -1,4 +1,4 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import {
   GroupNotFoundError,
@@ -11,11 +11,11 @@ import {
 } from '@src/models/errors/group.errors';
 import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import groupService from '@src/services/group.service';
-import { IGroup } from '@src/types/auth.types';
-import { IGroupDetailStats } from '@src/types/group-detail-stats.types';
-import { IGroupStats } from '@src/types/group-stats.types';
+import type { IGroup } from '@src/types/auth.types';
+import type { IGroupDetailStats } from '@src/types/group-detail-stats.types';
+import type { IGroupStats } from '@src/types/group-stats.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

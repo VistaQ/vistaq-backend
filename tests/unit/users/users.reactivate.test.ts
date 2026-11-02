@@ -96,7 +96,7 @@ import userRepository from '@src/repositories/user.repository';
 import { ControllerError, ServiceError, RepositoryError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { UserNotFoundError } from '@src/models/errors/auth.errors';
-import { IUser } from '@src/types/auth.types';
+import type { IUser } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 /******************************************************************************

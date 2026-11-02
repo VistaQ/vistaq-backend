@@ -1,9 +1,10 @@
 import * as Sentry from '@sentry/node';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 import { SupabaseServiceError } from '@src/models/errors/supabase.error';
 import loggingService from '@src/services/logging.service';
-import { Database } from '@src/types/database.types';
+import type { Database } from '@src/types/database.types';
 import EnvVars from '@src/utils/env';
 import { emitDbMetrics } from '@src/utils/sentry.metrics';
 

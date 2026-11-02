@@ -4,11 +4,11 @@ import {
   TenantNotFoundError,
   UserInactiveError,
 } from '@src/models/errors/auth.errors';
-import { UserStatus } from '@src/models/auth/auth.interface';
+import type { UserStatus } from '@src/models/auth/auth.interface';
 import authRepository from '@src/repositories/auth.repository';
 import loggingService from '@src/services/logging.service';
 import EnvVars from '@src/utils/env';
-import { IUser } from '@src/types/auth.types';
+import type { IUser } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { emitLogin, emitRegistration, withServiceSpan } from '@src/utils/sentry.metrics';
 

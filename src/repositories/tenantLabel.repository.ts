@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import { ITenantLabel } from '@src/types/tenantLabel.types';
+import type { Database } from '@src/types/database.types';
+import type { ITenantLabel } from '@src/types/tenantLabel.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type TenantLabelsRow = Database['public']['Tables']['tenant_labels']['Row'];

@@ -1,7 +1,7 @@
 import express from 'express';
 
 import publicController from '@src/controllers/public.controller';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 const router = express.Router();
 

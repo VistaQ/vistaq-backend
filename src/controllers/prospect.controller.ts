@@ -1,10 +1,10 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import prospectService from '@src/services/prospect.service';
-import { IProspect } from '@src/types/auth.types';
+import type { IProspect } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

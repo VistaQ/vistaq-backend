@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 import EnvVars from '@src/utils/env';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';

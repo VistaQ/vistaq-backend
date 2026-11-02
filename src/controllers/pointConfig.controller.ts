@@ -1,9 +1,9 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import pointConfigService from '@src/services/pointConfig.service';
-import { IPointConfig } from '@src/types/pointConfig.types';
+import type { IPointConfig } from '@src/types/pointConfig.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

@@ -8,12 +8,12 @@ import {
   ReportJobNotFoundError,
 } from '@src/models/errors/reportJob.errors';
 import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
-import {
+import type {
   ICompleteJobParams,
   ICreateJobParams,
   IReportJob,
 } from '@src/types/reportJob.types';
-import { IEtlResult } from '@src/types/salesReport.types';
+import type { IEtlResult } from '@src/types/salesReport.types';
 import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import loggingService from '@src/services/logging.service';

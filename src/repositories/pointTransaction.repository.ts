@@ -1,5 +1,5 @@
 import supabaseService from '@src/services/supabase.service';
-import {
+import type {
   IPointTransactionIns,
   ISalesPointsAward,
   PointTransactionRow,

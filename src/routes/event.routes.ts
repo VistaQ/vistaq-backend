@@ -1,14 +1,16 @@
-import express, { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import express from 'express';
 import { z } from 'zod';
 
-import eventController, {
+import type {
   ICreateEventReq,
   IGetEventByIdReq,
   IUpdateEventReq,
 } from '@src/controllers/event.controller';
+import eventController from '@src/controllers/event.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Zod Schemas

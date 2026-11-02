@@ -7,7 +7,7 @@ import {
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
 import eventRepository from '@src/repositories/event.repository';
-import { IEvent, IPublicEvent } from '@src/types/event.types';
+import type { IEvent, IPublicEvent } from '@src/types/event.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { withServiceSpan } from '@src/utils/sentry.metrics';
 

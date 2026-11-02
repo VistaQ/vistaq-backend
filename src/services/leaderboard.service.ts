@@ -1,5 +1,5 @@
 import leaderboardRepository from '@src/repositories/leaderboard.repository';
-import {
+import type {
   ILeaderboardEntry,
   ILeaderboardStats,
   ILeaderboardStatsGroup,

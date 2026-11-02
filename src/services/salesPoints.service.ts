@@ -5,10 +5,11 @@ import pointTransactionRepository from '@src/repositories/pointTransaction.repos
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import loggingService from '@src/services/logging.service';
-import { IUploadBatch } from '@src/types/salesReport.types';
-import {
+import type { IUploadBatch } from '@src/types/salesReport.types';
+import type {
   ISalesPointsAward,
-  ISalesPointsRates,
+  ISalesPointsRates} from '@src/types/salesPoints.types';
+import {
   SALES_POINTS_ACTIVITIES,
 } from '@src/types/salesPoints.types';
 

@@ -1,11 +1,12 @@
-import { NextFunction, Response } from 'express';
-import salesReportController, {
+import type { NextFunction, Response } from 'express';
+import type {
   IGetMyYearReportReq,
   IGetUploadAuditReq,
   IGetYearReportsReq,
   IIngestReportReq,
   IUploadReportReq,
 } from '@src/controllers/salesReport.controller';
+import salesReportController from '@src/controllers/salesReport.controller';
 import salesReportService from '@src/services/salesReport.service';
 import scopeService from '@src/services/scope.service';
 import {

@@ -1,8 +1,9 @@
 import express from 'express';
 
-import reportFileCleanupController, {
+import type {
   ICleanupOldReportFilesReq,
 } from '@src/controllers/reportFileCleanup.controller';
+import reportFileCleanupController from '@src/controllers/reportFileCleanup.controller';
 import { internalKey } from '@src/middleware/internalKey';
 
 /******************************************************************************

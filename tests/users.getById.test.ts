@@ -76,9 +76,9 @@ import supabaseService from '@src/services/supabase.service';
 import userController from '@src/controllers/user.controller';
 import { ControllerError, RepositoryError, ServiceError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IUserWithManagedGroups } from '@src/types/auth.types';
+import type { IUserWithManagedGroups } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
-import { IGetUserByIdReq } from '@src/controllers/user.controller';
+import type { IGetUserByIdReq } from '@src/controllers/user.controller';
 
 /******************************************************************************
   Shared Fixtures

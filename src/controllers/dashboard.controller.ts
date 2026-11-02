@@ -1,8 +1,8 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import dashboardService from '@src/services/dashboard.service';
-import { IDashboardPeriodStats } from '@src/types/dashboard.types';
+import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

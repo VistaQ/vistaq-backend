@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { SalesReportYtdIns } from '@src/types/salesReport.types';
-import { Database } from '@src/types/database.types';
+import type { SalesReportYtdIns } from '@src/types/salesReport.types';
+import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type SalesReportYtdRow = Database['public']['Tables']['sales_report_ytd']['Row'];

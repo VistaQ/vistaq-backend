@@ -2,7 +2,7 @@ import express from 'express';
 
 import tenantLabelController from '@src/controllers/tenantLabel.controller';
 import { authenticate } from '@src/middleware/auth';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Router

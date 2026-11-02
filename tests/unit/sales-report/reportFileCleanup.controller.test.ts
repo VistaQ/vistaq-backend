@@ -1,8 +1,9 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
-import reportFileCleanupController, {
+import type {
   ICleanupOldReportFilesReq,
 } from '@src/controllers/reportFileCleanup.controller';
+import reportFileCleanupController from '@src/controllers/reportFileCleanup.controller';
 import reportFileCleanupService from '@src/services/reportFileCleanup.service';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

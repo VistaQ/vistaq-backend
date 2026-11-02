@@ -1,4 +1,4 @@
-import { IHealthRes } from '@src/models/health/health.interface';
+import type { IHealthRes } from '@src/models/health/health.interface';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************

@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import { IPointConfig } from '@src/types/pointConfig.types';
+import type { Database } from '@src/types/database.types';
+import type { IPointConfig } from '@src/types/pointConfig.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type PointConfigsRow = Database['public']['Tables']['point_configs']['Row'];

@@ -1,5 +1,5 @@
 import 'multer';
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import {
   JobNotRetryableError,
@@ -7,9 +7,9 @@ import {
 } from '@src/models/errors/reportJob.errors';
 import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import reportJobService from '@src/services/reportJob.service';
-import { IReportJob } from '@src/types/reportJob.types';
+import type { IReportJob } from '@src/types/reportJob.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

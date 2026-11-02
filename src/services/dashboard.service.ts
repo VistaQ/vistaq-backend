@@ -1,5 +1,5 @@
 import dashboardRepository from '@src/repositories/dashboard.repository';
-import { IDashboardPeriodStats } from '@src/types/dashboard.types';
+import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************

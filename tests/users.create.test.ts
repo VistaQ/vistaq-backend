@@ -66,11 +66,11 @@ jest.mock('@src/repositories/user.repository', () => ({
 import userService from '@src/services/user.service';
 import userRepository from '@src/repositories/user.repository';
 import userController from '@src/controllers/user.controller';
-import { ICreateUserReq } from '@src/controllers/user.controller';
+import type { ICreateUserReq } from '@src/controllers/user.controller';
 import { ControllerError, ServiceError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import { AgentCodeInvalidError } from '@src/models/errors/auth.errors';
-import { IUser } from '@src/types/auth.types';
+import type { IUser } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 /******************************************************************************

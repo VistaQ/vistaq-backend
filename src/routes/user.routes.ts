@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 
-import userController, {
+import type {
   IChangePasswordReq,
   ICreateUserReq,
   IDeleteUserReq,
@@ -9,7 +9,8 @@ import userController, {
   IUserStatusChangeReq,
   IUpdateUserReq,
 } from '@src/controllers/user.controller';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import userController from '@src/controllers/user.controller';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
 

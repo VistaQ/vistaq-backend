@@ -25,7 +25,7 @@ jest.mock('@src/services/logging.service', () => ({
 }));
 
 import type { Request, Response, NextFunction } from 'express';
-import { ZodSchema } from 'zod';
+import type { ZodSchema } from 'zod';
 
 import { validate } from '@src/middleware/validate';
 import { registerSchema, loginSchema } from '@src/routes/auth.routes';

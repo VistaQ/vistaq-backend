@@ -1,4 +1,4 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import {
   CoachingSessionNotFoundError,
@@ -9,9 +9,9 @@ import {
   UnauthorizedSessionAccessError,
 } from '@src/models/errors/coachingSession.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import coachingSessionService from '@src/services/coachingSession.service';
-import { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
+import type { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

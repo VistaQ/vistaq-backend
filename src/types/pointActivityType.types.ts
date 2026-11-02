@@ -1,4 +1,4 @@
-import { Database } from '@src/types/database.types';
+import type { Database } from '@src/types/database.types';
 
 type PointActivityTypeRow = Database['public']['Tables']['point_activity_types']['Row'];
 

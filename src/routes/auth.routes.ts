@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 
-import authController, {
+import type {
   IForgotPasswordReq,
   ILoginReq,
   ILogoutReq,
@@ -9,6 +9,7 @@ import authController, {
   IRegisterReq,
   IResetPasswordReq,
 } from '@src/controllers/auth.controller';
+import authController from '@src/controllers/auth.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
 

@@ -1,4 +1,4 @@
-import { IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseRes } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Health Interfaces

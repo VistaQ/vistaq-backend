@@ -1,10 +1,11 @@
 import express from 'express';
 import { z } from 'zod';
 
-import salesReportController, {
+import type {
   IIngestReportReq,
   IUploadReportReq,
 } from '@src/controllers/salesReport.controller';
+import salesReportController from '@src/controllers/salesReport.controller';
 import { authenticate } from '@src/middleware/auth';
 import { internalKey } from '@src/middleware/internalKey';
 import { validate } from '@src/middleware/validate';

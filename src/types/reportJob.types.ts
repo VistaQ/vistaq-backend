@@ -1,4 +1,4 @@
-import { Database } from '@src/types/database.types';
+import type { Database } from '@src/types/database.types';
 
 export type ReportJobRow = Database['public']['Tables']['report_jobs']['Row'];
 export type ReportJobIns = Database['public']['Tables']['report_jobs']['Insert'];

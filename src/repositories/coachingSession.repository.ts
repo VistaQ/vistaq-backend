@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import {
+import type { Database } from '@src/types/database.types';
+import type {
   ICoachingSession,
   ICoachingSessionAttendance,
 } from '@src/types/coachingSession.types';

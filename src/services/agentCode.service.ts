@@ -1,6 +1,6 @@
 import agentCodeRepository from '@src/repositories/agentCode.repository';
 import { AgentCodeConflictError, AgentCodeInUseError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
-import { IAgentCode } from '@src/types/agentCode';
+import type { IAgentCode } from '@src/types/agentCode';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { getRootCause } from '@src/utils/sentry.utils';
 

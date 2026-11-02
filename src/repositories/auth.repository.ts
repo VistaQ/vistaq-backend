@@ -1,8 +1,8 @@
 import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
-import { UserStatus } from '@src/models/auth/auth.interface';
-import { IAgentCode, ITenant, IUser } from '@src/types/auth.types';
-import { Database } from '@src/types/database.types';
+import type { UserStatus } from '@src/models/auth/auth.interface';
+import type { IAgentCode, ITenant, IUser } from '@src/types/auth.types';
+import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type TenantsRow = Database['public']['Tables']['tenants']['Row'];

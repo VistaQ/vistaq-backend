@@ -3,8 +3,8 @@ import {
   TaxonomyNotFoundError,
 } from '@src/models/errors/taxonomy.errors';
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import { ITaxonomy } from '@src/types/taxonomy.types';
+import type { Database } from '@src/types/database.types';
+import type { ITaxonomy } from '@src/types/taxonomy.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type TaxonomiesRow = Database['public']['Tables']['taxonomies']['Row'];

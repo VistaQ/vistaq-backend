@@ -3,8 +3,8 @@ import {
   AgentCodeNotFoundError,
 } from '@src/models/errors/agentCode.errors';
 import supabaseService from '@src/services/supabase.service';
-import { IAgentCode } from '@src/types/agentCode';
-import { Database } from '@src/types/database.types';
+import type { IAgentCode } from '@src/types/agentCode';
+import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];

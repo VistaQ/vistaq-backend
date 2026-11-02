@@ -1,14 +1,14 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import { RouteError } from '@src/models/errors/route.error';
 import {
   InvalidEtlResultError,
   NonConsecutiveUploadError,
 } from '@src/models/errors/salesReport.errors';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import salesReportService from '@src/services/salesReport.service';
 import scopeService from '@src/services/scope.service';
-import {
+import type {
   IEtlResult,
   IPaginatedUploadAudit,
   ISalesReport,

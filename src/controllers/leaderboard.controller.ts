@@ -1,9 +1,9 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import leaderboardService from '@src/services/leaderboard.service';
-import { ILeaderboardEntry, ILeaderboardStats } from '@src/types/leaderboard.types';
+import type { ILeaderboardEntry, ILeaderboardStats } from '@src/types/leaderboard.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

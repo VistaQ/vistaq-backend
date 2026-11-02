@@ -1,7 +1,9 @@
 import * as Sentry from '@sentry/node';
-import cors, { CorsOptions } from 'cors';
+import type { CorsOptions } from 'cors';
+import cors from 'cors';
 import { randomUUID } from 'crypto';
-import express, { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
+import express from 'express';
 import helmet from 'helmet';
 import path from 'path';
 

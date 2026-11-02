@@ -1,4 +1,4 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
 import {
@@ -6,9 +6,9 @@ import {
   TaxonomyNotFoundError,
 } from '@src/models/errors/taxonomy.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import taxonomyService from '@src/services/taxonomy.service';
-import { ITaxonomy } from '@src/types/taxonomy.types';
+import type { ITaxonomy } from '@src/types/taxonomy.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

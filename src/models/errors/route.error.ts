@@ -1,4 +1,4 @@
-import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import type HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 /******************************************************************************
                                  Classes

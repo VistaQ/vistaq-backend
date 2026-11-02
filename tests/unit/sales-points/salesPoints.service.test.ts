@@ -3,7 +3,7 @@ import pointConfigRepository from '@src/repositories/pointConfig.repository';
 import pointTransactionRepository from '@src/repositories/pointTransaction.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
-import { IUploadBatch } from '@src/types/salesReport.types';
+import type { IUploadBatch } from '@src/types/salesReport.types';
 
 jest.mock('@src/repositories/pointConfig.repository', () => ({
   __esModule: true,

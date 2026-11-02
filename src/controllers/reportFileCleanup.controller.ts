@@ -1,6 +1,6 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import reportFileCleanupService from '@src/services/reportFileCleanup.service';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';

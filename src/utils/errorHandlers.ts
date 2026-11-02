@@ -1,4 +1,4 @@
-import { NextFunction } from 'express';
+import type { NextFunction } from 'express';
 import * as Sentry from '@sentry/node';
 
 import {

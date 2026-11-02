@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import { IEvent } from '@src/types/event.types';
+import type { Database } from '@src/types/database.types';
+import type { IEvent } from '@src/types/event.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type EventsRow = Database['public']['Tables']['events']['Row'];

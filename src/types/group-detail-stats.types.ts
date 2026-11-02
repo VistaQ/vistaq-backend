@@ -1,4 +1,4 @@
-import { IDashboardPeriodStats } from '@src/types/dashboard.types';
+import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
 
 /******************************************************************************
                         Group Detail Stats Domain Types

@@ -3,8 +3,8 @@ import {
   TaxonomyNotFoundError,
 } from '@src/models/errors/taxonomy.errors';
 import taxonomyRepository from '@src/repositories/taxonomy.repository';
-import { Database } from '@src/types/database.types';
-import { ITaxonomy } from '@src/types/taxonomy.types';
+import type { Database } from '@src/types/database.types';
+import type { ITaxonomy } from '@src/types/taxonomy.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import loggingService from '@src/services/logging.service';
 import { getRootCause } from '@src/utils/sentry.utils';

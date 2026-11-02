@@ -1,11 +1,11 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
 import { AgentCodeConflictError, AgentCodeInUseError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import agentCodeService from '@src/services/agentCode.service';
-import { IAgentCode } from '@src/types/agentCode';
+import type { IAgentCode } from '@src/types/agentCode';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

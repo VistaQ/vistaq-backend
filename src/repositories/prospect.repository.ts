@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { IProspect } from '@src/types/auth.types';
-import { Database } from '@src/types/database.types';
+import type { IProspect } from '@src/types/auth.types';
+import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type ProspectsRow = Database['public']['Tables']['prospects']['Row'];

@@ -1,5 +1,5 @@
 import { EtlServiceError } from '@src/models/errors/reportJob.errors';
-import { IEtlKickoffParams } from '@src/types/reportJob.types';
+import type { IEtlKickoffParams } from '@src/types/reportJob.types';
 import EnvVars from '@src/utils/env';
 import loggingService from '@src/services/logging.service';
 

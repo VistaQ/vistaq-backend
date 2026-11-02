@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import { IPointActivityType } from '@src/types/pointActivityType.types';
+import type { Database } from '@src/types/database.types';
+import type { IPointActivityType } from '@src/types/pointActivityType.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type PointActivityTypeRow = Database['public']['Tables']['point_activity_types']['Row'];

@@ -1,13 +1,14 @@
 import express from 'express';
 import { z } from 'zod';
 
-import pointConfigController, {
+import type {
   ICreatePointConfigReq,
   IUpdatePointConfigReq,
 } from '@src/controllers/pointConfig.controller';
+import pointConfigController from '@src/controllers/pointConfig.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Zod Schemas

@@ -1,6 +1,6 @@
 import supabaseService from '@src/services/supabase.service';
-import { Database } from '@src/types/database.types';
-import { SalesReportMtdIns } from '@src/types/salesReport.types';
+import type { Database } from '@src/types/database.types';
+import type { SalesReportMtdIns } from '@src/types/salesReport.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type SalesReportMtdRow = Database['public']['Tables']['sales_report_mtd']['Row'];

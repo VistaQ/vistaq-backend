@@ -1,6 +1,6 @@
 import prospectRepository from '@src/repositories/prospect.repository';
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
-import { IProspect } from '@src/types/auth.types';
+import type { IProspect } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { emitProspectStageTransition, withServiceSpan } from '@src/utils/sentry.metrics';
 

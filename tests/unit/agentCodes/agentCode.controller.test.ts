@@ -3,7 +3,7 @@ process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
 jest.mock('@src/services/logging.service', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { AsyncLocalStorage } = require('async_hooks');
   return {
     __esModule: true,

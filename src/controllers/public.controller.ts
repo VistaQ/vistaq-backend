@@ -1,8 +1,8 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import { TenantNotFoundError } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import groupService from '@src/services/group.service';
 import loggingService from '@src/services/logging.service';
 import { handleControllerError } from '@src/utils/errorHandlers';

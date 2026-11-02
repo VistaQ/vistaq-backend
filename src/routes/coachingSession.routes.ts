@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 
-import coachingSessionController, {
+import type {
   ICreateCoachingSessionReq,
   IDeleteCoachingSessionReq,
   IGetCoachingSessionByIdReq,
@@ -9,9 +9,10 @@ import coachingSessionController, {
   IMarkNonAttendeesReq,
   IUpdateCoachingSessionReq,
 } from '@src/controllers/coachingSession.controller';
+import coachingSessionController from '@src/controllers/coachingSession.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 // Wire up the reward points configs for coaching sessions
 // Test the attendance too

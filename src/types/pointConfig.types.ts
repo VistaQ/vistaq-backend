@@ -1,4 +1,4 @@
-import { Database } from '@src/types/database.types';
+import type { Database } from '@src/types/database.types';
 
 type PointConfigsRow = Database['public']['Tables']['point_configs']['Row'];
 

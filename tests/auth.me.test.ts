@@ -74,7 +74,7 @@ import authRepository from '@src/repositories/auth.repository';
 import authController from '@src/controllers/auth.controller';
 import { ControllerError, ServiceError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IUser } from '@src/types/auth.types';
+import type { IUser } from '@src/types/auth.types';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 /******************************************************************************
