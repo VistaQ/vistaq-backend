@@ -23,3 +23,8 @@ with Supabase to leverage the provisioned Postgres database, Authentication, and
    - Maximum 3 retries
 4. Once tests pass, automatically invoke **documenter**
 5. **`/commit-organiser`** (skill) is ONLY invoked by the user. Never invoke automatically.
+
+# Verification
+- The package manager is npm. `npm run verify` runs lint and type-check.
+- After writing `.ts` files, run `npm run verify && sh .claude/hooks/verify-stamp.sh`. The Stop hook (`.claude/hooks/stop-gate.sh`) blocks the stop until the stamp matches the working tree, and checks added comments against `.claude/rules/comments.md`.
+- ESLint is deliberately minimal: JS and typescript-eslint recommended (not type-checked, `tsc` covers types) plus prettier. Do not add custom plugins, per-folder override blocks or a suppressions baseline.
