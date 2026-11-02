@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Stop hook: the diff-scoped rule of memory-bank/standards/patterns/comments.md, a comment added to
-# code that did not change, which needs `git diff HEAD`. The per-file rules run in `pnpm lint`
-# (scripts/lint/comment-discipline.mjs), so every tool enforces them, not only Claude Code.
+# Stop check: the one rule of .claude/rules/comments.md that is decidable by regex, a multi-line
+# comment added to code that did not change, which needs `git diff HEAD`.
+# Called by stop-gate.sh, which owns the write flag; this script only reads it.
 #
 # Only patterns that are decidable by regex live here. "Why, not what", stale-comment
 # updates and JSDoc-that-restates-the-signature stay a judgement call — a hook that
@@ -73,7 +73,7 @@ VIOLATIONS=$(printf '%s\n' "$DIFF" | awk '
 [ -n "$VIOLATIONS" ] || exit 0
 
 {
-  echo "Comment discipline (memory-bank/standards/patterns/comments.md) — fix these added lines:"
+  echo "Comment discipline (.claude/rules/comments.md) — fix these added lines:"
   printf '%s\n' "$VIOLATIONS"
   echo "Then re-check the same diff for the judgement-call rules: no what-narration, no signature-restating JSDoc, no trailing field comments, no tombstones, and update any comment your change invalidated."
 } >&2

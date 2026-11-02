@@ -12,3 +12,6 @@ scripts/seed-manifest.json
 supabase/functions/**/deno.lock
 .env.stg
 scripts/demo-seed-manifest.json
+.claude/.write-flag
+.claude/.verify-stamp
+.DS_Store

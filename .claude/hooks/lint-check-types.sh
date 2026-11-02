@@ -1,25 +1,44 @@
 #!/usr/bin/env bash
-# Stop hook: enforce `pnpm verify` (the tool-neutral gate in package.json)
-# only on turns that wrote a file.
-# Fail → exit 2 blocks the stop and feeds errors back to Claude (one retry max via stop_hook_active).
+# Stop check: on a turn that wrote a file, allow the stop only when the working tree still matches the
+# fingerprint verify-stamp.sh recorded after a passing `npm run verify`. It runs no project code: hooks run
+# outside Claude Code's sandbox, so running `npm run verify` here would let code planted from inside the
+# sandbox run unsandboxed. It catches a forgotten verify, not a deliberate bypass of it.
+# Called by stop-gate.sh, which owns the write flag; this script only reads it.
 INPUT=$(cat)
-cd "$CLAUDE_PROJECT_DIR" || exit 0
 
-# Fire ONLY on turns that wrote a file this turn. The PostToolUse hook in .claude/settings.json
-# (inline jq on Write|Edit|MultiEdit) drops this flag; absent flag → Q&A turn → skip.
 FLAG="$CLAUDE_PROJECT_DIR/.claude/.write-flag"
 [ -f "$FLAG" ] || exit 0
 
-OUTPUT=$(npm run type-check 2>&1) && { rm -f "$FLAG"; exit 0; }
-
-# Already retried once — warn the user instead of looping forever; clear flag to give up.
-if [ "$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false')" = "true" ]; then
-  rm -f "$FLAG"
-  printf '{"systemMessage":"⚠️ pnpm verify still failing after retry — fix manually"}\n'
+# Only the main checkout's .git (config, hooks) is out of the sandbox's reach; a worktree's `.git` file is not.
+COMMON="$CLAUDE_PROJECT_DIR/.git"
+if [ ! -d "$COMMON" ]; then
+  printf '{"systemMessage":"⚠️ verify not enforced outside a main checkout — run npm run verify by hand"}\n'
   exit 0
 fi
 
-# First failure — keep the flag so the retry turn re-verifies even if it does not re-edit.
+VERIFY_STAMP_LIB=1 . "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-stamp.sh"
 
-printf '%s\n' "$OUTPUT" | tail -50 >&2
-exit 2
+# Check the registered worktree the session is working in, not always the main checkout.
+CWD=$(cd "$(printf '%s' "$INPUT" | jq -r '.cwd // empty')" 2>/dev/null && pwd -P)
+TOP="$CLAUDE_PROJECT_DIR"
+while IFS= read -r WT; do
+  WT=$(cd "$WT" 2>/dev/null && pwd -P) || continue
+  case "$CWD/" in "$WT"/*) [ ${#WT} -gt ${#TOP} ] && TOP="$WT" ;; esac
+done < <(git --git-dir="$COMMON" -c core.fsmonitor=false worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+
+FINGERPRINT=$(verify_fingerprint "$COMMON" "$TOP")
+if [ -n "$FINGERPRINT" ] && [ "$(cat "$TOP/.claude/.verify-stamp" 2>/dev/null)" = "$FINGERPRINT" ]; then
+  exit 0
+fi
+
+# Already blocked once — warn the user instead of looping forever.
+if [ "$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false')" = "true" ]; then
+  printf '{"systemMessage":"⚠️ files changed since the last passing npm run verify, still unverified after a retry — verify manually"}\n'
+  exit 0
+fi
+
+jq -n --arg top "$TOP" '{
+  decision: "block",
+  reason: "Files changed since the last passing verify in \($top): run `npm run verify && sh .claude/hooks/verify-stamp.sh` there, fix any failures, then finish."
+}'
+exit 0
