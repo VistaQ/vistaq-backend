@@ -62,15 +62,23 @@ The system SHALL invalidate the caller's tokens through `POST /auth/logout`.
 - **THEN** the call is rejected as unauthorized
 
 ### Requirement: Gateway-level authorization
-The system SHALL reject requests to protected routes that lack a valid Cognito access token before they reach application code, and SHALL leave `/auth/register`, `/auth/login`, `/auth/login/verify` and the health check public.
+The system SHALL reject requests to protected routes that lack a valid Cognito access token before they reach application code, and SHALL leave the health check, `/openapi.yaml`, `/api/auth/register`, `/api/auth/login`, `/api/auth/login/verify` and `/api/public/*` public. The `/api/internal/*` routes SHALL also bypass the gateway authorizer because they authenticate in the application with an API key. CORS preflight (`OPTIONS`) requests, which carry no token, SHALL reach the application.
 
 #### Scenario: Missing token
 - **WHEN** a client calls a protected route without a token
 - **THEN** the request is rejected with 401 and the function is not invoked
 
 #### Scenario: Public route
-- **WHEN** a client calls `POST /auth/login` without a token
+- **WHEN** a client calls `POST /api/auth/login` without a token
 - **THEN** the request reaches the function
+
+#### Scenario: Preflight request
+- **WHEN** a browser sends an `OPTIONS` preflight for a protected route without a token
+- **THEN** the request reaches the function and receives the CORS response
+
+#### Scenario: Internal route
+- **WHEN** a caller invokes an `/api/internal/*` route with a valid API key and no Cognito token
+- **THEN** the request is accepted by the application
 
 ### Requirement: Authenticated user context
 The system SHALL identify the caller by the subject of the verified token, and SHALL read the caller's role, group and active status from the user record on every request. It SHALL NOT take role or group from token claims, and SHALL authorize role-restricted routes by the stored role.
@@ -89,7 +97,7 @@ The system SHALL identify the caller by the subject of the verified token, and S
 
 #### Scenario: Deactivated user with a valid token
 - **WHEN** a user is deactivated and then calls a protected route with a token that has not expired
-- **THEN** the request is rejected with the existing inactive-account error
+- **THEN** the request is rejected with 403 and the message "Account is inactive"
 
 #### Scenario: Token without a user record
 - **WHEN** a request carries a valid token whose subject has no user record
