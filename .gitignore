@@ -1,6 +1,5 @@
 **/node_modules
 dist/
-api/index.js
 **/**/*.log
 tsconfig.tsbuildinfo
 .env
@@ -15,3 +14,4 @@ scripts/demo-seed-manifest.json
 .claude/.write-flag
 .claude/.verify-stamp
 .DS_Store
+.serverless/

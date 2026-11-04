@@ -15,8 +15,8 @@ const noRepositoryImports = {
 export default defineConfig([
   globalIgnores([
     '**/dist/**',
+    '.serverless/**',
     'supabase/functions/**',
-    'api/**/*.js',
     'src/types/database.types.ts',
   ]),
   {

@@ -1,0 +1,201 @@
+service: vistaq-backend
+
+frameworkVersion: '4'
+
+params:
+  default:
+    deletionProtection: ACTIVE
+    tableDeletionPolicy: Retain
+  dev:
+    deletionProtection: INACTIVE
+    tableDeletionPolicy: Delete
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  architecture: arm64
+  region: ap-southeast-5
+  stage: ${opt:stage, 'dev'}
+  memorySize: 1024
+  timeout: 29
+  httpApi:
+    payload: '2.0'
+    authorizers:
+      cognito:
+        type: jwt
+        identitySource: $request.header.Authorization
+        issuerUrl:
+          Fn::Join:
+            - ''
+            - - https://cognito-idp.
+              - Ref: AWS::Region
+              - .amazonaws.com/
+              - Ref: UserPool
+        audience:
+          - Ref: UserPoolClient
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:AdminDeleteUser
+            - cognito-idp:AdminDisableUser
+            - cognito-idp:AdminEnableUser
+            - cognito-idp:AdminUpdateUserAttributes
+            - cognito-idp:AdminUserGlobalSignOut
+          Resource:
+            Fn::GetAtt: [UserPool, Arn]
+  environment:
+    COGNITO_USER_POOL_ID:
+      Ref: UserPool
+    COGNITO_CLIENT_ID:
+      Ref: UserPoolClient
+    NODE_ENV: production
+    STAGE: ${sls:stage}
+    ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS}
+    BACKEND_BASE_URL: ${env:BACKEND_BASE_URL}
+    ETL_SERVICE_URL: ${env:ETL_SERVICE_URL}
+    ETL_API_KEY: ${env:ETL_API_KEY}
+    SUPABASE_URL: ${env:SUPABASE_URL}
+    SUPABASE_ANON_KEY: ${env:SUPABASE_ANON_KEY}
+    SUPABASE_SERVICE_ROLE_KEY: ${env:SUPABASE_SERVICE_ROLE_KEY}
+    FRONTEND_RESET_PASSWORD_URL: ${env:FRONTEND_RESET_PASSWORD_URL}
+
+package:
+  patterns:
+    - openapi.yaml
+
+functions:
+  api:
+    handler: src/lambda.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /health
+      - httpApi:
+          method: GET
+          path: /openapi.yaml
+      - httpApi:
+          method: POST
+          path: /api/auth/register
+      - httpApi:
+          method: POST
+          path: /api/auth/login
+      - httpApi:
+          method: POST
+          path: /api/auth/login/verify
+      - httpApi:
+          method: ANY
+          path: /api/public/{proxy+}
+      - httpApi:
+          method: ANY
+          path: /api/internal/{proxy+}
+      - httpApi:
+          method: OPTIONS
+          path: /{proxy+}
+      - httpApi:
+          method: ANY
+          path: /{proxy+}
+          authorizer:
+            name: cognito
+
+resources:
+  Conditions:
+    UseSes:
+      Fn::Not:
+        - Fn::Equals:
+            - ${env:SES_SOURCE_ARN, ''}
+            - ''
+  Resources:
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-${sls:stage}
+        UserPoolTier: ESSENTIALS
+        DeletionProtection: ${param:deletionProtection}
+        UsernameAttributes:
+          - email
+        UsernameConfiguration:
+          CaseSensitive: false
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: true
+        Policies:
+          SignInPolicy:
+            AllowedFirstAuthFactors:
+              - PASSWORD
+              - EMAIL_OTP
+        EmailAuthenticationSubject: Your VistaQ sign-in code
+        EmailAuthenticationMessage: 'Your VistaQ sign-in code is {####}'
+        EmailConfiguration:
+          Fn::If:
+            - UseSes
+            - EmailSendingAccount: DEVELOPER
+              From: ${env:SES_FROM_ADDRESS, ''}
+              SourceArn: ${env:SES_SOURCE_ARN, ''}
+            - EmailSendingAccount: COGNITO_DEFAULT
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${sls:stage}-api
+        UserPoolId:
+          Ref: UserPool
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        PreventUserExistenceErrors: ENABLED
+        EnableTokenRevocation: true
+        AccessTokenValidity: 15
+        IdTokenValidity: 15
+        RefreshTokenValidity: 30
+        TokenValidityUnits:
+          AccessToken: minutes
+          IdToken: minutes
+          RefreshToken: days
+    PointTransactionsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${self:service}-${sls:stage}-point-transactions
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: created_at_id
+            AttributeType: S
+          - AttributeName: subject_type
+            AttributeType: S
+          - AttributeName: subject_id
+            AttributeType: S
+          - AttributeName: activity
+            AttributeType: S
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: created_at_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: bySubject
+            KeySchema:
+              - AttributeName: subject_type
+                KeyType: HASH
+              - AttributeName: subject_id
+                KeyType: HASH
+              - AttributeName: activity
+                KeyType: RANGE
+              - AttributeName: user_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+  Outputs:
+    PointTransactionsTableName:
+      Value:
+        Ref: PointTransactionsTable
+    UserPoolId:
+      Value:
+        Ref: UserPool
+    UserPoolClientId:
+      Value:
+        Ref: UserPoolClient

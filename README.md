@@ -76,6 +76,19 @@ Run the production build (Must be built first).
 
 Check for typescript errors.
 
+## Deploying with Serverless Framework
+
+Serverless Framework v4 is a project devDependency, not a global install. Run every command through `npx`:
+
+```bash
+npx sls --version
+npx sls package --stage dev
+npx sls deploy --stage dev
+npx sls remove --stage dev
+```
+
+`npm run package`, `npm run deploy` and `npm run remove` wrap the same commands; pass the stage with `npm run deploy -- --stage dev`. Resources are declared in `serverless.yml`. The first run downloads the framework binary and needs a Serverless login or license key (`SERVERLESS_ACCESS_KEY` in CI).
+
 ## Additional Notes
 
 - If `npm run dev` gives you issues with bcrypt on MacOS you may need to run: `npm rebuild bcrypt --build-from-source`.
