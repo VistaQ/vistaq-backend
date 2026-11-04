@@ -1,6 +1,7 @@
 import dashboardRepository from '@src/repositories/dashboard.repository';
 import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { periodStartsUtc } from '@src/utils/period';
 
 /******************************************************************************
                             DashboardService
@@ -9,10 +10,7 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 class DashboardService {
   async getStats(token: string): Promise<{ ytd: IDashboardPeriodStats; mtd: IDashboardPeriodStats }> {
     try {
-      const now = new Date();
-
-      const ytdStart = new Date(now.getFullYear(), 0, 1).toISOString();
-      const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const { ytdStart, mtdStart } = periodStartsUtc();
 
       const [ytdRes, mtdRes, agentsRes] = await Promise.all([
         dashboardRepository.getStats(token, ytdStart),

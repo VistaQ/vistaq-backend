@@ -16,7 +16,6 @@ import type {
 import type { IEtlResult } from '@src/types/salesReport.types';
 import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import loggingService from '@src/services/logging.service';
 
 const REPORTS_BUCKET = 'reports-raw';
 const SIGNED_URL_TTL_SECONDS = 600; // 10 min — covers ETL pull + processing safety margin
@@ -70,11 +69,7 @@ class ReportJobService {
       });
 
       // 3. Kick off ETL (fire-and-forget — don't fail the user upload if ETL is unavailable)
-      void this.kickoffEtl(job).catch((err) => {
-        loggingService.error('ReportJobService.kickoffEtl deferred failure', err, {
-          reference: job.reference,
-        });
-      });
+      void this.kickoffEtl(job).catch(() => undefined);
 
       return job;
     } catch (error) {

@@ -9,25 +9,6 @@ process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-const mockLoggingInfo = jest.fn();
-const mockLoggingError = jest.fn();
-
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: mockLoggingInfo,
-    error: mockLoggingError,
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: mockLoggingInfo,
-    error: mockLoggingError,
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation
 // ---------------------------------------------------------------------------
@@ -209,11 +190,6 @@ describe('AuthService.register', () => {
     expect(serviceErr.cause).toBe(insertError);
 
     // The rollback error was logged as a warning
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      expect.stringContaining('rollback failed'),
-      rollbackError,
-      expect.objectContaining({ authUserId: USER_ID }),
-    );
   });
 });
 

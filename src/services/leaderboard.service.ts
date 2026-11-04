@@ -6,6 +6,7 @@ import type {
   ILeaderboardStatsIndividual,
 } from '@src/types/leaderboard.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { periodStartsUtc } from '@src/utils/period';
 
 /******************************************************************************
                             LeaderboardService
@@ -23,11 +24,8 @@ class LeaderboardService {
 
   async getStats(tenantId: string, period: 'mtd' | 'ytd'): Promise<ILeaderboardStats> {
     try {
-      const now = new Date();
-      const periodStart =
-        period === 'mtd'
-          ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
-          : new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString();
+      const { mtdStart, ytdStart } = periodStartsUtc();
+      const periodStart = period === 'mtd' ? mtdStart : ytdStart;
 
       const response = await leaderboardRepository.getStats(tenantId, periodStart, period);
       const raw = (response?.data ?? {}) as {

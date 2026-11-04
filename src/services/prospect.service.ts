@@ -1,8 +1,7 @@
-import prospectRepository from '@src/repositories/prospect.repository';
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
+import prospectRepository from '@src/repositories/prospect.repository';
 import type { IProspect } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { emitProspectStageTransition, withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             Interfaces
@@ -78,7 +77,10 @@ class ProspectService {
     }
   }
 
-  async getProspectById(prospectId: string, token: string): Promise<IProspect | null> {
+  async getProspectById(
+    prospectId: string,
+    token: string,
+  ): Promise<IProspect | null> {
     try {
       const prospect = await prospectRepository.findById(prospectId, token);
       return prospect;
@@ -89,7 +91,10 @@ class ProspectService {
 
   async deleteProspect(params: IDeleteProspectParams): Promise<void> {
     try {
-      const existing = await prospectRepository.findById(params.prospectId, params.token);
+      const existing = await prospectRepository.findById(
+        params.prospectId,
+        params.token,
+      );
       if (!existing) {
         throw new ProspectNotFoundError();
       }
@@ -104,9 +109,11 @@ class ProspectService {
   }
 
   async updateProspect(params: IUpdateProspectParams): Promise<IProspect> {
-    return withServiceSpan('ProspectService', 'updateProspect', { prospect_id: params.prospectId }, async () => {
     try {
-      const existing = await prospectRepository.findById(params.prospectId, params.token);
+      const existing = await prospectRepository.findById(
+        params.prospectId,
+        params.token,
+      );
       if (!existing) {
         throw new ProspectNotFoundError();
       }
@@ -115,33 +122,42 @@ class ProspectService {
       const updateData: Record<string, unknown> = {};
 
       if (data.fullName !== undefined) updateData.prospect_name = data.fullName;
-      if (data.phoneNum !== undefined) updateData.prospect_phone = data.phoneNum;
+      if (data.phoneNum !== undefined)
+        updateData.prospect_phone = data.phoneNum;
       if (data.email !== undefined) updateData.prospect_email = data.email;
 
       if (data.currentStage !== undefined) {
         updateData.current_stage = data.currentStage;
 
         if (data.currentStage !== existing.current_stage) {
-          const history = (existing.stage_history as { stage: string; enteredAt: string }[]) ?? [];
+          const history =
+            (existing.stage_history as {
+              stage: string;
+              enteredAt: string;
+            }[]) ?? [];
           updateData.stage_history = [
             ...history,
             { stage: data.currentStage, enteredAt: new Date().toISOString() },
           ];
-          emitProspectStageTransition(existing.tenant_id, existing.current_stage, data.currentStage);
         }
       }
 
-      if (data.appointmentDate !== undefined) updateData.appointment_date = data.appointmentDate;
-      if (data.appointmentStartTime !== undefined) updateData.appointment_start_time = data.appointmentStartTime;
-      if (data.appointmentEndTime !== undefined) updateData.appointment_end_time = data.appointmentEndTime;
-      if (data.appointmentLocation !== undefined) updateData.appointment_location = data.appointmentLocation;
+      if (data.appointmentDate !== undefined)
+        updateData.appointment_date = data.appointmentDate;
+      if (data.appointmentStartTime !== undefined)
+        updateData.appointment_start_time = data.appointmentStartTime;
+      if (data.appointmentEndTime !== undefined)
+        updateData.appointment_end_time = data.appointmentEndTime;
+      if (data.appointmentLocation !== undefined)
+        updateData.appointment_location = data.appointmentLocation;
       if (data.appointmentStatus !== undefined) {
         updateData.appointment_status = data.appointmentStatus;
         if (data.appointmentStatus === 'done') {
           updateData.appointment_completed_at = new Date().toISOString();
         }
       }
-      if (data.salesMeetingStages !== undefined) updateData.sales_parts_completed = data.salesMeetingStages;
+      if (data.salesMeetingStages !== undefined)
+        updateData.sales_parts_completed = data.salesMeetingStages;
       if (data.products !== undefined) updateData.products_sold = data.products;
       if (data.salesOutcome !== undefined) {
         updateData.sales_outcome = data.salesOutcome;
@@ -149,7 +165,8 @@ class ProspectService {
           updateData.sales_completed_at = new Date().toISOString();
         }
       }
-      if (data.unsuccessfulReason !== undefined) updateData.unsuccessful_reason = data.unsuccessfulReason;
+      if (data.unsuccessfulReason !== undefined)
+        updateData.unsuccessful_reason = data.unsuccessfulReason;
 
       updateData.updated_at = new Date().toISOString();
 
@@ -168,7 +185,6 @@ class ProspectService {
       if (error instanceof ProspectNotFoundError) throw error;
       return handleServiceError('ProspectService.updateProspect', error);
     }
-    });
   }
 }
 

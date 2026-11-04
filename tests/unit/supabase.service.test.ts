@@ -29,25 +29,6 @@ jest.mock('@supabase/supabase-js', () => ({
 // LoggingService mock
 // ---------------------------------------------------------------------------
 
-const mockLoggingError = jest.fn();
-const mockLoggingInfo = jest.fn();
-
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: mockLoggingInfo,
-    error: mockLoggingError,
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: mockLoggingInfo,
-    error: mockLoggingError,
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
 /******************************************************************************
   Import the module under test AFTER mocks are registered
 ******************************************************************************/
@@ -155,18 +136,13 @@ describe('SupabaseService.select()', () => {
     expect(selectResult.eq).toHaveBeenCalledWith('id', '1');
   });
 
-  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+  it('does not throw when response.error is set', async () => {
     const supabaseError = { message: 'row not found', code: '404' };
     const fakeResponse = { data: null, error: supabaseError };
     buildQueryChain(fakeResponse);
 
     await expect(supabaseService.select('users')).resolves.toBe(fakeResponse);
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      'SupabaseService.select query error',
-      supabaseError,
-      expect.objectContaining({ table: 'users' }),
-    );
   });
 
   it('wraps an unexpected thrown error as SupabaseServiceError', async () => {
@@ -212,18 +188,13 @@ describe('SupabaseService.insert()', () => {
     expect(result).toBe(fakeResponse);
   });
 
-  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+  it('does not throw when response.error is set', async () => {
     const supabaseError = { message: 'duplicate key', code: '23505' };
     const fakeResponse = { data: null, error: supabaseError };
     buildQueryChain(fakeResponse);
 
     await expect(supabaseService.insert('users', { id: 'uuid-2', email: 'bob@example.com', name: 'Bob', role: 'agent' })).resolves.toBe(fakeResponse);
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      'SupabaseService.insert query error',
-      supabaseError,
-      expect.objectContaining({ table: 'users' }),
-    );
   });
 
   it('wraps an unexpected thrown error as SupabaseServiceError', async () => {
@@ -283,7 +254,7 @@ describe('SupabaseService.update()', () => {
     expect(result).toBe(fakeResponse);
   });
 
-  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+  it('does not throw when response.error is set', async () => {
     const supabaseError = { message: 'update conflict', code: '409' };
     const fakeResponse = { data: null, error: supabaseError };
     buildQueryChain(fakeResponse);
@@ -292,11 +263,6 @@ describe('SupabaseService.update()', () => {
       supabaseService.update('users', { name: 'Carol' }, { id: '1' }),
     ).resolves.toBe(fakeResponse);
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      'SupabaseService.update query error',
-      supabaseError,
-      expect.objectContaining({ table: 'users' }),
-    );
   });
 
   it('wraps an unexpected thrown error as SupabaseServiceError', async () => {
@@ -355,18 +321,13 @@ describe('SupabaseService.delete()', () => {
     expect(result).toBe(fakeResponse);
   });
 
-  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+  it('does not throw when response.error is set', async () => {
     const supabaseError = { message: 'foreign key violation', code: '23503' };
     const fakeResponse = { data: null, error: supabaseError };
     buildQueryChain(fakeResponse);
 
     await expect(supabaseService.delete('users', { id: '1' })).resolves.toBe(fakeResponse);
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      'SupabaseService.delete query error',
-      supabaseError,
-      expect.objectContaining({ table: 'users' }),
-    );
   });
 
   it('wraps an unexpected thrown error as SupabaseServiceError', async () => {
@@ -426,7 +387,7 @@ describe('SupabaseService.adminUpsert', () => {
     ).rejects.toThrow('Admin upsert operation failed in SupabaseService');
   });
 
-  it('logs the error via loggingService when response.error is set, but does NOT throw', async () => {
+  it('does not throw when response.error is set', async () => {
     const supabaseError = { message: 'upsert conflict', code: '23505' };
     const fakeResponse = { data: null, error: supabaseError };
     const upsertMock = jest.fn().mockReturnValue({
@@ -440,11 +401,6 @@ describe('SupabaseService.adminUpsert', () => {
       supabaseService.adminUpsert('tenants', { id: '1', slug: 's', name: 'n' } as never, 'id'),
     ).resolves.toBe(fakeResponse);
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      'SupabaseService.adminUpsert query error',
-      supabaseError,
-      expect.objectContaining({ table: 'tenants' }),
-    );
   });
 
   it('preserves the original error as cause on the SupabaseServiceError', async () => {

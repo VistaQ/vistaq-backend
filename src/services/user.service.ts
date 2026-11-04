@@ -3,7 +3,6 @@ import {
   UserNotFoundError,
 } from '@src/models/errors/auth.errors';
 import userRepository from '@src/repositories/user.repository';
-import loggingService from '@src/services/logging.service';
 import type { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -116,19 +115,10 @@ class UserService {
           );
           return updatedUser;
         } catch (dbError) {
-          loggingService.error(
-            'UserService.updateUser — DB update failed, rolling back Auth email',
-            dbError,
-            { userId: params.userId },
-          );
           try {
             await userRepository.updateAuthUserEmail(params.userId, oldEmail);
-          } catch (rollbackError) {
-            loggingService.error(
-              'UserService.updateUser — Auth email rollback failed',
-              rollbackError,
-              { userId: params.userId },
-            );
+          } catch {
+            // Best-effort rollback; the original error is rethrown
           }
           throw dbError;
         }
@@ -161,12 +151,8 @@ class UserService {
 
       try {
         await userRepository.deleteAuthUser(userId);
-      } catch (authError) {
-        loggingService.error(
-          'UserService.deleteUser — Auth user deletion failed, DB row already removed',
-          authError,
-          { userId },
-        );
+      } catch {
+        // The user row is already deleted; an orphaned auth user is tolerated
       }
     } catch (error) {
       if (error instanceof UserNotFoundError) {
@@ -202,7 +188,6 @@ class UserService {
 
   async setUserStatus(userId: string, status: 'active' | 'inactive', token: string): Promise<IUser> {
     try {
-      loggingService.info('UserService.setUserStatus called', { userId, status });
 
       const existingUser = await userRepository.findById(userId, token);
       if (!existingUser) {
@@ -210,7 +195,6 @@ class UserService {
       }
 
       if (existingUser.status === status) {
-        loggingService.info('UserService.setUserStatus — status unchanged, skipping update', { userId, status });
         return existingUser;
       }
 
@@ -260,19 +244,10 @@ class UserService {
           params.token,
         );
       } catch (insertError) {
-        loggingService.error(
-          'UserService.createUser — user insert failed, rolling back auth user',
-          insertError,
-          { authUserId: authUser.id },
-        );
         try {
           await userRepository.deleteAuthUser(authUser.id);
-        } catch (rollbackError) {
-          loggingService.error(
-            'UserService.createUser — rollback failed, auth user may be orphaned',
-            rollbackError,
-            { authUserId: authUser.id },
-          );
+        } catch {
+          // Best-effort rollback; the original error is rethrown
         }
         throw insertError;
       }
@@ -286,28 +261,15 @@ class UserService {
             params.token,
           );
         } catch (updateError) {
-          loggingService.error(
-            'UserService.createUser — agent code update failed, rolling back users row and auth user',
-            updateError,
-            { authUserId: authUser.id },
-          );
           try {
             await userRepository.deleteUser(authUser.id);
-          } catch (rollbackUserError) {
-            loggingService.error(
-              'UserService.createUser — rollback of users row failed, user row may be orphaned',
-              rollbackUserError,
-              { authUserId: authUser.id },
-            );
+          } catch {
+            // Best-effort rollback; the original error is rethrown
           }
           try {
             await userRepository.deleteAuthUser(authUser.id);
-          } catch (rollbackAuthError) {
-            loggingService.error(
-              'UserService.createUser — rollback of auth user failed, auth user may be orphaned',
-              rollbackAuthError,
-              { authUserId: authUser.id },
-            );
+          } catch {
+            // Best-effort rollback; the original error is rethrown
           }
           throw updateError;
         }

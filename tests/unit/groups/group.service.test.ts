@@ -6,25 +6,6 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-const mockLoggingInfo = jest.fn();
-const mockLoggingError = jest.fn();
-
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: mockLoggingInfo,
-    error: mockLoggingError,
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: mockLoggingInfo,
-    error: mockLoggingError,
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation
 // ---------------------------------------------------------------------------
@@ -333,11 +314,6 @@ describe('GroupService.createGroup', () => {
       groupService.createGroup({ ...BASE_PARAMS, leaderId: LEADER_ID }),
     ).rejects.toBeInstanceOf(ServiceError);
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      expect.stringContaining('leader role update failed'),
-      updateError,
-      expect.objectContaining({ leaderId: LEADER_ID }),
-    );
   });
 
   it('rollback: when insertGroupTrainers fails, rolls back leader role to agent', async () => {
@@ -363,11 +339,6 @@ describe('GroupService.createGroup', () => {
       data: { role: 'agent' },
     });
 
-    expect(mockLoggingError).toHaveBeenCalledWith(
-      expect.stringContaining('group trainers insert failed'),
-      trainerError,
-      expect.objectContaining({ trainerIds: [TRAINER_ID] }),
-    );
   });
 });
 
@@ -825,11 +796,6 @@ describe('GroupService.updateGroup', () => {
         }),
       ).rejects.toThrow();
 
-      expect(mockLoggingError).toHaveBeenCalledWith(
-        expect.stringContaining('member rollback failed'),
-        rollbackError,
-        expect.objectContaining({ groupId: GROUP_ID }),
-      );
     });
   });
 

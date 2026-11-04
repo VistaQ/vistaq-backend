@@ -1,6 +1,4 @@
-import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
-import type { UserStatus } from '@src/models/auth/auth.interface';
 import type { IAgentCode, ITenant, IUser } from '@src/types/auth.types';
 import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
@@ -150,8 +148,6 @@ class AuthRepository {
       const response = await supabaseService.signInWithPassword(email, password);
 
       if (response.error || !response.data.session) {
-        // Credential failure — not an unexpected error
-        loggingService.info('AuthRepository.signInWithPassword — invalid credentials', { email });
         return null;
       }
 
@@ -291,29 +287,6 @@ class AuthRepository {
       await supabaseService.adminUpdateAuthUserPassword(userId, password);
     } catch (error) {
       return handleRepositoryError('AuthRepository.updateAuthUserPassword', error);
-    }
-  }
-
-  async findUserStatusById(userId: string): Promise<UserStatus | null> {
-    try {
-      const response = await supabaseService.adminSelect(
-        'users',
-        'status',
-        { id: userId } as Partial<UsersRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as Pick<UsersRow, 'status'>;
-      return row.status as UserStatus;
-    } catch (error) {
-      return handleRepositoryError('AuthRepository.findUserStatusById', error);
     }
   }
 }

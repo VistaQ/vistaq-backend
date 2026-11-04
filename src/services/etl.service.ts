@@ -1,16 +1,11 @@
 import { EtlServiceError } from '@src/models/errors/reportJob.errors';
 import type { IEtlKickoffParams } from '@src/types/reportJob.types';
 import EnvVars from '@src/utils/env';
-import loggingService from '@src/services/logging.service';
 
 class EtlService {
   async kickoff(params: IEtlKickoffParams): Promise<void> {
     const url = `${EnvVars.EtlServiceUrl}/process`;
     try {
-      loggingService.info('EtlService.kickoff called', {
-        reference: params.reference,
-        url,
-      });
 
       const response = await fetch(url, {
         method: 'POST',
@@ -32,9 +27,6 @@ class EtlService {
         );
       }
     } catch (error) {
-      loggingService.error('EtlService.kickoff failed', error, {
-        reference: params.reference,
-      });
       if (error instanceof EtlServiceError) throw error;
       throw new EtlServiceError(
         `ETL service request failed: ${error instanceof Error ? error.message : String(error)}`,

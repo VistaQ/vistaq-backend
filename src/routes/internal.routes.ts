@@ -10,8 +10,8 @@ import { internalKey } from '@src/middleware/internalKey';
                             Internal Routes (/api/internal/*)
 
   Service-to-service endpoints authenticated by ETL_API_KEY rather than
-  user JWTs. Designed to be invoked by external schedulers (Vercel Cron,
-  GitHub Actions, etc.) — there is no human user behind these calls.
+  user JWTs. Designed to be invoked by external callers (schedulers, CI) —
+  there is no human user behind these calls.
 ******************************************************************************/
 
 const router = express.Router();

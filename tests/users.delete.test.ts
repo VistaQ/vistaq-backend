@@ -17,31 +17,6 @@ jest.mock('@src/utils/env', () => ({
   NodeEnvs: { DEV: 'development', TEST: 'test', PRODUCTION: 'production' },
 }));
 
-// Mock loggingService to suppress all output during tests
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  asyncLocalStorage: {
-    getStore: jest.fn().mockReturnValue(null),
-  },
-}));
-
-jest.mock('@sentry/node', () => ({
-  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-}));
-
-jest.mock('@src/utils/sentry.metrics', () => ({
-  emitErrorCount: jest.fn(),
-}));
-
 // Mock userService — used by UserController
 jest.mock('@src/services/user.service', () => ({
   __esModule: true,
@@ -77,7 +52,6 @@ jest.mock('@src/repositories/user.repository', () => ({
 
 import userService from '@src/services/user.service';
 import userRepository from '@src/repositories/user.repository';
-import loggingService from '@src/services/logging.service';
 import userController from '@src/controllers/user.controller';
 import { ControllerError, RepositoryError, ServiceError } from '@src/models/errors/layer.errors';
 import { RouteError } from '@src/models/errors/route.error';
@@ -258,11 +232,6 @@ describe('UserService.deleteUser', () => {
     expect(userRepository.findById).toHaveBeenCalledTimes(1);
     expect(userRepository.deleteUser).toHaveBeenCalledTimes(1);
     expect(userRepository.deleteAuthUser).toHaveBeenCalledTimes(1);
-    expect(loggingService.error).toHaveBeenCalledWith(
-      'UserService.deleteUser — Auth user deletion failed, DB row already removed',
-      expect.any(Error),
-      { userId: 'user-001' },
-    );
   });
 
   // 4. DB delete failure — deleteUser throws, goes to handleServiceError

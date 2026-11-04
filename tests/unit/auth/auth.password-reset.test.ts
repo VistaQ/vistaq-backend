@@ -9,43 +9,11 @@ process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  asyncLocalStorage: {
-    getStore: jest.fn().mockReturnValue(null),
-  },
-}));
-
 // ---------------------------------------------------------------------------
-// Sentry mock
 // ---------------------------------------------------------------------------
 
-jest.mock('@sentry/node', () => ({
-  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-}));
-
 // ---------------------------------------------------------------------------
-// sentry.metrics mock
 // ---------------------------------------------------------------------------
-
-jest.mock('@src/utils/sentry.metrics', () => ({
-  emitErrorCount: jest.fn(),
-}));
 
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation

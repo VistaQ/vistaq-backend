@@ -1,20 +1,13 @@
-import * as Sentry from '@sentry/node';
-
 import {
   InvalidEtlResultError,
   NonConsecutiveUploadError,
 } from '@src/models/errors/salesReport.errors';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
-import type {
-  YtdRollupRow,
-} from '@src/repositories/salesReportYtd.repository';
+import type { YtdRollupRow } from '@src/repositories/salesReportYtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import uploadBatchRepository from '@src/repositories/uploadBatch.repository';
 import userRepository from '@src/repositories/user.repository';
-import loggingService from '@src/services/logging.service';
-import type {
-  IAgentResolution,
-} from '@src/services/salesPoints.service';
+import type { IAgentResolution } from '@src/services/salesPoints.service';
 import salesPointsService from '@src/services/salesPoints.service';
 import type { Scope } from '@src/services/scope.service';
 import type {
@@ -25,10 +18,9 @@ import type {
   IUploadResult,
   SalesReportMtdIns,
   SalesReportYtdIns,
-  UploadStatus} from '@src/types/salesReport.types';
-import {
-  MONTH_MAP
+  UploadStatus,
 } from '@src/types/salesReport.types';
+import { MONTH_MAP } from '@src/types/salesReport.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 interface IUploadParams {
@@ -209,20 +201,9 @@ class SalesReportService {
           },
           agentResolutions,
         );
-      } catch (pointsError) {
-        // Already logged by salesPointsService; swallow defensively in case a
-        // future change makes the inner method throw again. Surface to Sentry
-        // here too — mirrors the inner swallow's instrumentation so a
-        // regression at either layer is queryable as an issue.
-        Sentry.captureException(pointsError, {
-          tags: { critical: 'sales_points_awarding' },
-          extra: { batchId: batch.id },
-        });
-        loggingService.error(
-          'SalesReportService.uploadReport — points awarding step failed (swallowed)',
-          pointsError,
-          { batchId: batch.id },
-        );
+      } catch {
+        // Swallowed defensively in case the inner method starts throwing; the
+        // upload has already succeeded.
       }
 
       return {

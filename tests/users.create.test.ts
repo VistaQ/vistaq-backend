@@ -17,31 +17,6 @@ jest.mock('@src/utils/env', () => ({
   NodeEnvs: { DEV: 'development', TEST: 'test', PRODUCTION: 'production' },
 }));
 
-// Mock loggingService to suppress all output during tests
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  asyncLocalStorage: {
-    getStore: jest.fn().mockReturnValue(null),
-  },
-}));
-
-jest.mock('@sentry/node', () => ({
-  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-}));
-
-jest.mock('@src/utils/sentry.metrics', () => ({
-  emitErrorCount: jest.fn(),
-}));
-
 // Mock userService — used by UserController
 jest.mock('@src/services/user.service', () => ({
   __esModule: true,

@@ -6,8 +6,7 @@ import taxonomyRepository from '@src/repositories/taxonomy.repository';
 import type { Database } from '@src/types/database.types';
 import type { ITaxonomy } from '@src/types/taxonomy.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import loggingService from '@src/services/logging.service';
-import { getRootCause } from '@src/utils/sentry.utils';
+import { getRootCause } from '@src/utils/errors';
 
 type TaxonomiesUpdate = Database['public']['Tables']['taxonomies']['Update'];
 
@@ -61,8 +60,7 @@ class TaxonomyService {
       );
 
       return taxonomies.sort(
-        (a, b) =>
-          a.sort_order - b.sort_order || a.value.localeCompare(b.value),
+        (a, b) => a.sort_order - b.sort_order || a.value.localeCompare(b.value),
       );
     } catch (error) {
       return handleServiceError('TaxonomyService.getTaxonomies', error);
@@ -71,12 +69,6 @@ class TaxonomyService {
 
   async createTaxonomy(params: ICreateTaxonomyParams): Promise<ITaxonomy> {
     try {
-      loggingService.info('TaxonomyService.createTaxonomy called', {
-        tenantId: params.tenantId,
-        type: params.type,
-        value: params.value,
-      });
-
       return await taxonomyRepository.insert(params.token, {
         tenant_id: params.tenantId,
         type: params.type,
@@ -97,11 +89,6 @@ class TaxonomyService {
 
   async updateTaxonomy(params: IUpdateTaxonomyParams): Promise<ITaxonomy> {
     try {
-      loggingService.info('TaxonomyService.updateTaxonomy called', {
-        id: params.id,
-        tenantId: params.tenantId,
-      });
-
       const values: TaxonomiesUpdate = {};
       if (params.value !== undefined) values.value = params.value;
       if (params.sortOrder !== undefined) values.sort_order = params.sortOrder;
@@ -125,11 +112,6 @@ class TaxonomyService {
 
   async deleteTaxonomy(params: IDeleteTaxonomyParams): Promise<void> {
     try {
-      loggingService.info('TaxonomyService.deleteTaxonomy called', {
-        id: params.id,
-        tenantId: params.tenantId,
-      });
-
       await taxonomyRepository.remove(params.token, {
         id: params.id,
         tenant_id: params.tenantId,

@@ -1,197 +1,163 @@
-// Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
-process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
+import type { NextFunction, Request, Response } from 'express';
 
-// ---------------------------------------------------------------------------
-// LoggingService mock — must be registered before any imports that trigger side effects
-// ---------------------------------------------------------------------------
+const mockVerify = jest.fn();
+const mockGetUserContext = jest.fn();
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
+jest.mock('aws-jwt-verify', () => ({
+  CognitoJwtVerifier: { create: jest.fn(() => ({ verify: mockVerify })) },
 }));
 
-// ---------------------------------------------------------------------------
-// jsonwebtoken mock — each test configures decode behaviour individually
-// ---------------------------------------------------------------------------
-
-jest.mock('jsonwebtoken');
-
-// ---------------------------------------------------------------------------
-// supabaseService mock — each test configures verifyToken behaviour individually
-// ---------------------------------------------------------------------------
-
-jest.mock('@src/services/supabase.service', () => ({
+jest.mock('@src/utils/env', () => ({
   __esModule: true,
-  default: { verifyToken: jest.fn() },
+  default: { CognitoUserPoolId: 'pool', CognitoClientId: 'client' },
 }));
-
-// ---------------------------------------------------------------------------
-// authService mock — each test configures getUserStatus behaviour individually
-// ---------------------------------------------------------------------------
 
 jest.mock('@src/services/auth.service', () => ({
   __esModule: true,
-  default: { getUserStatus: jest.fn() },
+  default: { getUserContext: mockGetUserContext },
 }));
 
-// ---------------------------------------------------------------------------
-// Sentry mock — prevent real Sentry initialisation
-// ---------------------------------------------------------------------------
-
-jest.mock('@sentry/node', () => ({
-  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-}));
-
-import type { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-
-import supabaseService from '@src/services/supabase.service';
-import authService from '@src/services/auth.service';
 import { authenticate } from '@src/middleware/auth';
 import { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
-/******************************************************************************
-  Helpers
-******************************************************************************/
+const activeUser = {
+  id: 'sub-1',
+  tenant_id: 'tenant-1',
+  role: 'trainer',
+  group_id: null,
+  status: 'active',
+};
 
-/** Build a decoded JWT payload with all required custom claims */
-function validDecodedToken(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    user_id: 'user-abc-123',
-    tenant_id: 'tenant-xyz-456',
-    app_role: 'agent',
-    ...overrides,
-  };
-}
+const gatewayRequest = (claims: Record<string, unknown>): Request =>
+  ({
+    headers: {},
+    apiGateway: {
+      event: { requestContext: { authorizer: { jwt: { claims } } } },
+    },
+  }) as unknown as Request;
 
-function buildReq(authHeader?: string): Request {
-  return {
-    headers: authHeader !== undefined ? { authorization: authHeader } : {},
-  } as unknown as Request;
-}
+const localRequest = (authorization?: string): Request =>
+  ({ headers: authorization ? { authorization } : {} }) as unknown as Request;
 
-function buildRes(): Response {
-  return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn(),
-  } as unknown as Response;
-}
+const run = async (req: Request): Promise<jest.Mock> => {
+  const next = jest.fn() as jest.Mock & NextFunction;
+  await authenticate(req, {} as Response, next);
+  return next;
+};
 
-function buildNext(): jest.Mock {
-  return jest.fn() as jest.Mock;
-}
-
-/** Assert next was called once with a RouteError(401, 'Unauthorized') */
-function expectUnauthorized(next: jest.Mock): void {
+const rejectedWith = (next: jest.Mock): RouteError => {
   expect(next).toHaveBeenCalledTimes(1);
-  const arg: unknown = next.mock.calls[0][0];
-  expect(arg).toBeInstanceOf(RouteError);
-  expect((arg as RouteError).status).toBe(HttpStatusCodes.UNAUTHORIZED);
-  expect((arg as RouteError).message).toBe('Unauthorized');
-}
+  const error = next.mock.calls[0][0] as RouteError;
+  expect(error).toBeInstanceOf(RouteError);
+  return error;
+};
 
-/** Set up mocks for a token that passes Supabase verification and JWT decode */
-function setupValidTokenMocks(userId = 'user-abc-123'): void {
-  (supabaseService.verifyToken as jest.Mock).mockResolvedValue({
-    data: { user: { id: userId } },
-    error: null,
+describe('authenticate middleware', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe('behind the gateway', () => {
+    it('loads the user by subject and sets req.user from the record', async () => {
+      mockGetUserContext.mockResolvedValue(activeUser);
+      const req = gatewayRequest({ sub: 'sub-1' });
+
+      const next = await run(req);
+
+      expect(mockGetUserContext).toHaveBeenCalledWith('sub-1');
+      expect(next).toHaveBeenCalledWith();
+      expect(req.user).toEqual({
+        id: 'sub-1',
+        tenant_id: 'tenant-1',
+        role: 'trainer',
+        group_id: null,
+      });
+      expect(mockVerify).not.toHaveBeenCalled();
+    });
+
+    it('uses the stored role, not a role carried in the token', async () => {
+      mockGetUserContext.mockResolvedValue({ ...activeUser, role: 'agent' });
+      const req = gatewayRequest({ sub: 'sub-1', 'cognito:groups': ['admin'] });
+
+      await run(req);
+
+      expect(req.user?.role).toBe('agent');
+    });
+
+    it('rejects with 401 when the claims have no subject', async () => {
+      const next = await run(gatewayRequest({}));
+
+      expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+    });
+
+    it('rejects with 401 when the subject has no user record', async () => {
+      mockGetUserContext.mockResolvedValue(null);
+
+      const next = await run(gatewayRequest({ sub: 'ghost' }));
+
+      expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+    });
+
+    it('rejects an inactive user with 403 even though the token is valid', async () => {
+      mockGetUserContext.mockResolvedValue({
+        ...activeUser,
+        status: 'inactive',
+      });
+
+      const next = await run(gatewayRequest({ sub: 'sub-1' }));
+
+      const error = rejectedWith(next);
+      expect(error.status).toBe(HttpStatusCodes.FORBIDDEN);
+      expect(error.message).toBe('Account is inactive');
+    });
+
+    it.each([['role'], ['tenant_id']])(
+      'rejects with 401 when the user record has no %s',
+      async (field) => {
+        mockGetUserContext.mockResolvedValue({ ...activeUser, [field]: null });
+
+        const next = await run(gatewayRequest({ sub: 'sub-1' }));
+
+        expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+      },
+    );
+
+    it('rejects with 401 when the user lookup fails', async () => {
+      mockGetUserContext.mockRejectedValue(new Error('db down'));
+
+      const next = await run(gatewayRequest({ sub: 'sub-1' }));
+
+      expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+    });
   });
-  (jwt.decode as jest.Mock).mockReturnValue(validDecodedToken({ user_id: userId }));
-}
 
-/******************************************************************************
-  Tests — authenticate middleware (status check)
-******************************************************************************/
+  describe('without the gateway (local development)', () => {
+    it('verifies the bearer token and uses its subject', async () => {
+      mockVerify.mockResolvedValue({ sub: 'sub-1' });
+      mockGetUserContext.mockResolvedValue(activeUser);
+      const req = localRequest('Bearer good-token');
 
-describe('authenticate middleware — user status check', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+      const next = await run(req);
 
-  // 1. User status is 'inactive' → next called with RouteError(401, 'Unauthorized')
-  it('calls next with RouteError(UNAUTHORIZED) when user status is inactive', async () => {
-    setupValidTokenMocks();
-    (authService.getUserStatus as jest.Mock).mockResolvedValue('inactive');
+      expect(mockVerify).toHaveBeenCalledWith('good-token');
+      expect(mockGetUserContext).toHaveBeenCalledWith('sub-1');
+      expect(next).toHaveBeenCalledWith();
+      expect(req.user?.id).toBe('sub-1');
+    });
 
-    const req = buildReq('Bearer valid.token.here');
-    const res = buildRes();
-    const next = buildNext();
+    it('rejects with 401 when there is no Authorization header', async () => {
+      const next = await run(localRequest());
 
-    await authenticate(req, res, next as NextFunction);
+      expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+      expect(mockVerify).not.toHaveBeenCalled();
+    });
 
-    expectUnauthorized(next);
-    expect(res.status).not.toHaveBeenCalled();
-  });
+    it('rejects with 401 when the token fails verification', async () => {
+      mockVerify.mockRejectedValue(new Error('invalid signature'));
 
-  // 2. User not found — getUserStatus returns null → next called with RouteError(401, 'Unauthorized')
-  it('calls next with RouteError(UNAUTHORIZED) when getUserStatus returns null (user not found)', async () => {
-    setupValidTokenMocks();
-    (authService.getUserStatus as jest.Mock).mockResolvedValue(null);
+      const next = await run(localRequest('Bearer forged'));
 
-    const req = buildReq('Bearer valid.token.here');
-    const res = buildRes();
-    const next = buildNext();
-
-    await authenticate(req, res, next as NextFunction);
-
-    expectUnauthorized(next);
-    expect(res.status).not.toHaveBeenCalled();
-  });
-
-  // 3. User status is 'active' → next() called with no args, req.user populated
-  it('calls next() with no arguments and populates req.user when user status is active', async () => {
-    setupValidTokenMocks('user-abc-123');
-    (authService.getUserStatus as jest.Mock).mockResolvedValue('active');
-
-    const req = buildReq('Bearer valid.token.here');
-    const res = buildRes();
-    const next = buildNext();
-
-    await authenticate(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(next).toHaveBeenCalledWith(/* no args */);
-
-    const typedReq = req as Request & { user: { id: string; tenant_id: string; role: string } };
-    expect(typedReq.user).toEqual(expect.objectContaining({
-      id: 'user-abc-123',
-      tenant_id: 'tenant-xyz-456',
-      role: 'agent',
-    }));
-
-    expect(res.status).not.toHaveBeenCalled();
-  });
-
-  // 4. getUserStatus throws unexpectedly → middleware catches and calls next with RouteError(401)
-  it('calls next with RouteError(UNAUTHORIZED) when getUserStatus throws an unexpected error', async () => {
-    setupValidTokenMocks();
-    (authService.getUserStatus as jest.Mock).mockRejectedValue(new Error('DB connection failed'));
-
-    const req = buildReq('Bearer valid.token.here');
-    const res = buildRes();
-    const next = buildNext();
-
-    await authenticate(req, res, next as NextFunction);
-
-    expectUnauthorized(next);
-    expect(res.status).not.toHaveBeenCalled();
+      expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+      expect(mockGetUserContext).not.toHaveBeenCalled();
+    });
   });
 });

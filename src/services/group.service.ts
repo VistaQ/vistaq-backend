@@ -1,4 +1,7 @@
-import { TenantNotFoundError, UserNotFoundError } from '@src/models/errors/auth.errors';
+import {
+  TenantNotFoundError,
+  UserNotFoundError,
+} from '@src/models/errors/auth.errors';
 import {
   GroupNotFoundError,
   InvalidLeaderError,
@@ -11,7 +14,6 @@ import {
 import authRepository from '@src/repositories/auth.repository';
 import groupRepository from '@src/repositories/group.repository';
 import userRepository from '@src/repositories/user.repository';
-import loggingService from '@src/services/logging.service';
 import userService from '@src/services/user.service';
 import type { IGroup } from '@src/types/auth.types';
 import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
@@ -22,7 +24,7 @@ import type {
 } from '@src/types/group-detail-stats.types';
 import type { IGroupStats } from '@src/types/group-stats.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { withServiceSpan } from '@src/utils/sentry.metrics';
+import { periodStartsUtc } from '@src/utils/period';
 
 type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
 
@@ -66,13 +68,7 @@ class GroupService {
         throw new GroupNotFoundError();
       }
 
-      const now = new Date();
-      const ytdStart = new Date(now.getFullYear(), 0, 1).toISOString();
-      const mtdStart = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        1,
-      ).toISOString();
+      const { ytdStart, mtdStart } = periodStartsUtc();
 
       const [ytdRes, mtdRes, agentsCount, ytdAgentsRes, mtdAgentsRes] =
         await Promise.all([
@@ -192,7 +188,9 @@ class GroupService {
     }
   }
 
-  async getActiveGroupsByTenantSlug(tenantSlug: string): Promise<Pick<IGroup, 'id' | 'name'>[]> {
+  async getActiveGroupsByTenantSlug(
+    tenantSlug: string,
+  ): Promise<Pick<IGroup, 'id' | 'name'>[]> {
     try {
       const tenant = await authRepository.findTenantBySlug(tenantSlug);
       if (!tenant) {
@@ -205,7 +203,10 @@ class GroupService {
       if (error instanceof TenantNotFoundError) {
         throw error;
       }
-      return handleServiceError('GroupService.getActiveGroupsByTenantSlug', error);
+      return handleServiceError(
+        'GroupService.getActiveGroupsByTenantSlug',
+        error,
+      );
     }
   }
 
@@ -248,7 +249,6 @@ class GroupService {
   }
 
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
-    return withServiceSpan('GroupService', 'createGroup', { tenant_id: params.tenantId }, async () => {
     try {
       // Step 1 — Validate leader if provided
       if (params.leaderId) {
@@ -282,23 +282,12 @@ class GroupService {
 
       // Step 4 — Update leader role to group_leader (with rollback on failure)
       if (params.leaderId) {
-        try {
-          await userService.updateUser({
-            userId: params.leaderId,
-            callerRole: 'admin',
-            token: params.token,
-            data: { role: 'group_leader' },
-          });
-        } catch (updateError) {
-          loggingService.error(
-            'GroupService.createGroup — leader role update failed, rolling back group',
-            updateError,
-            { groupId: group.id, leaderId: params.leaderId },
-          );
-          // Rollback: no adminDelete exposed via service, but we can attempt best-effort
-          // Note: if rollback fails we log and rethrow the original error
-          throw updateError;
-        }
+        await userService.updateUser({
+          userId: params.leaderId,
+          callerRole: 'admin',
+          token: params.token,
+          data: { role: 'group_leader' },
+        });
       }
 
       // Step 5 — Insert group_trainers records (with rollback on failure)
@@ -313,11 +302,6 @@ class GroupService {
             params.token,
           );
         } catch (trainerError) {
-          loggingService.error(
-            'GroupService.createGroup — group trainers insert failed, rolling back leader role and group',
-            trainerError,
-            { groupId: group.id, trainerIds: params.trainerIds },
-          );
           // Rollback leader role back to agent
           if (params.leaderId) {
             try {
@@ -327,12 +311,8 @@ class GroupService {
                 token: params.token,
                 data: { role: 'agent' },
               });
-            } catch (rollbackLeaderError) {
-              loggingService.error(
-                'GroupService.createGroup — leader role rollback failed',
-                rollbackLeaderError,
-                { leaderId: params.leaderId },
-              );
+            } catch {
+              // Best-effort rollback; the original error is rethrown
             }
           }
           throw trainerError;
@@ -351,11 +331,9 @@ class GroupService {
       }
       return handleServiceError('GroupService.createGroup', error);
     }
-    });
   }
 
   async updateGroup(params: IUpdateGroupParams): Promise<IGroup> {
-    return withServiceSpan('GroupService', 'updateGroup', { group_id: params.groupId }, async () => {
     try {
       const { groupId, token, data } = params;
 
@@ -414,11 +392,6 @@ class GroupService {
         try {
           await groupRepository.insertGroupTrainers(trainerInserts, token);
         } catch (insertError) {
-          loggingService.error(
-            'GroupService.updateGroup — trainer insert failed after delete, attempting rollback',
-            insertError,
-            { groupId, trainerIds: uniqueTrainerIds },
-          );
           if (existingTrainers.length > 0) {
             try {
               await groupRepository.insertGroupTrainers(
@@ -428,12 +401,8 @@ class GroupService {
                 })),
                 token,
               );
-            } catch (rollbackError) {
-              loggingService.error(
-                'GroupService.updateGroup — trainer rollback failed',
-                rollbackError,
-                { groupId },
-              );
+            } catch {
+              // Best-effort rollback; the original error is rethrown
             }
           }
           throw insertError;
@@ -444,7 +413,10 @@ class GroupService {
       if (data.member_ids !== undefined) {
         // Validate new members exist (skip if empty array)
         if (data.member_ids.length > 0) {
-          const foundMembers = await userService.findUsersByIds(data.member_ids, token);
+          const foundMembers = await userService.findUsersByIds(
+            data.member_ids,
+            token,
+          );
           if (foundMembers.length !== data.member_ids.length) {
             throw new MissingMembersError();
           }
@@ -454,7 +426,10 @@ class GroupService {
         const effectiveLeaderId = data.leader_id ?? existingGroup.leader_id;
 
         // Fetch current members for diff and rollback
-        const currentMembers = await userRepository.findByGroupId(groupId, token);
+        const currentMembers = await userRepository.findByGroupId(
+          groupId,
+          token,
+        );
         const currentMemberIds = currentMembers.map((m) => m.id);
 
         // Unlink: currently in group AND not in new list AND not the leader
@@ -465,7 +440,9 @@ class GroupService {
 
         // Link: in new list AND not already in this group
         const currentMemberSet = new Set(currentMemberIds);
-        const toLink = data.member_ids.filter((id) => !currentMemberSet.has(id));
+        const toLink = data.member_ids.filter(
+          (id) => !currentMemberSet.has(id),
+        );
 
         try {
           if (toUnlink.length > 0) {
@@ -479,12 +456,8 @@ class GroupService {
           if (toUnlink.length > 0) {
             try {
               await userService.updateUsersGroupId(toUnlink, groupId, token);
-            } catch (rollbackError) {
-              loggingService.error(
-                'GroupService.updateGroup — member rollback failed',
-                rollbackError,
-                { groupId },
-              );
+            } catch {
+              // Best-effort rollback; the original error is rethrown
             }
           }
           throw memberError;
@@ -521,7 +494,6 @@ class GroupService {
       }
       return handleServiceError('GroupService.updateGroup', error);
     }
-    });
   }
 }
 

@@ -1,16 +1,42 @@
+import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import type { NextFunction, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
-import * as Sentry from '@sentry/node';
 
 import { RouteError } from '@src/models/errors/route.error';
 import authService from '@src/services/auth.service';
-import loggingService from '@src/services/logging.service';
-import supabaseService from '@src/services/supabase.service';
+import EnvVars from '@src/utils/env';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 /******************************************************************************
                             Auth Middleware
 ******************************************************************************/
+
+let verifier: ReturnType<typeof createVerifier> | undefined;
+
+function createVerifier() {
+  return CognitoJwtVerifier.create({
+    userPoolId: EnvVars.CognitoUserPoolId,
+    clientId: EnvVars.CognitoClientId,
+    tokenUse: 'access',
+  });
+}
+
+// Behind the gateway the authorizer has already verified the token; anywhere
+// else (local development) it is verified here with the same pool and client.
+async function subjectOf(req: Request): Promise<string | null> {
+  const claims = req.apiGateway?.event.requestContext.authorizer?.jwt?.claims;
+  if (claims) {
+    return typeof claims.sub === 'string' ? claims.sub : null;
+  }
+
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  verifier ??= createVerifier();
+  const payload = await verifier.verify(authHeader.slice(7));
+  return payload.sub;
+}
 
 export async function authenticate(
   req: Request,
@@ -18,78 +44,37 @@ export async function authenticate(
   next: NextFunction,
 ): Promise<void> {
   try {
-    loggingService.debug('Authenticating request');
-
-    const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const subject = await subjectOf(req);
+    if (!subject) {
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
     }
 
-    const token = authHeader.slice(7);
-
-    // Verify the token via Supabase — handles ES256/HS256 algorithm automatically
-    const { data, error } = await supabaseService.verifyToken(token);
-    if (error || !data.user) {
-      loggingService.error(
-        'Token verification failed',
-        error ?? new Error('No user returned'),
-      );
+    const user = await authService.getUserContext(subject);
+    if (!user) {
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
     }
 
-    // Decode (no re-verification needed) to extract custom claims
-    const decoded = jwt.decode(token) as Record<string, unknown> | null;
-    if (!decoded) {
+    if (user.status !== 'active') {
+      next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Account is inactive'));
+      return;
+    }
+
+    if (!user.role || !user.tenant_id) {
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
     }
 
-    const userId = decoded['user_id'];
-    const tenantId = decoded['tenant_id'];
-    const role = decoded['app_role']; // custom app role — not Supabase's built-in "authenticated"
-    const groupId = decoded['group_id'] ?? null;
-
-    if (
-      typeof userId !== 'string' ||
-      typeof tenantId !== 'string' ||
-      typeof role !== 'string'
-    ) {
-      loggingService.error('Token missing required custom claims', undefined, {
-        userId,
-        tenantId,
-        role,
-      });
-      next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
-      return;
-    }
-
-    if (groupId !== null && typeof groupId !== 'string') {
-      loggingService.error('Token contains invalid group_id claim', undefined, {
-        groupId,
-      });
-      next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
-      return;
-    }
-
-    const userStatus = await authService.getUserStatus(userId);
-    if (!userStatus || userStatus !== 'active') {
-      loggingService.warn('Authentication rejected — user is not active', { userId, userStatus });
-      next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
-      return;
-    }
-
-    req.user = { id: userId, tenant_id: tenantId, role, group_id: groupId };
-
-    // Set Sentry user context so every event in this request is tagged
-    Sentry.setUser({ id: userId, tenant_id: tenantId, role });
-    Sentry.setTag('tenant_id', tenantId);
+    req.user = {
+      id: user.id,
+      tenant_id: user.tenant_id,
+      role: user.role,
+      group_id: user.group_id,
+    };
 
     next();
-  } catch (error) {
-    loggingService.error('Authentication failed', error);
+  } catch {
     next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
-    return;
   }
 }

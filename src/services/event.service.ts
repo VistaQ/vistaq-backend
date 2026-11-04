@@ -9,7 +9,6 @@ import {
 import eventRepository from '@src/repositories/event.repository';
 import type { IEvent, IPublicEvent } from '@src/types/event.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             Interfaces
@@ -66,7 +65,6 @@ interface IDeleteEventParams {
 
 class EventService {
   async createEvent(params: ICreateEventParams): Promise<IEvent> {
-    return withServiceSpan('EventService', 'createEvent', { tenant_id: params.tenantId, type: params.type }, async () => {
     try {
       if (params.groupIds) {
         const foundGroupIds = await eventRepository.findGroupsByIds(
@@ -161,11 +159,9 @@ class EventService {
       }
       return handleServiceError('EventService.createEvent', error);
     }
-    });
   }
 
   async updateEvent(params: IUpdateEventParams): Promise<IEvent> {
-    return withServiceSpan('EventService', 'updateEvent', { event_id: params.eventId, tenant_id: params.tenantId }, async () => {
     try {
       const existing = await eventRepository.findById(
         params.eventId,
@@ -229,14 +225,19 @@ class EventService {
         updateData.description = params.description;
       if (params.status !== undefined) updateData.status = params.status;
       if (params.type !== undefined) updateData.type = params.type;
-      if (params.visibility !== undefined) updateData.visibility = params.visibility;
+      if (params.visibility !== undefined)
+        updateData.visibility = params.visibility;
 
-      if (params.startDate !== undefined) updateData.start_date = params.startDate;
+      if (params.startDate !== undefined)
+        updateData.start_date = params.startDate;
       if (params.endDate !== undefined) updateData.end_date = params.endDate;
 
       const effectiveStart = updateData.start_date ?? existing.start_date;
-      const effectiveEnd = updateData.end_date ?? existing.end_date ?? existing.start_date;
-      if (new Date(effectiveEnd as string) <= new Date(effectiveStart as string)) {
+      const effectiveEnd =
+        updateData.end_date ?? existing.end_date ?? existing.start_date;
+      if (
+        new Date(effectiveEnd as string) <= new Date(effectiveStart as string)
+      ) {
         throw new InvalidDateRangeError();
       }
 
@@ -296,7 +297,6 @@ class EventService {
       }
       return handleServiceError('EventService.updateEvent', error);
     }
-    });
   }
 
   async getEvents(token: string): Promise<IEvent[]> {
@@ -317,7 +317,10 @@ class EventService {
 
   async deleteEvent(params: IDeleteEventParams): Promise<void> {
     try {
-      const event = await eventRepository.findById(params.eventId, params.token);
+      const event = await eventRepository.findById(
+        params.eventId,
+        params.token,
+      );
 
       if (!event) {
         throw new EventNotFoundError();
@@ -329,7 +332,10 @@ class EventService {
 
       await eventRepository.deleteEvent(params.eventId, params.token);
     } catch (error) {
-      if (error instanceof EventNotFoundError || error instanceof ForbiddenEventAccessError) {
+      if (
+        error instanceof EventNotFoundError ||
+        error instanceof ForbiddenEventAccessError
+      ) {
         throw error;
       }
       return handleServiceError('EventService.deleteEvent', error);

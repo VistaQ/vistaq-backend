@@ -1,5 +1,4 @@
 import reportJobRepository from '@src/repositories/reportJob.repository';
-import loggingService from '@src/services/logging.service';
 import supabaseService from '@src/services/supabase.service';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -49,20 +48,12 @@ class ReportFileCleanupService {
       const cutoff = new Date(Date.now() - RETENTION_DAYS * MS_PER_DAY)
         .toISOString();
 
-      loggingService.info(
-        'ReportFileCleanupService.cleanupOldReportFiles started',
-        { cutoff, retentionDays: RETENTION_DAYS },
-      );
 
       const candidates = await reportJobRepository.findCompletedJobsOlderThan(
         cutoff,
       );
 
       if (candidates.length === 0) {
-        loggingService.info(
-          'ReportFileCleanupService.cleanupOldReportFiles — no candidates',
-          { cutoff },
-        );
         return { deletedCount: 0, failedCount: 0 };
       }
 
@@ -84,20 +75,10 @@ class ReportFileCleanupService {
           }
           await reportJobRepository.clearStoragePaths(ids);
           deletedCount += chunk.length;
-        } catch (chunkError) {
+        } catch {
           failedCount += chunk.length;
-          loggingService.error(
-            'ReportFileCleanupService.cleanupOldReportFiles — chunk failed',
-            chunkError,
-            { chunkSize: chunk.length, firstId: chunk[0]?.id },
-          );
         }
       }
-
-      loggingService.info(
-        'ReportFileCleanupService.cleanupOldReportFiles completed',
-        { deletedCount, failedCount },
-      );
 
       return { deletedCount, failedCount };
     } catch (error) {

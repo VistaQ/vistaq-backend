@@ -6,27 +6,6 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => {
-   
-  const { AsyncLocalStorage } = require('async_hooks');
-  return {
-    __esModule: true,
-    default: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    loggingService: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    asyncLocalStorage: new AsyncLocalStorage(),
-  };
-});
-
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation
 // ---------------------------------------------------------------------------

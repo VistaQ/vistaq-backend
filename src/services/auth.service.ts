@@ -4,13 +4,10 @@ import {
   TenantNotFoundError,
   UserInactiveError,
 } from '@src/models/errors/auth.errors';
-import type { UserStatus } from '@src/models/auth/auth.interface';
 import authRepository from '@src/repositories/auth.repository';
-import loggingService from '@src/services/logging.service';
-import EnvVars from '@src/utils/env';
 import type { IUser } from '@src/types/auth.types';
+import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { emitLogin, emitRegistration, withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             AuthService
@@ -55,7 +52,6 @@ interface IResetPasswordParams {
 
 class AuthService {
   async register(params: IRegisterParams): Promise<IRegisterResult> {
-    return withServiceSpan('AuthService', 'register', { tenant_slug: params.tenantSlug }, async () => {
     try {
       // Step 1 — Resolve tenant
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
@@ -92,19 +88,10 @@ class AuthService {
           group_id: params.groupId,
         });
       } catch (insertError) {
-        loggingService.error(
-          'AuthService.register — user insert failed, rolling back auth user',
-          insertError,
-          { authUserId: authUser.id },
-        );
         try {
           await authRepository.deleteAuthUser(authUser.id);
-        } catch (rollbackError) {
-          loggingService.error(
-            'AuthService.register — rollback failed, auth user may be orphaned',
-            rollbackError,
-            { authUserId: authUser.id },
-          );
+        } catch {
+          // Best-effort rollback; the original error is rethrown
         }
         throw insertError;
       }
@@ -120,16 +107,11 @@ class AuthService {
           params.password,
         );
         token = signInResult ? signInResult.token : null;
-      } catch (error) {
-        loggingService.error(
-          'AuthService.register — sign-in after registration failed',
-          error,
-          { email: params.email },
-        );
+      } catch {
+        // The user is registered; the client can sign in separately
         token = null;
       }
 
-      emitRegistration(tenant.id);
       return { user, token };
     } catch (error) {
       // Re-throw domain errors directly so the controller can handle them
@@ -141,7 +123,6 @@ class AuthService {
       }
       return handleServiceError('AuthService.register', error);
     }
-    });
   }
 
   async me(userId: string): Promise<IUser | null> {
@@ -162,7 +143,6 @@ class AuthService {
   }
 
   async login(params: ILoginParams): Promise<ILoginResult> {
-    return withServiceSpan('AuthService', 'login', { tenant_slug: params.tenantSlug }, async () => {
     try {
       // Step 1 — Resolve tenant
       const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
@@ -176,30 +156,25 @@ class AuthService {
         params.password,
       );
       if (!signInResult) {
-        emitLogin(tenant.id, false);
         throw new InvalidCredentialsError();
       }
 
       // Step 3 — Fetch user profile
       const user = await authRepository.findUserById(signInResult.userId);
       if (!user) {
-        emitLogin(tenant.id, false);
         throw new InvalidCredentialsError();
       }
 
       // Step 4 — Verify tenant membership
       if (user.tenant_id !== tenant.id) {
-        emitLogin(tenant.id, false);
         throw new InvalidCredentialsError();
       }
 
       // Step 5 — Check user is active
       if (user.status !== 'active') {
-        emitLogin(tenant.id, false);
         throw new UserInactiveError();
       }
 
-      emitLogin(tenant.id, true);
       return { user, token: signInResult.token };
     } catch (error) {
       // Re-throw domain errors directly so the controller can handle them
@@ -212,7 +187,6 @@ class AuthService {
       }
       return handleServiceError('AuthService.login', error);
     }
-    });
   }
 
   async forgotPassword(params: IForgotPasswordParams): Promise<void> {
@@ -222,7 +196,10 @@ class AuthService {
         throw new TenantNotFoundError();
       }
 
-      const user = await authRepository.findUserByEmail(params.email, tenant.id);
+      const user = await authRepository.findUserByEmail(
+        params.email,
+        tenant.id,
+      );
       if (!user) {
         // Silently return — do not reveal whether the email exists
         return;
@@ -259,19 +236,14 @@ class AuthService {
         }
       }
 
-      if (normalisedOrigin && EnvVars.AllowedOrigins.includes(normalisedOrigin)) {
+      if (
+        normalisedOrigin &&
+        EnvVars.AllowedOrigins.includes(normalisedOrigin)
+      ) {
         const url = `${normalisedOrigin}/reset-password`;
-        loggingService.info('AuthService.resolveResetPasswordUrl — using request origin', {
-          source: 'origin',
-          url,
-        });
         return url;
       }
 
-      loggingService.info('AuthService.resolveResetPasswordUrl — using fallback URL', {
-        source: 'fallback',
-        url: EnvVars.FrontendResetPasswordUrl,
-      });
       return EnvVars.FrontendResetPasswordUrl;
     } catch (error) {
       return handleServiceError('AuthService.resolveResetPasswordUrl', error);
@@ -288,13 +260,11 @@ class AuthService {
     }
   }
 
-  async getUserStatus(userId: string): Promise<UserStatus | null> {
+  async getUserContext(userId: string): Promise<IUser | null> {
     try {
-      loggingService.info('AuthService.getUserStatus called', { userId });
-      const status = await authRepository.findUserStatusById(userId);
-      return status;
+      return await authRepository.findUserById(userId);
     } catch (error) {
-      return handleServiceError('AuthService.getUserStatus', error);
+      return handleServiceError('AuthService.getUserContext', error);
     }
   }
 }

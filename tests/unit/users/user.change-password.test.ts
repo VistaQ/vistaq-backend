@@ -8,25 +8,6 @@ process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-passwo
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  asyncLocalStorage: {
-    getStore: jest.fn().mockReturnValue(null),
-  },
-}));
-
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation
 // ---------------------------------------------------------------------------
@@ -62,28 +43,10 @@ jest.mock('@src/services/supabase.service', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Sentry mock — prevent real Sentry initialisation
 // ---------------------------------------------------------------------------
 
-jest.mock('@sentry/node', () => ({
-  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
 // ---------------------------------------------------------------------------
-// sentry.metrics mock — prevent real metrics calls
 // ---------------------------------------------------------------------------
-
-jest.mock('@src/utils/sentry.metrics', () => ({
-  emitErrorCount: jest.fn(),
-}));
 
 import type { Response, NextFunction } from 'express';
 

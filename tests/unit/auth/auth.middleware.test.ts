@@ -8,22 +8,6 @@ process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-passwo
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
 import type { Request, Response, NextFunction } from 'express';
 import type { ZodSchema } from 'zod';
 

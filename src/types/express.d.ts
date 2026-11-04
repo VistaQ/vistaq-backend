@@ -6,5 +6,8 @@ declare namespace Express {
       role: string;
       group_id: string | null;
     };
+    apiGateway?: {
+      event: import('aws-lambda').APIGatewayProxyEventV2WithJWTAuthorizer;
+    };
   }
 }

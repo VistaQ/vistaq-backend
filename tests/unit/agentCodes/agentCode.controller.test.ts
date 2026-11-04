@@ -2,27 +2,6 @@
 process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
-jest.mock('@src/services/logging.service', () => {
-   
-  const { AsyncLocalStorage } = require('async_hooks');
-  return {
-    __esModule: true,
-    default: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    loggingService: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    asyncLocalStorage: new AsyncLocalStorage(),
-  };
-});
-
 jest.mock('@src/services/supabase.service', () => ({
   __esModule: true,
   default: { userUpsert: jest.fn() },

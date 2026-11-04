@@ -1,18 +1,12 @@
-# Logging
+# Logging and Observability
 
-* The logging library is Pino.
-* A middleware is responsible for logging all incoming API requests and outgoing responses.
-* Every request lifecycle MUST have a correlation ID generated using Pino's `genReqId` option in the middleware.
-* The correlation ID is stored in `AsyncLocalStorage` by the middleware at the start of each request, making it available throughout the entire async call chain — Controller, Service, Repository — without being passed explicitly as a parameter.
-* The `LoggingService` reads the correlation ID from `AsyncLocalStorage` whenever it writes a log entry, ensuring every log line is linked to its request.
-* All outgoing external API requests and their responses MUST also be logged with the same correlation ID.
-* Exception logs at every layer MUST include the correlation ID so errors can be traced back to the originating request.
+* All application logging and third-party observability is intentionally removed. Pino, `LoggingService`, the request-logging middleware, the correlation ID and Sentry (errors, metrics, tags, user context) are gone, and no layer logs or reports.
+* The stack is AWS-only until the user says otherwise. Do NOT add `console.*` calls, a logging shim, Sentry, or bring back Pino. A replacement (an AWS-native option or another package) will be chosen and added as one change.
+* Until then handled errors leave no trace: Express catches them and returns the JSON error response. Only Lambda startup crashes and platform errors reach CloudWatch, written by the runtime.
 
-## Sentry Integration (Dual-Write)
+## When logging comes back
 
-* `LoggingService` dual-writes every log entry to both **Pino** (local console) and **Sentry Logs** (`Sentry.logger.*`). Pino remains the primary local logging output; Sentry Logs are viewable under **Explore > Logs** in the Sentry dashboard.
-* Every `LoggingService` call also records a **Sentry breadcrumb**, providing a trail of events leading up to any captured error.
-* The **correlation ID** is tagged on every Sentry event via `Sentry.setTag('correlationId')` in the request middleware (`src/app.ts`), linking Sentry issues and logs back to the Pino log trail.
-* On authenticated requests, the `authenticate` middleware sets **Sentry user context** (`Sentry.setUser()`) and a **`tenant_id` tag** (`Sentry.setTag('tenant_id')`), so Sentry events are attributable to specific users and tenants.
-* **Request body redaction**: Sensitive fields (`password`, `token`, etc.) are redacted before being logged or sent to Sentry. The redaction logic lives in `src/app.ts`.
-* Sentry is initialised in `src/instrument.ts` — this file MUST be imported before any other module in the application entry point.
+* Every request lifecycle needs a correlation ID. On Lambda the platform request id is already available, so prefer it over generating one.
+* Sensitive fields (`password`, `token`, `refreshToken`, `accessToken`) must be redacted before anything is logged.
+* Error handling at each layer wraps and rethrows (see `error-handling.md`); the new logger should attach at the same points.
+* The award-points spec (`openspec/changes/migrate-to-serverless-lambda/specs/award-points-stream`) requires errors to be logged for unconfigured activities, an unknown coaching type and an invalid duration; those requirements depend on the new logger.

@@ -7,9 +7,11 @@ import {
   UnauthorizedSessionAccessError,
 } from '@src/models/errors/coachingSession.errors';
 import coachingSessionRepository from '@src/repositories/coachingSession.repository';
-import type { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
+import type {
+  ICoachingSession,
+  ICoachingSessionAttendance,
+} from '@src/types/coachingSession.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { emitSessionJoin, withServiceSpan } from '@src/utils/sentry.metrics';
 
 /******************************************************************************
                             Interfaces
@@ -75,8 +77,9 @@ interface IMarkNonAttendeesParams {
 ******************************************************************************/
 
 class CoachingSessionService {
-  async createSession(params: ICreateCoachingSessionParams): Promise<ICoachingSession> {
-    return withServiceSpan('CoachingSessionService', 'createSession', { tenant_id: params.tenantId, coaching_type: params.coachingType }, async () => {
+  async createSession(
+    params: ICreateCoachingSessionParams,
+  ): Promise<ICoachingSession> {
     try {
       // Validate groupIds if provided
       if (params.groupIds) {
@@ -90,9 +93,8 @@ class CoachingSessionService {
         }
 
         if (params.role === 'trainer') {
-          const managedGroupIds = await coachingSessionRepository.findTrainerGroups(
-            params.createdBy,
-          );
+          const managedGroupIds =
+            await coachingSessionRepository.findTrainerGroups(params.createdBy);
           const managedSet = new Set(managedGroupIds);
 
           if (!params.groupIds.every((id) => managedSet.has(id))) {
@@ -103,10 +105,11 @@ class CoachingSessionService {
 
       // Validate agentIds if provided
       if (params.agentIds) {
-        const agentRows = await coachingSessionRepository.findUsersByIdsAndRoles(
-          params.agentIds,
-          params.token,
-        );
+        const agentRows =
+          await coachingSessionRepository.findUsersByIdsAndRoles(
+            params.agentIds,
+            params.token,
+          );
 
         if (agentRows.length !== params.agentIds.length) {
           throw new InvalidAgentIdsError();
@@ -123,7 +126,9 @@ class CoachingSessionService {
       }
 
       // Look up creator details
-      const creator = await coachingSessionRepository.findUserById(params.createdBy);
+      const creator = await coachingSessionRepository.findUserById(
+        params.createdBy,
+      );
 
       // Insert session
       const session = await coachingSessionRepository.insertSession(
@@ -150,7 +155,10 @@ class CoachingSessionService {
           session_id: session.id,
           group_id: groupId,
         }));
-        await coachingSessionRepository.insertSessionGroups(sessionGroups, params.token);
+        await coachingSessionRepository.insertSessionGroups(
+          sessionGroups,
+          params.token,
+        );
       }
 
       if (params.agentIds) {
@@ -158,7 +166,10 @@ class CoachingSessionService {
           session_id: session.id,
           user_id: userId,
         }));
-        await coachingSessionRepository.insertSessionAgents(sessionAgents, params.token);
+        await coachingSessionRepository.insertSessionAgents(
+          sessionAgents,
+          params.token,
+        );
       }
 
       // Pre-populate attendance records
@@ -172,7 +183,10 @@ class CoachingSessionService {
       );
 
       // Re-fetch and return
-      const finalSession = await coachingSessionRepository.findById(session.id, params.token);
+      const finalSession = await coachingSessionRepository.findById(
+        session.id,
+        params.token,
+      );
 
       if (!finalSession) {
         throw new CoachingSessionNotFoundError();
@@ -189,11 +203,11 @@ class CoachingSessionService {
       }
       return handleServiceError('CoachingSessionService.createSession', error);
     }
-    });
   }
 
-  async updateSession(params: IUpdateCoachingSessionParams): Promise<ICoachingSession> {
-    return withServiceSpan('CoachingSessionService', 'updateSession', { session_id: params.sessionId, tenant_id: params.tenantId }, async () => {
+  async updateSession(
+    params: IUpdateCoachingSessionParams,
+  ): Promise<ICoachingSession> {
     try {
       const existing = await coachingSessionRepository.findById(
         params.sessionId,
@@ -206,7 +220,10 @@ class CoachingSessionService {
 
       // Permission check
       const privilegedRoles = ['admin', 'master_trainer'];
-      if (!privilegedRoles.includes(params.role) && existing.created_by !== params.userId) {
+      if (
+        !privilegedRoles.includes(params.role) &&
+        existing.created_by !== params.userId
+      ) {
         throw new UnauthorizedSessionAccessError();
       }
 
@@ -222,9 +239,8 @@ class CoachingSessionService {
         }
 
         if (params.role === 'trainer') {
-          const managedGroupIds = await coachingSessionRepository.findTrainerGroups(
-            params.userId,
-          );
+          const managedGroupIds =
+            await coachingSessionRepository.findTrainerGroups(params.userId);
           const managedSet = new Set(managedGroupIds);
 
           if (!params.groupIds.every((id) => managedSet.has(id))) {
@@ -235,10 +251,11 @@ class CoachingSessionService {
 
       // Validate agentIds if provided
       if (params.agentIds) {
-        const agentRows = await coachingSessionRepository.findUsersByIdsAndRoles(
-          params.agentIds,
-          params.token,
-        );
+        const agentRows =
+          await coachingSessionRepository.findUsersByIdsAndRoles(
+            params.agentIds,
+            params.token,
+          );
 
         if (agentRows.length !== params.agentIds.length) {
           throw new InvalidAgentIdsError();
@@ -259,19 +276,25 @@ class CoachingSessionService {
         updated_at: new Date().toISOString(),
       };
 
-      if (params.coachingType !== undefined) updateData.coaching_type = params.coachingType;
+      if (params.coachingType !== undefined)
+        updateData.coaching_type = params.coachingType;
       if (params.title !== undefined) updateData.title = params.title;
-      if (params.description !== undefined) updateData.description = params.description;
-      if (params.trainingMode !== undefined) updateData.training_mode = params.trainingMode;
+      if (params.description !== undefined)
+        updateData.description = params.description;
+      if (params.trainingMode !== undefined)
+        updateData.training_mode = params.trainingMode;
       if (params.link !== undefined) updateData.link = params.link;
       if (params.status !== undefined) updateData.status = params.status;
 
-      if (params.startDate !== undefined) updateData.start_date = params.startDate;
+      if (params.startDate !== undefined)
+        updateData.start_date = params.startDate;
       if (params.endDate !== undefined) updateData.end_date = params.endDate;
 
       const effectiveStart = updateData.start_date ?? existing.start_date;
       const effectiveEnd = updateData.end_date ?? existing.end_date;
-      if (new Date(effectiveEnd as string) <= new Date(effectiveStart as string)) {
+      if (
+        new Date(effectiveEnd as string) <= new Date(effectiveStart as string)
+      ) {
         throw new InvalidDateRangeError();
       }
 
@@ -291,7 +314,10 @@ class CoachingSessionService {
           session_id: params.sessionId,
           group_id: groupId,
         }));
-        await coachingSessionRepository.insertSessionGroups(sessionGroups, params.token);
+        await coachingSessionRepository.insertSessionGroups(
+          sessionGroups,
+          params.token,
+        );
       }
 
       if (params.agentIds) {
@@ -303,7 +329,10 @@ class CoachingSessionService {
           session_id: params.sessionId,
           user_id: userId,
         }));
-        await coachingSessionRepository.insertSessionAgents(sessionAgents, params.token);
+        await coachingSessionRepository.insertSessionAgents(
+          sessionAgents,
+          params.token,
+        );
       }
 
       // Attendance reconciliation if targets changed
@@ -342,7 +371,6 @@ class CoachingSessionService {
       }
       return handleServiceError('CoachingSessionService.updateSession', error);
     }
-    });
   }
 
   async deleteSession(params: IDeleteCoachingSessionParams): Promise<void> {
@@ -358,11 +386,17 @@ class CoachingSessionService {
 
       // Permission check
       const privilegedRoles = ['admin', 'master_trainer'];
-      if (!privilegedRoles.includes(params.role) && existing.created_by !== params.userId) {
+      if (
+        !privilegedRoles.includes(params.role) &&
+        existing.created_by !== params.userId
+      ) {
         throw new UnauthorizedSessionAccessError();
       }
 
-      await coachingSessionRepository.deleteSession(params.sessionId, params.token);
+      await coachingSessionRepository.deleteSession(
+        params.sessionId,
+        params.token,
+      );
     } catch (error) {
       if (
         error instanceof CoachingSessionNotFoundError ||
@@ -382,7 +416,10 @@ class CoachingSessionService {
     }
   }
 
-  async getSessionById(sessionId: string, token: string): Promise<ICoachingSession | null> {
+  async getSessionById(
+    sessionId: string,
+    token: string,
+  ): Promise<ICoachingSession | null> {
     try {
       return await coachingSessionRepository.findById(sessionId, token);
     } catch (error) {
@@ -390,8 +427,9 @@ class CoachingSessionService {
     }
   }
 
-  async joinSession(params: IJoinSessionParams): Promise<ICoachingSessionAttendance> {
-    return withServiceSpan('CoachingSessionService', 'joinSession', { session_id: params.sessionId, user_id: params.userId }, async () => {
+  async joinSession(
+    params: IJoinSessionParams,
+  ): Promise<ICoachingSessionAttendance> {
     try {
       // Verify session exists
       const session = await coachingSessionRepository.findById(
@@ -404,10 +442,11 @@ class CoachingSessionService {
       }
 
       // Check for existing attendance record
-      const existing = await coachingSessionRepository.findAttendanceBySessionAndAgent(
-        params.sessionId,
-        params.userId,
-      );
+      const existing =
+        await coachingSessionRepository.findAttendanceBySessionAndAgent(
+          params.sessionId,
+          params.userId,
+        );
 
       if (existing) {
         // Already joined — no-op
@@ -430,7 +469,6 @@ class CoachingSessionService {
           throw new CoachingSessionNotFoundError('Attendance record not found');
         }
 
-        emitSessionJoin(session.tenant_id);
         return updated;
       }
 
@@ -444,7 +482,9 @@ class CoachingSessionService {
       let groupName: string | null = null;
 
       if (user.group_id) {
-        const groups = await coachingSessionRepository.findGroupsByIdsWithNames([user.group_id]);
+        const groups = await coachingSessionRepository.findGroupsByIdsWithNames(
+          [user.group_id],
+        );
         if (groups.length > 0) {
           groupName = groups[0].name;
         }
@@ -463,16 +503,16 @@ class CoachingSessionService {
         },
       ]);
 
-      const record = await coachingSessionRepository.findAttendanceBySessionAndAgent(
-        params.sessionId,
-        params.userId,
-      );
+      const record =
+        await coachingSessionRepository.findAttendanceBySessionAndAgent(
+          params.sessionId,
+          params.userId,
+        );
 
       if (!record) {
         throw new CoachingSessionNotFoundError();
       }
 
-      emitSessionJoin(session.tenant_id);
       return record;
     } catch (error) {
       if (error instanceof CoachingSessionNotFoundError) {
@@ -480,7 +520,6 @@ class CoachingSessionService {
       }
       return handleServiceError('CoachingSessionService.joinSession', error);
     }
-    });
   }
 
   async markNonAttendees(params: IMarkNonAttendeesParams): Promise<void> {
@@ -496,11 +535,16 @@ class CoachingSessionService {
 
       // Permission check
       const privilegedRoles = ['admin', 'master_trainer'];
-      if (!privilegedRoles.includes(params.role) && session.created_by !== params.userId) {
+      if (
+        !privilegedRoles.includes(params.role) &&
+        session.created_by !== params.userId
+      ) {
         throw new UnauthorizedSessionAccessError();
       }
 
-      await coachingSessionRepository.bulkUpdatePendingToDidNotAttend(params.sessionId);
+      await coachingSessionRepository.bulkUpdatePendingToDidNotAttend(
+        params.sessionId,
+      );
     } catch (error) {
       if (
         error instanceof CoachingSessionNotFoundError ||
@@ -508,7 +552,10 @@ class CoachingSessionService {
       ) {
         throw error;
       }
-      return handleServiceError('CoachingSessionService.markNonAttendees', error);
+      return handleServiceError(
+        'CoachingSessionService.markNonAttendees',
+        error,
+      );
     }
   }
 
@@ -575,7 +622,10 @@ class CoachingSessionService {
 
       const groupNameMap = new Map<string, string>();
       if (uniqueGroupIds.length > 0) {
-        const groups = await coachingSessionRepository.findGroupsByIdsWithNames(uniqueGroupIds);
+        const groups =
+          await coachingSessionRepository.findGroupsByIdsWithNames(
+            uniqueGroupIds,
+          );
         groups.forEach((g) => groupNameMap.set(g.id, g.name));
       }
 
@@ -586,12 +636,16 @@ class CoachingSessionService {
         agent_name: agent.name,
         agent_email: agent.email,
         group_id: agent.group_id,
-        group_name: agent.group_id ? (groupNameMap.get(agent.group_id) ?? null) : null,
+        group_name: agent.group_id
+          ? (groupNameMap.get(agent.group_id) ?? null)
+          : null,
         status: 'pending' as const,
       }));
 
       if (attendanceRecords.length > 0) {
-        await coachingSessionRepository.insertAttendanceRecords(attendanceRecords);
+        await coachingSessionRepository.insertAttendanceRecords(
+          attendanceRecords,
+        );
       }
     } catch (error) {
       handleServiceError('CoachingSessionService.populateAttendance', error);
@@ -610,14 +664,19 @@ class CoachingSessionService {
       const privilegedRoles = ['admin', 'master_trainer'];
 
       if (privilegedRoles.includes(creatorRole)) {
-        const agents = await coachingSessionRepository.findAllAgentsByTenant(tenantId);
+        const agents =
+          await coachingSessionRepository.findAllAgentsByTenant(tenantId);
         return agents.map((a) => a.id);
       }
 
       if (creatorRole === 'trainer') {
-        const managedGroupIds = await coachingSessionRepository.findTrainerGroups(createdBy);
+        const managedGroupIds =
+          await coachingSessionRepository.findTrainerGroups(createdBy);
         if (managedGroupIds.length === 0) return [];
-        const agents = await coachingSessionRepository.findUsersByGroupIds(managedGroupIds, tenantId);
+        const agents = await coachingSessionRepository.findUsersByGroupIds(
+          managedGroupIds,
+          tenantId,
+        );
         return agents.map((a) => a.id);
       }
 
@@ -633,7 +692,10 @@ class CoachingSessionService {
 
       return [];
     } catch (error) {
-      return handleServiceError('CoachingSessionService.resolveAllAudienceAgents', error);
+      return handleServiceError(
+        'CoachingSessionService.resolveAllAudienceAgents',
+        error,
+      );
     }
   }
 
@@ -651,7 +713,8 @@ class CoachingSessionService {
   ): Promise<void> {
     try {
       // Get current attendance
-      const currentAttendance = await coachingSessionRepository.findAttendanceBySessionId(sessionId);
+      const currentAttendance =
+        await coachingSessionRepository.findAttendanceBySessionId(sessionId);
       const currentAgentIds = new Set(currentAttendance.map((a) => a.agent_id));
 
       // Determine new target set
@@ -681,19 +744,29 @@ class CoachingSessionService {
       // Remove pending records for agents no longer targeted (parallelized)
       await Promise.all(
         currentAttendance
-          .filter((record) => record.agent_id && !newTargetIds.has(record.agent_id) && record.status === 'pending')
-          .map((record) => coachingSessionRepository.deleteAttendanceRecord(record.id)),
+          .filter(
+            (record) =>
+              record.agent_id &&
+              !newTargetIds.has(record.agent_id) &&
+              record.status === 'pending',
+          )
+          .map((record) =>
+            coachingSessionRepository.deleteAttendanceRecord(record.id),
+          ),
       );
 
       // Add records for newly targeted agents
-      const agentsToAdd = Array.from(newTargetIds).filter((id) => !currentAgentIds.has(id));
+      const agentsToAdd = Array.from(newTargetIds).filter(
+        (id) => !currentAgentIds.has(id),
+      );
 
       if (agentsToAdd.length === 0) {
         return;
       }
 
       // Batch-fetch agent details in a single query
-      const agentDetails = await coachingSessionRepository.findUserDetailsByIds(agentsToAdd);
+      const agentDetails =
+        await coachingSessionRepository.findUserDetailsByIds(agentsToAdd);
 
       const uniqueGroupIds = [
         ...new Set(
@@ -705,7 +778,10 @@ class CoachingSessionService {
 
       const groupNameMap = new Map<string, string>();
       if (uniqueGroupIds.length > 0) {
-        const groups = await coachingSessionRepository.findGroupsByIdsWithNames(uniqueGroupIds);
+        const groups =
+          await coachingSessionRepository.findGroupsByIdsWithNames(
+            uniqueGroupIds,
+          );
         groups.forEach((g) => groupNameMap.set(g.id, g.name));
       }
 
@@ -715,7 +791,9 @@ class CoachingSessionService {
         agent_name: agent.name,
         agent_email: agent.email,
         group_id: agent.group_id,
-        group_name: agent.group_id ? (groupNameMap.get(agent.group_id) ?? null) : null,
+        group_name: agent.group_id
+          ? (groupNameMap.get(agent.group_id) ?? null)
+          : null,
         status: 'pending' as const,
       }));
 

@@ -21,8 +21,9 @@ const EnvVars = {
   SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   FrontendResetPasswordUrl: process.env.FRONTEND_RESET_PASSWORD_URL || '',
-  SentryDsn: process.env.SENTRY_DSN || '',
-  VercelEnv: process.env.VERCEL_ENV || '',
+  CognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || '',
+  CognitoClientId: process.env.COGNITO_CLIENT_ID || '',
+  Stage: process.env.STAGE || '',
   DisableHelmet: process.env.DISABLE_HELMET === 'true',
   MaintenanceMode: (process.env.MAINTENANCE_MODE || 'false') === 'true',
   AllowedOrigins: (process.env.ALLOWED_ORIGINS || '')
@@ -55,6 +56,14 @@ if (!EnvVars.FrontendResetPasswordUrl.trim()) {
   throw new Error(
     'Missing required environment variable: FRONTEND_RESET_PASSWORD_URL',
   );
+}
+
+if (!EnvVars.CognitoUserPoolId.trim()) {
+  throw new Error('Missing required environment variable: COGNITO_USER_POOL_ID');
+}
+
+if (!EnvVars.CognitoClientId.trim()) {
+  throw new Error('Missing required environment variable: COGNITO_CLIENT_ID');
 }
 
 if (!EnvVars.EtlServiceUrl.trim()) {

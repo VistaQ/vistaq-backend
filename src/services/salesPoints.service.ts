@@ -1,17 +1,13 @@
-import * as Sentry from '@sentry/node';
-
 import pointConfigRepository from '@src/repositories/pointConfig.repository';
 import pointTransactionRepository from '@src/repositories/pointTransaction.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
-import loggingService from '@src/services/logging.service';
-import type { IUploadBatch } from '@src/types/salesReport.types';
 import type {
   ISalesPointsAward,
-  ISalesPointsRates} from '@src/types/salesPoints.types';
-import {
-  SALES_POINTS_ACTIVITIES,
+  ISalesPointsRates,
 } from '@src/types/salesPoints.types';
+import { SALES_POINTS_ACTIVITIES } from '@src/types/salesPoints.types';
+import type { IUploadBatch } from '@src/types/salesReport.types';
 
 /**
  * Resolution row passed in from the parent upload flow — one entry per agent
@@ -53,10 +49,9 @@ export interface IAgentResolution {
  * so each correction reverses the immediately-preceding state, not a stale
  * one. See `supabase/migrations/.._add_award_sales_points_rpc.sql`.
  *
- * The whole flow is non-throwing by design: if any step fails it is logged,
- * surfaced as a Sentry issue, and swallowed — the upload itself has already
- * succeeded by the time this runs, and we don't want a points failure to
- * roll the upload back.
+ * The whole flow is non-throwing by design: if any step fails it is
+ * swallowed — the upload itself has already succeeded by the time this runs,
+ * and we don't want a points failure to roll the upload back.
  */
 class SalesPointsService {
   /**
@@ -99,30 +94,9 @@ class SalesPointsService {
         activities: SALES_POINTS_ACTIVITIES,
         awards: awardRows,
       });
-
-      loggingService.info('SalesPointsService.awardForBatch completed', {
-        batchId: batch.id,
-        awards: awardRows.length,
-      });
-    } catch (error) {
-      // Non-throwing by design: the upload has already succeeded, points are
-      // a downstream concern. Surface as a Sentry issue (separate from the
-      // log entry, which is breadcrumb-only) so operators can detect schema
-      // drift, RPC outages, or programming errors during reversal — then log
-      // and swallow so the upload response stays unaffected. Admins can
-      // re-trigger an awarding pass if needed.
-      Sentry.captureException(error, {
-        tags: { critical: 'sales_points_awarding' },
-        extra: {
-          batchId: batch.id,
-          tenantId: batch.tenant_id,
-          year: batch.year,
-          month: batch.month,
-        },
-      });
-      loggingService.error('SalesPointsService.awardForBatch failed', error, {
-        batchId: batch.id,
-      });
+    } catch {
+      // Non-throwing by design: the upload has already succeeded and points
+      // are a downstream concern. Admins can re-trigger an awarding pass.
     }
   }
 
@@ -182,7 +156,10 @@ class SalesPointsService {
     // Index lookups by user_id for O(1) joins.
     const mtdByUser = new Map<string, { ace: number; noc: number }>();
     for (const row of mtdRows) {
-      mtdByUser.set(row.user_id, { ace: Number(row.ace), noc: Number(row.noc) });
+      mtdByUser.set(row.user_id, {
+        ace: Number(row.ace),
+        noc: Number(row.noc),
+      });
     }
 
     // YTD: pick the value at the report month and (if available) the prior

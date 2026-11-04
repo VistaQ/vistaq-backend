@@ -9,7 +9,6 @@ import {
 import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import authService from '@src/services/auth.service';
-import loggingService from '@src/services/logging.service';
 import type { IUser } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -93,9 +92,6 @@ class AuthController {
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
-        loggingService.error(
-          'AuthController.register — missing or invalid X-Tenant-Slug header',
-        );
         next(
           new RouteError(
             HttpStatusCodes.BAD_REQUEST,
@@ -151,9 +147,6 @@ class AuthController {
       const authHeader = req.headers['authorization'];
 
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        loggingService.error(
-          'AuthController.logout — missing or malformed Authorization header',
-        );
         next(
           new RouteError(
             HttpStatusCodes.UNAUTHORIZED,
@@ -166,9 +159,6 @@ class AuthController {
       const token = authHeader.slice(7);
 
       if (!token) {
-        loggingService.error(
-          'AuthController.logout — missing token in Authorization header',
-        );
         next(
           new RouteError(
             HttpStatusCodes.UNAUTHORIZED,
@@ -214,9 +204,6 @@ class AuthController {
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
-        loggingService.error(
-          'AuthController.login — missing or invalid X-Tenant-Slug header',
-        );
         next(
           new RouteError(
             HttpStatusCodes.BAD_REQUEST,
@@ -274,9 +261,6 @@ class AuthController {
       const tenantSlug = req.headers['x-tenant-slug'];
 
       if (!tenantSlug || typeof tenantSlug !== 'string') {
-        loggingService.error(
-          'AuthController.forgotPassword — missing or invalid X-Tenant-Slug header',
-        );
         next(
           new RouteError(
             HttpStatusCodes.BAD_REQUEST,

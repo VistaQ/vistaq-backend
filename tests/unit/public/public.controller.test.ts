@@ -12,23 +12,6 @@ const mockAsyncLocalStorage = {
   getStore: jest.fn().mockReturnValue(undefined),
 };
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  asyncLocalStorage: mockAsyncLocalStorage,
-}));
-
 // ---------------------------------------------------------------------------
 // SupabaseService mock — prevent real client instantiation
 // ---------------------------------------------------------------------------

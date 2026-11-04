@@ -21,10 +21,6 @@ jest.mock('@src/repositories/salesReportYtd.repository', () => ({
   __esModule: true,
   default: { findFyctByTenantYearMonths: jest.fn() },
 }));
-jest.mock('@sentry/node', () => ({
-  __esModule: true,
-  captureException: jest.fn(),
-}));
 
 beforeEach(() => jest.resetAllMocks());
 
@@ -264,31 +260,6 @@ describe('SalesPointsService.awardForBatch — non-throwing contract', () => {
     expect(pointTransactionRepository.awardWithReversal).not.toHaveBeenCalled();
   });
 
-  it('captures awarding failures as Sentry issues with critical tag', async () => {
-    const Sentry = jest.requireMock('@sentry/node') as {
-      captureException: jest.Mock;
-    };
-    (pointConfigRepository.findByTenantAndCategoryAdmin as jest.Mock).mockRejectedValue(
-      new Error('config db unreachable'),
-    );
-
-    await salesPointsService.awardForBatch(makeBatch(), [
-      { user_id: 'u1', agent_code: 'AG006' },
-    ]);
-
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    const args = Sentry.captureException.mock.calls[0];
-    expect(args[0]).toBeInstanceOf(Error);
-    expect(args[1]).toMatchObject({
-      tags: { critical: 'sales_points_awarding' },
-      extra: expect.objectContaining({
-        batchId: 'batch-new',
-        tenantId: 't1',
-        year: 2026,
-        month: 5,
-      }),
-    });
-  });
 });
 
 describe('SalesPointsService.awardForBatch — no resolved agents', () => {
