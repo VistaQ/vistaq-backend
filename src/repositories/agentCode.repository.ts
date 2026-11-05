@@ -4,7 +4,7 @@ import {
 } from '@src/models/errors/agentCode.errors';
 import { AgentCodeInvalidError } from '@src/models/errors/auth.errors';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
-import dynamoService from '@src/services/dynamo.service';
+import dynamoService, { DynamoTable } from '@src/services/dynamo.service';
 import type { IAgentCode } from '@src/types/agentCode';
 import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
@@ -21,6 +21,8 @@ interface IAgentCodeItem {
   created_at: string;
   updated_at: string;
 }
+
+const agentCodes = new DynamoTable<IAgentCodeItem>(EnvVars.AgentCodesTable);
 
 function toAgentCode(item: IAgentCodeItem): IAgentCode {
   return {
@@ -43,8 +45,7 @@ class AgentCodeRepository {
         filters?.is_used === undefined ? [0, 1] : [filters.is_used ? 1 : 0];
       const pages = await Promise.all(
         flags.map((flag) =>
-          dynamoService.queryAll<IAgentCodeItem>({
-            table: EnvVars.AgentCodesTable,
+          agentCodes.queryAll({
             index: 'byUsed',
             keyCondition: 'used_flag = :flag',
             values: { ':flag': flag },
@@ -58,13 +59,12 @@ class AgentCodeRepository {
   }
 
   /** Creates each code, or leaves an existing one as it is. */
-  async createMany(agentCodes: string[]): Promise<IAgentCode[]> {
+  async createMany(codes: string[]): Promise<IAgentCode[]> {
     try {
       const now = nowUtc();
       const items = await Promise.all(
-        agentCodes.map((agentCode) =>
-          dynamoService.update<IAgentCodeItem>(
-            EnvVars.AgentCodesTable,
+        codes.map((agentCode) =>
+          agentCodes.update(
             { agent_code: agentCode },
             'SET used_flag = if_not_exists(used_flag, :unused), created_at = if_not_exists(created_at, :now), updated_at = :now',
             { values: { ':unused': 0, ':now': now } },
@@ -82,22 +82,17 @@ class AgentCodeRepository {
     options?: { consistent?: boolean },
   ): Promise<IAgentCode | null> {
     try {
-      const item = await dynamoService.get<IAgentCodeItem>(
-        EnvVars.AgentCodesTable,
-        { agent_code: agentCode },
-        options,
-      );
+      const item = await agentCodes.get({ agent_code: agentCode }, options);
       return item ? toAgentCode(item) : null;
     } catch (error) {
       return handleRepositoryError('AgentCodeRepository.findByCode', error);
     }
   }
 
-  async findByCodes(agentCodes: string[]): Promise<IAgentCode[]> {
+  async findByCodes(codes: string[]): Promise<IAgentCode[]> {
     try {
-      const items = await dynamoService.batchGet<IAgentCodeItem>(
-        EnvVars.AgentCodesTable,
-        Array.from(new Set(agentCodes)).map((agent_code) => ({ agent_code })),
+      const items = await agentCodes.batchGet(
+        Array.from(new Set(codes)).map((agent_code) => ({ agent_code })),
       );
       return items.map(toAgentCode);
     } catch (error) {
@@ -108,8 +103,7 @@ class AgentCodeRepository {
   /** Renames a code: the old item is deleted and the new one written together. */
   async rename(current: string, next: string): Promise<IAgentCode> {
     try {
-      const existing = await dynamoService.get<IAgentCodeItem>(
-        EnvVars.AgentCodesTable,
+      const existing = await agentCodes.get(
         { agent_code: current },
         { consistent: true },
       );
@@ -123,20 +117,13 @@ class AgentCodeRepository {
         updated_at: nowUtc(),
       };
       await dynamoService.transactWrite([
-        {
-          delete: {
-            table: EnvVars.AgentCodesTable,
-            key: { agent_code: current },
-            condition: 'attribute_exists(agent_code)',
-          },
-        },
-        {
-          put: {
-            table: EnvVars.AgentCodesTable,
-            item: { ...renamed },
-            condition: 'attribute_not_exists(agent_code)',
-          },
-        },
+        agentCodes.deleteItem(
+          { agent_code: current },
+          { condition: 'attribute_exists(agent_code)' },
+        ),
+        agentCodes.putItem(renamed, {
+          condition: 'attribute_not_exists(agent_code)',
+        }),
       ]);
       return toAgentCode(renamed);
     } catch (error) {
@@ -152,8 +139,7 @@ class AgentCodeRepository {
 
   async deleteByCode(agentCode: string): Promise<void> {
     try {
-      await dynamoService.delete(
-        EnvVars.AgentCodesTable,
+      await agentCodes.delete(
         { agent_code: agentCode },
         { condition: 'attribute_exists(agent_code)' },
       );
@@ -168,12 +154,16 @@ class AgentCodeRepository {
   /** Marks an unused code as used by the user; fails if it is missing or used. */
   async claim(agentCode: string, userId: string): Promise<void> {
     try {
-      await dynamoService.update(
-        EnvVars.AgentCodesTable,
+      await agentCodes.update(
         { agent_code: agentCode },
         'SET used_flag = :used, user_id = :user, updated_at = :now',
         {
-          values: { ':used': 1, ':unused': 0, ':user': userId, ':now': nowUtc() },
+          values: {
+            ':used': 1,
+            ':unused': 0,
+            ':user': userId,
+            ':now': nowUtc(),
+          },
           condition: 'attribute_exists(agent_code) AND used_flag = :unused',
         },
       );
@@ -188,8 +178,7 @@ class AgentCodeRepository {
   /** Undoes a claim when a later step of registration fails. */
   async release(agentCode: string): Promise<void> {
     try {
-      await dynamoService.update(
-        EnvVars.AgentCodesTable,
+      await agentCodes.update(
         { agent_code: agentCode },
         'SET used_flag = :unused, updated_at = :now REMOVE user_id',
         { values: { ':unused': 0, ':now': nowUtc() } },

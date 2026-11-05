@@ -1,10 +1,10 @@
 import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
-import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import {
   UserAlreadyExistsError,
   UserNotFoundError,
 } from '@src/models/errors/auth.errors';
-import dynamoService from '@src/services/dynamo.service';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import { DynamoTable } from '@src/services/dynamo.service';
 import type { IUser, IUserContext } from '@src/types/auth.types';
 import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
@@ -60,6 +60,8 @@ export interface IUserUpdate {
   fyct_target?: number | null;
   fyc_target?: number | null;
 }
+
+const users = new DynamoTable<IUserItem>(EnvVars.UsersTable);
 
 const OPTIONAL_FIELDS = [
   'agent_code',
@@ -117,9 +119,12 @@ class UserRepository {
         }
       }
 
-      await dynamoService.put(EnvVars.UsersTable, { ...item }, {
-        condition: 'attribute_not_exists(id)',
-      });
+      await users.put(
+        { ...item },
+        {
+          condition: 'attribute_not_exists(id)',
+        },
+      );
       return toUser(item);
     } catch (error) {
       if (error instanceof DynamoConditionFailedError) {
@@ -134,11 +139,7 @@ class UserRepository {
     options?: { consistent?: boolean },
   ): Promise<IUser | null> {
     try {
-      const item = await dynamoService.get<IUserItem>(
-        EnvVars.UsersTable,
-        { id: userId },
-        options,
-      );
+      const item = await users.get({ id: userId }, options);
       return item ? toUser(item) : null;
     } catch (error) {
       return handleRepositoryError('UserRepository.findById', error);
@@ -147,11 +148,7 @@ class UserRepository {
 
   async findContextById(userId: string): Promise<IUserContext | null> {
     try {
-      const item = await dynamoService.get<IUserItem>(
-        EnvVars.UsersTable,
-        { id: userId },
-        { consistent: true },
-      );
+      const item = await users.get({ id: userId }, { consistent: true });
       return item
         ? { ...toUser(item), signed_out_at: item.signed_out_at ?? null }
         : null;
@@ -162,15 +159,10 @@ class UserRepository {
 
   async markSignedOut(userId: string): Promise<void> {
     try {
-      await dynamoService.update<IUserItem>(
-        EnvVars.UsersTable,
-        { id: userId },
-        'SET signed_out_at = :signedOutAt',
-        {
-          values: { ':signedOutAt': nowUtc() },
-          condition: 'attribute_exists(id)',
-        },
-      );
+      await users.update({ id: userId }, 'SET signed_out_at = :signedOutAt', {
+        values: { ':signedOutAt': nowUtc() },
+        condition: 'attribute_exists(id)',
+      });
     } catch (error) {
       if (error instanceof DynamoConditionFailedError) {
         return;
@@ -182,10 +174,7 @@ class UserRepository {
   async findByIds(userIds: string[]): Promise<IUser[]> {
     try {
       const unique = Array.from(new Set(userIds));
-      const items = await dynamoService.batchGet<IUserItem>(
-        EnvVars.UsersTable,
-        unique.map((id) => ({ id })),
-      );
+      const items = await users.batchGet(unique.map((id) => ({ id })));
       return items.map(toUser);
     } catch (error) {
       return handleRepositoryError('UserRepository.findByIds', error);
@@ -198,13 +187,14 @@ class UserRepository {
     status: string | null = 'active',
   ): Promise<IUser[]> {
     try {
-      const items = await dynamoService.queryAll<IUserItem>({
-        table: EnvVars.UsersTable,
+      const items = await users.queryAll({
         index: 'byGroup',
         keyCondition: status
           ? 'group_id = :group AND status = :status'
           : 'group_id = :group',
-        values: status ? { ':group': groupId, ':status': status } : { ':group': groupId },
+        values: status
+          ? { ':group': groupId, ':status': status }
+          : { ':group': groupId },
       });
       return items.map(toUser);
     } catch (error) {
@@ -216,13 +206,14 @@ class UserRepository {
     try {
       const pages = await Promise.all(
         roles.map((role) =>
-          dynamoService.queryAll<IUserItem>({
-            table: EnvVars.UsersTable,
+          users.queryAll({
             index: 'byRoleStatus',
             keyCondition: status
               ? 'role = :role AND status = :status'
               : 'role = :role',
-            values: status ? { ':role': role, ':status': status } : { ':role': role },
+            values: status
+              ? { ':role': role, ':status': status }
+              : { ':role': role },
           }),
         ),
       );
@@ -239,8 +230,7 @@ class UserRepository {
     try {
       const pages = await Promise.all(
         Array.from(new Set(agentCodes)).map((agentCode) =>
-          dynamoService.queryAll<IUserItem>({
-            table: EnvVars.UsersTable,
+          users.queryAll({
             index: 'byAgentCode',
             keyCondition: 'agent_code = :code',
             values: { ':code': agentCode },
@@ -250,7 +240,10 @@ class UserRepository {
       return pages
         .flat()
         .filter((item) => item.status === 'active')
-        .map((item) => ({ id: item.id, agent_code: item.agent_code as string }));
+        .map((item) => ({
+          id: item.id,
+          agent_code: item.agent_code as string,
+        }));
     } catch (error) {
       return handleRepositoryError('UserRepository.findByAgentCodes', error);
     }
@@ -258,27 +251,13 @@ class UserRepository {
 
   async updateUser(userId: string, data: IUserUpdate): Promise<IUser> {
     try {
-      const sets: string[] = ['updated_at = :updated_at'];
-      const removes: string[] = [];
-      const values: Record<string, unknown> = { ':updated_at': nowUtc() };
-
-      for (const [field, value] of Object.entries(data)) {
-        if (value === undefined) continue;
-        if (value === null) {
-          removes.push(field);
-        } else {
-          sets.push(`${field} = :${field}`);
-          values[`:${field}`] = field === 'email' ? String(value).toLowerCase() : value;
-        }
-      }
-
-      const expression =
-        `SET ${sets.join(', ')}` + (removes.length ? ` REMOVE ${removes.join(', ')}` : '');
-      const updated = await dynamoService.update<IUserItem>(
-        EnvVars.UsersTable,
+      const updated = await users.updateFields(
         { id: userId },
-        expression,
-        { values, condition: 'attribute_exists(id)' },
+        {
+          ...data,
+          ...(data.email && { email: data.email.toLowerCase() }),
+        },
+        { condition: 'attribute_exists(id)' },
       );
       if (!updated) {
         throw new UserNotFoundError();
@@ -304,13 +283,16 @@ class UserRepository {
         userIds.map((id) => this.updateUser(id, { group_id: groupId })),
       );
     } catch (error) {
-      return handleRepositoryError('UserRepository.updateGroupIdForUsers', error);
+      return handleRepositoryError(
+        'UserRepository.updateGroupIdForUsers',
+        error,
+      );
     }
   }
 
   async deleteUser(userId: string): Promise<void> {
     try {
-      await dynamoService.delete(EnvVars.UsersTable, { id: userId });
+      await users.delete({ id: userId });
     } catch (error) {
       return handleRepositoryError('UserRepository.deleteUser', error);
     }
@@ -348,7 +330,11 @@ class UserRepository {
 
       const users = await this.findByIds(userIds);
       return users
-        .filter((u) => groupIds === undefined || (u.group_id !== null && groupIds.includes(u.group_id)))
+        .filter(
+          (u) =>
+            groupIds === undefined ||
+            (u.group_id !== null && groupIds.includes(u.group_id)),
+        )
         .map((u) => ({
           id: u.id,
           name: u.name,
@@ -357,7 +343,10 @@ class UserRepository {
           fyc_target: u.fyc_target,
         }));
     } catch (error) {
-      return handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
+      return handleRepositoryError(
+        'UserRepository.findIdNameAgentCodeByIds',
+        error,
+      );
     }
   }
 }

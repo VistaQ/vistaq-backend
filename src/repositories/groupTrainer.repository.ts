@@ -1,4 +1,4 @@
-import dynamoService from '@src/services/dynamo.service';
+import { DynamoTable } from '@src/services/dynamo.service';
 import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 import { nowUtc } from '@src/utils/period';
@@ -12,6 +12,8 @@ interface IGroupTrainerItem {
   trainer_id: string;
   created_at: string;
 }
+
+const groupTrainers = new DynamoTable<IGroupTrainerItem>(EnvVars.GroupTrainersTable);
 
 export interface IGroupTrainerRow {
   group_id: string;
@@ -27,12 +29,14 @@ class GroupTrainerRepository {
     groupId: string,
   ): Promise<IGroupTrainerRow[]> {
     try {
-      const items = await dynamoService.queryAll<IGroupTrainerItem>({
-        table: EnvVars.GroupTrainersTable,
+      const items = await groupTrainers.queryAll({
         keyCondition: 'group_id = :group',
         values: { ':group': groupId },
       });
-      return items.map(({ group_id, trainer_id }) => ({ group_id, trainer_id }));
+      return items.map(({ group_id, trainer_id }) => ({
+        group_id,
+        trainer_id,
+      }));
     } catch (error) {
       return handleRepositoryError(
         'GroupTrainerRepository.findGroupTrainersByGroupId',
@@ -46,7 +50,7 @@ class GroupTrainerRepository {
       const createdAt = nowUtc();
       await Promise.all(
         rows.map((row) =>
-          dynamoService.put(EnvVars.GroupTrainersTable, {
+          groupTrainers.put({
             group_id: row.group_id,
             trainer_id: row.trainer_id,
             created_at: createdAt,
@@ -66,7 +70,7 @@ class GroupTrainerRepository {
       const existing = await this.findGroupTrainersByGroupId(groupId);
       await Promise.all(
         existing.map((row) =>
-          dynamoService.delete(EnvVars.GroupTrainersTable, {
+          groupTrainers.delete({
             group_id: row.group_id,
             trainer_id: row.trainer_id,
           }),
@@ -89,8 +93,7 @@ class GroupTrainerRepository {
       const unique = Array.from(new Set(trainerIds));
       const pages = await Promise.all(
         unique.map((trainerId) =>
-          dynamoService.queryAll<IGroupTrainerItem>({
-            table: EnvVars.GroupTrainersTable,
+          groupTrainers.queryAll({
             index: 'byTrainer',
             keyCondition: 'trainer_id = :trainer',
             values: { ':trainer': trainerId },
@@ -99,7 +102,10 @@ class GroupTrainerRepository {
       );
       unique.forEach((trainerId, i) => {
         if (pages[i].length > 0) {
-          map.set(trainerId, pages[i].map((item) => item.group_id));
+          map.set(
+            trainerId,
+            pages[i].map((item) => item.group_id),
+          );
         }
       });
       return map;

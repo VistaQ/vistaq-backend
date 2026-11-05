@@ -14,6 +14,7 @@ import {
   DynamoConditionFailedError,
   DynamoServiceError,
 } from '@src/models/errors/dynamo.error';
+import { nowUtc } from '@src/utils/period';
 
 /******************************************************************************
                               Types
@@ -47,7 +48,9 @@ export interface IQueryResult<T> {
 }
 
 export type ITransactItem =
-  | { put: { table: string; item: Record<string, unknown> } & IConditionOptions }
+  | {
+      put: { table: string; item: Record<string, unknown> } & IConditionOptions;
+    }
   | {
       update: {
         table: string;
@@ -137,10 +140,11 @@ function isConditionFailure(error: unknown): boolean {
     return true;
   }
   if (name === 'TransactionCanceledException') {
-    const reasons = (
-      error as { CancellationReasons?: { Code?: string }[] }
-    ).CancellationReasons;
-    return !!reasons?.some((reason) => reason.Code === 'ConditionalCheckFailed');
+    const reasons = (error as { CancellationReasons?: { Code?: string }[] })
+      .CancellationReasons;
+    return !!reasons?.some(
+      (reason) => reason.Code === 'ConditionalCheckFailed',
+    );
   }
   return false;
 }
@@ -309,7 +313,9 @@ class DynamoService {
           attempt++
         ) {
           const result = await client.send(
-            new BatchGetCommand({ RequestItems: { [table]: { Keys: pending } } }),
+            new BatchGetCommand({
+              RequestItems: { [table]: { Keys: pending } },
+            }),
           );
           items.push(...((result.Responses?.[table] ?? []) as T[]));
           pending = result.UnprocessedKeys?.[table]?.Keys as IKey[] | undefined;
@@ -390,4 +396,97 @@ class DynamoService {
 }
 
 export const dynamoService = new DynamoService();
+
+/******************************************************************************
+                              DynamoTable
+******************************************************************************/
+
+export type ITableQuery = Omit<IQueryParams, 'table'>;
+
+/** One table and its item type, bound once per repository. */
+export class DynamoTable<TItem extends object> {
+  constructor(readonly name: string) {}
+
+  get(
+    key: IKey,
+    options?: { consistent?: boolean },
+  ): Promise<TItem | undefined> {
+    return dynamoService.get<TItem>(this.name, key, options);
+  }
+
+  put(item: TItem, options?: IConditionOptions): Promise<void> {
+    return dynamoService.put(this.name, { ...item } as IValues, options);
+  }
+
+  update(
+    key: IKey,
+    expression: string,
+    options?: IConditionOptions,
+  ): Promise<TItem | undefined> {
+    return dynamoService.update<TItem>(this.name, key, expression, options);
+  }
+
+  /** Sets each defined field, removes each null one, and stamps `updated_at`. */
+  updateFields(
+    key: IKey,
+    fields: object,
+    options?: IConditionOptions,
+  ): Promise<TItem | undefined> {
+    const sets: string[] = ['updated_at = :updated_at'];
+    const removes: string[] = [];
+    const values: IValues = { ...options?.values, ':updated_at': nowUtc() };
+
+    for (const [field, value] of Object.entries(fields)) {
+      if (value === undefined) continue;
+      if (value === null) {
+        removes.push(field);
+      } else {
+        sets.push(`${field} = :${field}`);
+        values[`:${field}`] = value;
+      }
+    }
+
+    const expression =
+      `SET ${sets.join(', ')}` +
+      (removes.length ? ` REMOVE ${removes.join(', ')}` : '');
+    return this.update(key, expression, { ...options, values });
+  }
+
+  delete(key: IKey, options?: IConditionOptions): Promise<void> {
+    return dynamoService.delete(this.name, key, options);
+  }
+
+  query(params: ITableQuery): Promise<IQueryResult<TItem>> {
+    return dynamoService.query<TItem>({ ...params, table: this.name });
+  }
+
+  queryAll(params: ITableQuery): Promise<TItem[]> {
+    return dynamoService.queryAll<TItem>({ ...params, table: this.name });
+  }
+
+  batchGet(keys: IKey[]): Promise<TItem[]> {
+    return keys.length
+      ? dynamoService.batchGet<TItem>(this.name, keys)
+      : Promise.resolve([]);
+  }
+
+  putItem(item: TItem, options?: IConditionOptions): ITransactItem {
+    return {
+      put: { table: this.name, item: { ...item } as IValues, ...options },
+    };
+  }
+
+  updateItem(
+    key: IKey,
+    expression: string,
+    options?: IConditionOptions,
+  ): ITransactItem {
+    return { update: { table: this.name, key, expression, ...options } };
+  }
+
+  deleteItem(key: IKey, options?: IConditionOptions): ITransactItem {
+    return { delete: { table: this.name, key, ...options } };
+  }
+}
+
 export default dynamoService;
