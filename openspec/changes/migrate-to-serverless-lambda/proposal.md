@@ -18,6 +18,7 @@ The backend runs as a long-lived Express server on Vercel, backed by Supabase (P
 - **BREAKING**: the tenant claim and `X-Tenant-Slug` lookup disappear (single-tenant, already decided); login becomes two steps (`POST /auth/login` then `POST /auth/login/verify`); `/auth/forgot-password`, `/auth/reset-password` and change-password are removed; register no longer takes a password.
 - **BREAKING**: `GET /prospects` for admins and master trainers is cursor-paginated (`limit`, `nextToken`); the coaching-session list returns attendance counts instead of embedded attendance rows; timestamps come back with a `Z` suffix instead of an offset.
 - Behaviour fix: trainers see the events they created.
+- Add a faker-based seeder that fills the DynamoDB tables with development data once the tables, repositories and stream consumers exist, replacing the old Supabase and Firebase seed scripts.
 - Supabase is dropped entirely, with no hybrid period: a route that still calls an unmigrated Supabase repository fails on Lambda until that repository is rewritten.
 
 ## Capabilities
@@ -37,7 +38,7 @@ The backend runs as a long-lived Express server on Vercel, backed by Supabase (P
 ## Impact
 
 - Code: `src/lambda.ts` is the Lambda entry point (`src/main.ts` stays for local development); `src/middleware/auth.ts` reads the verified token subject and loads the user record; all repositories and `supabase.service.ts` replaced by DynamoDB access (task group 4); `src/services/auth.service.ts` calls Cognito instead of Supabase Auth.
-- Removed: `supabase/` (101 migrations, edge function), Vercel config and build scripts, the Supabase client and `SUPABASE_*` env vars, the logging service and its call sites, Sentry and its seed script, and the `pino`, `pino-pretty`, `morgan` and `@sentry/node` dependencies.
-- Added: `serverless.yml`, an AWS SDK v3 dependency set, a Lambda adapter for Express, esbuild bundling via Serverless v4.
+- Removed: `supabase/` (101 migrations, edge function), Vercel config and build scripts, the Supabase client and `SUPABASE_*` env vars, the logging service and its call sites, `scripts/seed-test-data.js`, Sentry and its seed script, and the `pino`, `pino-pretty`, `morgan` and `@sentry/node` dependencies.
+- Added: `scripts/seed.ts` with an `npm run seed` script, `serverless.yml`, an AWS SDK v3 dependency set, a Lambda adapter for Express, esbuild bundling via Serverless v4.
 - Open API contract: unchanged except for the breaking items above; `openapi.yaml` must be updated.
 - Out of scope: report ingestion (a separate change replaces the multipart upload with a file upload or an API taking per-agent and per-group-leader payloads), so the sales-report, upload-batch, report-job and sales-award tables are provisional. The cleanup scheduler for old report files is dropped.
