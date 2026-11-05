@@ -15,7 +15,7 @@ import { nowUtc } from '@src/utils/period';
                             Item and input types
 ******************************************************************************/
 
-interface ISessionItem {
+export interface ISessionItem {
   id: string;
   coaching_type: string;
   title: string;
@@ -37,19 +37,19 @@ interface ISessionItem {
   updated_at: string;
 }
 
-interface ISessionGroupItem {
+export interface ISessionGroupItem {
   session_id: string;
   group_id: string;
   start_date: string;
 }
 
-interface ISessionAgentItem {
+export interface ISessionAgentItem {
   session_id: string;
   user_id: string;
   start_date: string;
 }
 
-interface IAttendanceItem {
+export interface IAttendanceItem {
   id: string;
   session_id: string;
   agent_key: string;

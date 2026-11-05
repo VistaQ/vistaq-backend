@@ -6,7 +6,7 @@ import { nowUtc } from '@src/utils/period';
                               Item type
 ******************************************************************************/
 
-interface IGroupTrainerItem {
+export interface IGroupTrainerItem {
   group_id: string;
   trainer_id: string;
   created_at: string;

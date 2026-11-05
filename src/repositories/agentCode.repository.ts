@@ -13,7 +13,7 @@ import { nowUtc } from '@src/utils/period';
                               Item type
 ******************************************************************************/
 
-interface IAgentCodeItem {
+export interface IAgentCodeItem {
   agent_code: string;
   used_flag: 0 | 1;
   user_id?: string;

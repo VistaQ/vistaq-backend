@@ -17,6 +17,7 @@
     "start": "node ./dist/main.js",
     "type-check": "tsc -b --noEmit",
     "verify": "npm run lint && npm run type-check",
+    "seed": "ts-node scripts/seed.ts",
     "seed:reference": "node scripts/seed-reference-data.js",
     "prepare": "husky",
     "test": "jest",

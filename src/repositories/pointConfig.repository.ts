@@ -7,7 +7,7 @@ import type { IPointConfig } from '@src/types/pointConfig.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 import { nowUtc } from '@src/utils/period';
 
-interface IPointConfigItem {
+export interface IPointConfigItem {
   id: string;
   activity: string;
   category: string;

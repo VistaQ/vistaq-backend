@@ -12,7 +12,7 @@ import { nowUtc } from '@src/utils/period';
                             Item and input types
 ******************************************************************************/
 
-interface IGroupItem {
+export interface IGroupItem {
   id: string;
   name: string;
   status: string;

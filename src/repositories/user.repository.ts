@@ -13,7 +13,7 @@ import { nowUtc } from '@src/utils/period';
                             Item and input types
 ******************************************************************************/
 
-interface IUserItem {
+export interface IUserItem {
   id: string;
   email: string;
   name: string;

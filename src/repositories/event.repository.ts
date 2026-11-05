@@ -12,7 +12,7 @@ import { nowUtc } from '@src/utils/period';
                             Item and input types
 ******************************************************************************/
 
-interface IEventItem {
+export interface IEventItem {
   id: string;
   event_title: string;
   start_date: string;
@@ -31,13 +31,13 @@ interface IEventItem {
   updated_at: string;
 }
 
-interface IEventLinkItem {
+export interface IEventLinkItem {
   event_id: string;
   status: string;
   start_date: string;
 }
 
-type IEventGroupItem = IEventLinkItem & { group_id: string };
+export type IEventGroupItem = IEventLinkItem & { group_id: string };
 type IEventAgentItem = IEventLinkItem & { user_id: string };
 
 const events = new DynamoTable<IEventItem>('Events');

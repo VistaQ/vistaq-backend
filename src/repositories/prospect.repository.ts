@@ -16,7 +16,7 @@ import { nowUtc } from '@src/utils/period';
                             Item and input types
 ******************************************************************************/
 
-interface IProspectItem {
+export interface IProspectItem {
   id: string;
   agent_id: string;
   prospect_name: string;
