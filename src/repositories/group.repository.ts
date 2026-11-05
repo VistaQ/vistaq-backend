@@ -1,204 +1,147 @@
-import supabaseService from '@src/services/supabase.service';
-import type { IGroup } from '@src/types/auth.types';
-import type { Database } from '@src/types/database.types';
-import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { randomUUID } from 'crypto';
 
-type GroupsRow = Database['public']['Tables']['groups']['Row'];
-type GroupsInsert = Database['public']['Tables']['groups']['Insert'];
-type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import { GroupNotFoundError } from '@src/models/errors/group.errors';
+import { DynamoTable } from '@src/services/dynamo.service';
+import type { IGroup } from '@src/types/auth.types';
+import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
+
+/******************************************************************************
+                            Item and input types
+******************************************************************************/
+
+interface IGroupItem {
+  id: string;
+  name: string;
+  status: string;
+  leader_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface INewGroup {
+  name: string;
+  status?: string;
+  leader_id?: string | null;
+}
+
+export interface IGroupUpdate {
+  name?: string;
+  status?: string;
+  leader_id?: string | null;
+}
+
+const groups = new DynamoTable<IGroupItem>('Groups');
+
+const GROUP_STATUSES = ['active', 'inactive'] as const;
+
+function toGroup(item: IGroupItem): IGroup {
+  return {
+    id: item.id,
+    tenant_id: TRANSITIONAL_TENANT_ID,
+    name: item.name,
+    status: item.status,
+    leader_id: item.leader_id ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
 
 /******************************************************************************
                             GroupRepository
 ******************************************************************************/
 
 class GroupRepository {
-  async insertGroup(data: GroupsInsert, userToken: string): Promise<IGroup> {
+  async insertGroup(group: INewGroup): Promise<IGroup> {
     try {
-      const response = await supabaseService.userInsert(userToken, 'groups', data);
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No group returned after insert');
-      }
-
-      const row = response.data[0] as unknown as GroupsRow;
-      const group: IGroup = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        name: row.name,
-        status: row.status,
-        leader_id: row.leader_id,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
+      const now = nowUtc();
+      const item: IGroupItem = {
+        id: randomUUID(),
+        name: group.name,
+        status: group.status ?? 'active',
+        ...(group.leader_id && { leader_id: group.leader_id }),
+        created_at: now,
+        updated_at: now,
       };
-
-      return group;
+      await groups.put(
+        { ...item },
+        {
+          condition: 'attribute_not_exists(id)',
+        },
+      );
+      return toGroup(item);
     } catch (error) {
       return handleRepositoryError('GroupRepository.insertGroup', error);
     }
   }
 
-  async findAll(userToken: string): Promise<IGroup[]> {
+  async findAll(): Promise<IGroup[]> {
     try {
-      const response = await supabaseService.userSelect(userToken, 'groups', '*');
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = response.data as unknown as GroupsRow[];
-      return rows.map((row) => ({
-        id: row.id,
-        tenant_id: row.tenant_id,
-        name: row.name,
-        status: row.status,
-        leader_id: row.leader_id,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
+      const pages = await Promise.all(
+        GROUP_STATUSES.map((status) => this.findByStatus(status)),
+      );
+      return pages.flat();
     } catch (error) {
       return handleRepositoryError('GroupRepository.findAll', error);
     }
   }
 
-  async findById(groupId: string, userToken: string): Promise<IGroup | null> {
+  async findByStatus(status: string): Promise<IGroup[]> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'groups',
-        '*',
-        { id: groupId } as Partial<GroupsRow>,
-      );
+      const items = await groups.queryAll({
+        index: 'byStatus',
+        keyCondition: 'status = :status',
+        values: { ':status': status },
+      });
+      return items.map(toGroup);
+    } catch (error) {
+      return handleRepositoryError('GroupRepository.findByStatus', error);
+    }
+  }
 
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as GroupsRow;
-      const group: IGroup = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        name: row.name,
-        status: row.status,
-        leader_id: row.leader_id,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-
-      return group;
+  async findById(groupId: string): Promise<IGroup | null> {
+    try {
+      const item = await groups.get({
+        id: groupId,
+      });
+      return item ? toGroup(item) : null;
     } catch (error) {
       return handleRepositoryError('GroupRepository.findById', error);
     }
   }
 
-  async updateGroup(
-    groupId: string,
-    data: GroupsUpdate,
-    userToken: string,
-  ): Promise<IGroup> {
+  async findByIds(groupIds: string[]): Promise<IGroup[]> {
     try {
-      const response = await supabaseService.userUpdate(
-        userToken,
-        'groups',
-        data,
-        { id: groupId } as Partial<GroupsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
+      const unique = Array.from(new Set(groupIds));
+      if (unique.length === 0) {
+        return [];
       }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No group returned after update');
-      }
-
-      const row = response.data[0] as unknown as GroupsRow;
-      const group: IGroup = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        name: row.name,
-        status: row.status,
-        leader_id: row.leader_id,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-
-      return group;
+      const items = await groups.batchGet(unique.map((id) => ({ id })));
+      return items.map(toGroup);
     } catch (error) {
+      return handleRepositoryError('GroupRepository.findByIds', error);
+    }
+  }
+
+  async updateGroup(groupId: string, data: IGroupUpdate): Promise<IGroup> {
+    try {
+      const updated = await groups.updateFields({ id: groupId }, data, {
+        condition: 'attribute_exists(id)',
+      });
+      if (!updated) {
+        throw new GroupNotFoundError();
+      }
+      return toGroup(updated);
+    } catch (error) {
+      if (
+        error instanceof GroupNotFoundError ||
+        error instanceof DynamoConditionFailedError
+      ) {
+        throw new GroupNotFoundError();
+      }
       return handleRepositoryError('GroupRepository.updateGroup', error);
-    }
-  }
-
-  async getGroupStats(token: string) {
-    try {
-      return await supabaseService.userRpc(token, 'get_group_stats', {});
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.getGroupStats', error);
-    }
-  }
-
-  async getGroupDetailStats(token: string, periodStart: string, groupId: string) {
-    try {
-      return await supabaseService.userRpc(token, 'get_group_detail_stats', {
-        p_group_id: groupId,
-        period_start: periodStart,
-      });
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.getGroupDetailStats', error);
-    }
-  }
-
-  async getAgentStats(token: string, groupId: string, periodStart: string) {
-    try {
-      return await supabaseService.userRpc(token, 'get_agent_stats', {
-        p_group_id: groupId,
-        period_start: periodStart,
-      });
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.getAgentStats', error);
-    }
-  }
-
-  async getGroupAgentsCount(token: string, groupId: string): Promise<number> {
-    try {
-      return await supabaseService.userCountWithEq(
-        token,
-        'users',
-        { group_id: groupId, status: 'active' },
-        'role',
-        ['agent', 'group_leader'],
-      );
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.getGroupAgentsCount', error);
-    }
-  }
-
-  async findActiveByTenantId(tenantId: string): Promise<Pick<GroupsRow, 'id' | 'name'>[]> {
-    try {
-      const response = await supabaseService.adminSelect(
-        'groups',
-        'id,name',
-        { tenant_id: tenantId, status: 'active' } as Partial<GroupsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as Pick<GroupsRow, 'id' | 'name'>[];
-      return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-      }));
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.findActiveByTenantId', error);
     }
   }
 }

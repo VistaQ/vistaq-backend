@@ -1,53 +1,39 @@
-import type { Database } from '@src/types/database.types';
+export interface ICoachingSessionAttendance {
+  id: string;
+  session_id: string;
+  agent_id: string | null;
+  agent_name: string;
+  agent_email: string;
+  group_id: string | null;
+  group_name: string | null;
+  status: string;
+  joined_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
-/******************************************************************************
-                        Raw Row Types (Repository layer only)
-******************************************************************************/
-
-type CoachingSessionAttendanceRow =
-  Database['public']['Tables']['coaching_session_attendance']['Row'];
-
-/******************************************************************************
-                        Derived Domain Interfaces
-******************************************************************************/
-
-export type ICoachingSessionAttendance = Pick<
-  CoachingSessionAttendanceRow,
-  | 'id'
-  | 'session_id'
-  | 'agent_id'
-  | 'agent_name'
-  | 'agent_email'
-  | 'group_id'
-  | 'group_name'
-  | 'status'
-  | 'joined_at'
-  | 'created_at'
-  | 'updated_at'
->;
-
-type CoachingSessionsRow =
-  Database['public']['Tables']['coaching_sessions']['Row'];
-
-export type ICoachingSession = Pick<
-  CoachingSessionsRow,
-  | 'id'
-  | 'tenant_id'
-  | 'coaching_type'
-  | 'title'
-  | 'description'
-  | 'start_date'
-  | 'end_date'
-  | 'training_mode'
-  | 'link'
-  | 'status'
-  | 'created_by'
-  | 'created_by_name'
-  | 'created_by_role'
-  | 'created_at'
-  | 'updated_at'
-> & {
+export interface ICoachingSession {
+  id: string;
+  tenant_id: string;
+  coaching_type: string;
+  title: string;
+  description: string | null;
+  start_date: string;
+  end_date: string;
+  training_mode: string;
+  link: string | null;
+  status: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_by_role: string | null;
+  created_at: string;
+  updated_at: string;
   targetGroupIds: string[];
   targetAgentIds: string[];
+  attendance_total: number;
+  attendance_joined: number;
+}
+
+export interface ICoachingSessionDetail extends ICoachingSession {
   attendance: ICoachingSessionAttendance[];
-};
+}

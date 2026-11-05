@@ -1,25 +1,20 @@
-import supabaseService from '@src/services/supabase.service';
-import type { Database } from '@src/types/database.types';
+import { randomUUID } from 'crypto';
+
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import userRepository from '@src/repositories/user.repository';
+import { DynamoTable } from '@src/services/dynamo.service';
 import type {
   IPaginatedUploadAudit,
-  IUploadAuditEntry,
   IUploadBatch,
   UploadBatchIns,
-  UploadBatchRow,
   UploadStatus,
 } from '@src/types/salesReport.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
 
-type UsersRow = Database['public']['Tables']['users']['Row'];
-
-interface BatchSummaryUpdate {
-  rows_loaded: number;
-  rows_skipped: number;
-  status: UploadStatus;
-}
-
-interface BatchAuditRow {
+interface IUploadBatchItem {
   id: string;
+  uploaded_by?: string;
   year: number;
   month: number;
   file_name: string;
@@ -27,52 +22,51 @@ interface BatchAuditRow {
   rows_skipped: number;
   status: string;
   created_at: string;
-  uploaded_by: string | null;
 }
 
-class UploadBatchRepository {
-  private mapRow(row: UploadBatchRow): IUploadBatch {
-    return {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      uploaded_by: row.uploaded_by,
-      year: row.year,
-      month: row.month,
-      file_name: row.file_name,
-      rows_loaded: row.rows_loaded,
-      rows_skipped: row.rows_skipped,
-      status: row.status as UploadStatus,
-      created_at: row.created_at,
-    };
-  }
+interface BatchSummaryUpdate {
+  rows_loaded: number;
+  rows_skipped: number;
+  status: UploadStatus;
+}
 
-  /**
-   * Returns the IDs of every `upload_batches` row for the given tenant + year
-   * + month, EXCLUDING the supplied `excludeBatchId`. Used by the sales-points
-   * reversal step to find prior batches whose point_transactions need offset
-   * entries when a month is re-uploaded for corrections.
-   */
+const uploadBatches = new DynamoTable<IUploadBatchItem>('UploadBatches');
+
+function toBatch(item: IUploadBatchItem): IUploadBatch {
+  return {
+    id: item.id,
+    tenant_id: TRANSITIONAL_TENANT_ID,
+    uploaded_by: item.uploaded_by ?? null,
+    year: item.year,
+    month: item.month,
+    file_name: item.file_name,
+    rows_loaded: item.rows_loaded,
+    rows_skipped: item.rows_skipped,
+    status: item.status as UploadStatus,
+    created_at: item.created_at,
+  };
+}
+
+/******************************************************************************
+                          UploadBatchRepository
+******************************************************************************/
+
+class UploadBatchRepository {
   async findPriorBatchIdsForPeriod(
-    tenantId: string,
+    _tenantId: string,
     year: number,
     month: number,
     excludeBatchId: string,
   ): Promise<string[]> {
     try {
-      // Fetch all matching ids for the period and filter out the excluded
-      // current batch in JS — the wrapper exposes `.eq()` filters, and the
-      // exclusion is a single id-equality check that doesn't justify adding a
-      // dedicated `.neq()` primitive.
-      const { data, error } = await supabaseService.adminSelect(
-        'upload_batches',
-        'id',
-        { tenant_id: tenantId, year, month } as Partial<UploadBatchRow>,
-      );
-      if (error) throw new Error(error.message);
-      const rows = (data ?? []) as unknown as { id: string }[];
-      return rows.map((r) => r.id).filter((id) => id !== excludeBatchId);
+      const items = await uploadBatches.queryAll({
+        index: 'byPeriod',
+        keyCondition: 'year = :year AND month = :month',
+        values: { ':year': year, ':month': month },
+      });
+      return items.map((item) => item.id).filter((id) => id !== excludeBatchId);
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'UploadBatchRepository.findPriorBatchIdsForPeriod',
         error,
       );
@@ -81,13 +75,21 @@ class UploadBatchRepository {
 
   async insertBatch(data: UploadBatchIns): Promise<IUploadBatch> {
     try {
-      const response = await supabaseService.adminInsert('upload_batches', data);
-      if (response.error || !response.data?.[0]) {
-        throw new Error(response.error?.message ?? 'No row returned from insert');
-      }
-      return this.mapRow(response.data[0] as UploadBatchRow);
+      const item: IUploadBatchItem = {
+        id: randomUUID(),
+        ...(data.uploaded_by && { uploaded_by: data.uploaded_by }),
+        year: data.year,
+        month: data.month,
+        file_name: data.file_name,
+        rows_loaded: data.rows_loaded ?? 0,
+        rows_skipped: data.rows_skipped ?? 0,
+        status: data.status ?? 'success',
+        created_at: nowUtc(),
+      };
+      await uploadBatches.put(item, { condition: 'attribute_not_exists(id)' });
+      return toBatch(item);
     } catch (error) {
-      handleRepositoryError('UploadBatchRepository.insertBatch', error);
+      return handleRepositoryError('UploadBatchRepository.insertBatch', error);
     }
   }
 
@@ -96,97 +98,65 @@ class UploadBatchRepository {
     summary: BatchSummaryUpdate,
   ): Promise<void> {
     try {
-      const response = await supabaseService.adminUpdate(
-        'upload_batches',
-        {
-          rows_loaded: summary.rows_loaded,
-          rows_skipped: summary.rows_skipped,
-          status: summary.status,
-        },
+      await uploadBatches.update(
         { id: batchId },
+        'SET rows_loaded = :loaded, rows_skipped = :skipped, status = :status',
+        {
+          condition: 'attribute_exists(id)',
+          values: {
+            ':loaded': summary.rows_loaded,
+            ':skipped': summary.rows_skipped,
+            ':status': summary.status,
+          },
+        },
       );
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
     } catch (error) {
-      handleRepositoryError('UploadBatchRepository.updateBatchSummary', error);
+      return handleRepositoryError(
+        'UploadBatchRepository.updateBatchSummary',
+        error,
+      );
     }
   }
 
-  /**
-   * Paginated audit list of upload batches for a tenant + year.
-   *
-   * Sorted by `created_at` DESC. The uploader's display name is resolved via a
-   * second query against `public.users`; we cannot use a PostgREST embedded
-   * select because `upload_batches.uploaded_by` FKs into `auth.users`, not the
-   * public users table that holds `name`. Manual-mode uploads (uploaded_by IS
-   * NULL) carry `uploader_name = null`.
-   */
   async findPaginatedAuditByTenant(
-    tenantId: string,
+    _tenantId: string,
     year: number,
     page: number,
     pageSize: number,
   ): Promise<IPaginatedUploadAudit> {
     try {
-      const offset = (page - 1) * pageSize;
-      const rangeEnd = offset + pageSize - 1;
-
-      const { data, error, count } = await supabaseService.adminSelectPaginated(
-        'upload_batches',
-        'id, year, month, file_name, rows_loaded, rows_skipped, status, created_at, uploaded_by',
-        { tenant_id: tenantId, year } as Partial<UploadBatchRow>,
-        { column: 'created_at', ascending: false },
-        { from: offset, to: rangeEnd },
+      const items = await uploadBatches.queryAll({
+        index: 'byYear',
+        keyCondition: 'year = :year',
+        values: { ':year': year },
+        descending: true,
+      });
+      const pageItems = items.slice((page - 1) * pageSize, page * pageSize);
+      const uploaders = await userRepository.findByIds(
+        pageItems
+          .map((item) => item.uploaded_by)
+          .filter((id): id is string => !!id),
       );
-
-      if (error) throw new Error(error.message);
-
-      const rows = (data ?? []) as unknown as BatchAuditRow[];
-      const uploaderIds = Array.from(
-        new Set(
-          rows
-            .map((r) => r.uploaded_by)
-            .filter((id): id is string => id !== null),
-        ),
-      );
-
-      const nameByUserId = new Map<string, string>();
-      if (uploaderIds.length > 0) {
-        const { data: userRows, error: userError } =
-          await supabaseService.adminSelectIn(
-            'users',
-            'id, name',
-            'id',
-            uploaderIds,
-          );
-
-        if (userError) throw new Error(userError.message);
-        const users = (userRows ?? []) as unknown as Pick<UsersRow, 'id' | 'name'>[];
-        for (const u of users) {
-          nameByUserId.set(u.id, u.name);
-        }
-      }
-
-      const entries: IUploadAuditEntry[] = rows.map((r) => ({
-        id: r.id,
-        year: r.year,
-        month: r.month,
-        file_name: r.file_name,
-        rows_loaded: r.rows_loaded,
-        rows_skipped: r.rows_skipped,
-        status: r.status as UploadStatus,
-        uploader_name:
-          r.uploaded_by !== null ? nameByUserId.get(r.uploaded_by) ?? null : null,
-        imported_at: r.created_at,
-      }));
+      const names = new Map(uploaders.map((user) => [user.id, user.name]));
 
       return {
-        data: entries,
-        meta: { page, pageSize, total: count ?? 0 },
+        data: pageItems.map((item) => ({
+          id: item.id,
+          year: item.year,
+          month: item.month,
+          file_name: item.file_name,
+          rows_loaded: item.rows_loaded,
+          rows_skipped: item.rows_skipped,
+          status: item.status as UploadStatus,
+          uploader_name: item.uploaded_by
+            ? (names.get(item.uploaded_by) ?? null)
+            : null,
+          imported_at: item.created_at,
+        })),
+        meta: { page, pageSize, total: items.length },
       };
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'UploadBatchRepository.findPaginatedAuditByTenant',
         error,
       );

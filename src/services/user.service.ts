@@ -9,18 +9,17 @@ import userRepository, {
   type IUserUpdate,
 } from '@src/repositories/user.repository';
 import cognitoService from '@src/services/cognito.service';
-import type { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
+import scopeService from '@src/services/scope.service';
+import type {
+  ICaller,
+  IUser,
+  IUserWithManagedGroups,
+} from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************
                             Interfaces
 ******************************************************************************/
-
-export interface ICaller {
-  id: string;
-  role: string;
-  group_id: string | null;
-}
 
 interface IUpdateUserParams {
   userId: string;
@@ -91,11 +90,9 @@ class UserService {
       } else if (caller.role === 'master_trainer') {
         users = await userRepository.findByRoles(ROLES_BELOW_ADMIN, 'active');
       } else if (caller.role === 'trainer') {
-        const groups = await groupTrainerRepository.findGroupIdsByTrainerIds([
-          caller.id,
-        ]);
+        const groupIds = await scopeService.managedGroupIds(caller.id);
         const pages = await Promise.all(
-          (groups.get(caller.id) ?? []).map((groupId) =>
+          groupIds.map((groupId) =>
             userRepository.findByGroupId(groupId),
           ),
         );

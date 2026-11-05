@@ -1,92 +1,123 @@
-import supabaseService from '@src/services/supabase.service';
-import type {
-  IPointTransactionIns,
-  ISalesPointsAward,
-  PointTransactionRow,
-} from '@src/types/salesPoints.types';
+import { randomUUID } from 'crypto';
+
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import {
+  type IPointTotalsItem,
+  LIFETIME_YM,
+} from '@src/repositories/pointTotals.repository';
+import dynamoService, {
+  DynamoTable,
+  type ITransactItem,
+} from '@src/services/dynamo.service';
+import type { PointCategory } from '@src/types/agentPoints.types';
+import type { ISalesPointsAward } from '@src/types/salesPoints.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { monthBucketUtc, nowUtc } from '@src/utils/period';
+
+export interface IPointTransaction {
+  id: string;
+  user_id: string;
+  created_at: string;
+  activity: string;
+  category: PointCategory;
+  points: number;
+  subject_type: string;
+  subject_id: string;
+  subject_label: string | null;
+}
+
+interface IPointTransactionItem extends Omit<
+  IPointTransaction,
+  'subject_label'
+> {
+  created_at_id: string;
+  subject_label?: string;
+}
+
+interface ISalesAwardItem {
+  user_id: string;
+  ym_activity: string;
+  points: number;
+  batch_id: string;
+}
+
+const ledger = new DynamoTable<IPointTransactionItem>('PointTransactions');
+const pointTotals = new DynamoTable<IPointTotalsItem>('PointTotals');
+const salesAwards = new DynamoTable<ISalesAwardItem>('SalesAwards');
+const uploadBatches = new DynamoTable<{
+  id: string;
+  year: number;
+  month: number;
+}>('UploadBatches');
+
+const MAX_AWARD_ATTEMPTS = 3;
 
 /******************************************************************************
-                          PointTransactionRepository
+                        PointTransactionRepository
 ******************************************************************************/
 
-/**
- * Repository for the `point_transactions` ledger. Sales-completion points are
- * the first writer to hit this repo from the backend (existing point insertion
- * paths live in Postgres functions / older flows). Read-side aggregation lives
- * in the existing `agentPoints` repository / RPCs and is intentionally NOT
- * reused here.
- */
 class PointTransactionRepository {
-  /**
-   * Bulk-inserts an array of point transactions in a single round trip.
-   * Returns silently on an empty input — callers can pass a freshly built
-   * array without a length guard.
-   */
-  async bulkInsert(rows: IPointTransactionIns[]): Promise<void> {
+  /** Newest first; the caller pages by slicing, with the total from PointTotals. */
+  async findRecentForUser(
+    userId: string,
+    count: number,
+  ): Promise<IPointTransaction[]> {
     try {
-      if (rows.length === 0) return;
-      const response = await supabaseService.adminInsert(
-        'point_transactions',
-        rows,
-      );
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
+      const items = await ledger.queryAll({
+        keyCondition: 'user_id = :user',
+        values: { ':user': userId },
+        descending: true,
+        limit: count,
+      });
+      return items.map(({ created_at_id: _sortKey, ...item }) => ({
+        ...item,
+        subject_label: item.subject_label ?? null,
+      }));
     } catch (error) {
-      handleRepositoryError('PointTransactionRepository.bulkInsert', error);
-    }
-  }
-
-  /**
-   * Returns every point_transaction whose `subject_id` is in the supplied list
-   * AND whose `activity` is in the supplied activities filter, scoped to the
-   * given tenant. Used by the reversal step to find prior awards linked to
-   * older `upload_batches` rows for the same (tenant, year, month).
-   *
-   * Both `subjectIds` and `activities` are required and non-empty; an empty
-   * array short-circuits to `[]` so callers don't need to guard.
-   */
-  async findBySubjectIds(
-    tenantId: string,
-    subjectIds: string[],
-    activities: string[],
-  ): Promise<PointTransactionRow[]> {
-    try {
-      if (subjectIds.length === 0 || activities.length === 0) return [];
-
-      const { data, error } = await supabaseService.adminSelectInIn(
-        'point_transactions',
-        'id, tenant_id, user_id, activity, points, subject_id, subject_type, created_at',
-        [
-          { column: 'subject_id', values: subjectIds },
-          { column: 'activity', values: activities },
-        ],
-        { tenant_id: tenantId, subject_type: 'upload_batch' },
-      );
-
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as PointTransactionRow[];
-    } catch (error) {
-      handleRepositoryError(
-        'PointTransactionRepository.findBySubjectIds',
+      return handleRepositoryError(
+        'PointTransactionRepository.findRecentForUser',
         error,
       );
     }
   }
 
-  /**
-   * Calls the `award_sales_points_for_batch` Postgres RPC. The function
-   * acquires a transaction-scoped advisory lock keyed on the period
-   * (`hashtext('sales_points:tenant:year:month')`) before doing the
-   * reversal-then-award insert atomically. This serializes concurrent
-   * re-uploads of the same (tenant, year, month) and prevents the
-   * read-priors-then-insert race that would otherwise corrupt the ledger.
-   *
-   * The caller hands in already-computed award rows (rate × MTD math has
-   * happened in the service layer); this method exists purely to push the
-   * critical reversal+insert section into a single Postgres transaction.
-   */
+  // Totals are bucketed by the month the ledger row is written, as the old
+  // leaderboard summed point_transactions by created_at.
+  private ledgerItems(
+    entry: Omit<IPointTransaction, 'id' | 'created_at' | 'subject_label'>,
+  ): ITransactItem[] {
+    const id = randomUUID();
+    const createdAt = nowUtc();
+    const ym = monthBucketUtc(createdAt);
+    const totals = `ADD points :points, txn_count :one, ${entry.category}_points :points`;
+    const values = { ':points': entry.points, ':one': 1 };
+    return [
+      ledger.putItem(
+        {
+          ...entry,
+          id,
+          created_at: createdAt,
+          created_at_id: `${createdAt}#${id}`,
+        },
+        { condition: 'attribute_not_exists(created_at_id)' },
+      ),
+      pointTotals.updateItem({ user_id: entry.user_id, ym }, totals, {
+        values,
+      }),
+      pointTotals.updateItem(
+        { user_id: entry.user_id, ym: LIFETIME_YM },
+        totals,
+        {
+          values,
+        },
+      ),
+    ];
+  }
+
+  // Replaces award_sales_points_for_batch. SalesAwards holds the points each
+  // user currently has for (month, activity); each pair moves to the new value
+  // in one transaction conditioned on the value read, so re-uploads and
+  // retries never double-count. Users dropped from the report go to 0.
   async awardWithReversal(params: {
     tenantId: string;
     year: number;
@@ -96,33 +127,124 @@ class PointTransactionRepository {
     awards: ISalesPointsAward[];
   }): Promise<void> {
     try {
-      const awardsJson = params.awards.map((a) => ({
-        user_id: a.user_id,
-        activity: a.activity,
-        points: a.points,
-        subject_id: a.subject_id,
-      }));
+      const ym = params.year * 100 + params.month;
+      const target = new Map<string, number>();
+      for (const award of params.awards) {
+        target.set(`${award.user_id}|${award.activity}`, award.points);
+      }
 
-      await supabaseService.adminRpc('award_sales_points_for_batch', {
-        p_tenant_id: params.tenantId,
-        p_year: params.year,
-        p_month: params.month,
-        p_batch_id: params.batchId,
-        p_activities: [...params.activities],
-        p_awards: awardsJson,
+      const batches = await uploadBatches.queryAll({
+        index: 'byPeriod',
+        keyCondition: 'year = :year AND month = :month',
+        values: { ':year': params.year, ':month': params.month },
       });
+      const priorRows = await Promise.all(
+        batches
+          .filter((batch) => batch.id !== params.batchId)
+          .map((batch) =>
+            ledger.queryAll({
+              index: 'bySubject',
+              keyCondition: 'subject_type = :type AND subject_id = :batch',
+              values: { ':type': 'upload_batch', ':batch': batch.id },
+            }),
+          ),
+      );
+      const users = new Set([
+        ...params.awards.map((award) => award.user_id),
+        ...priorRows.flat().map((row) => row.user_id),
+      ]);
+      const keys = [...users].flatMap((user_id) =>
+        params.activities.map((activity) => ({
+          user_id,
+          ym_activity: `${ym}#${activity}`,
+        })),
+      );
+      const current = new Map(
+        (await salesAwards.batchGet(keys)).map((item) => [
+          `${item.user_id}|${item.ym_activity.split('#')[1]}`,
+          item,
+        ]),
+      );
+
+      await Promise.all(
+        keys.map(({ user_id, ym_activity }) => {
+          const activity = ym_activity.split('#')[1];
+          const key = `${user_id}|${activity}`;
+          return this.moveAward(
+            { user_id, ym_activity },
+            activity,
+            params.batchId,
+            target.get(key) ?? 0,
+            current.get(key) ?? null,
+          );
+        }),
+      );
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'PointTransactionRepository.awardWithReversal',
         error,
       );
     }
   }
-}
 
-/******************************************************************************
-                                Export
-******************************************************************************/
+  private async moveAward(
+    key: { user_id: string; ym_activity: string },
+    activity: string,
+    batchId: string,
+    points: number,
+    existing: ISalesAwardItem | null,
+  ): Promise<void> {
+    try {
+      let previous = existing;
+      for (let attempt = 0; attempt < MAX_AWARD_ATTEMPTS; attempt++) {
+        if (previous?.batch_id === batchId) return;
+        const delta = points - (previous?.points ?? 0);
+        if (delta === 0 && (previous || points === 0)) return;
+
+        const guard = previous
+          ? salesAwards.putItem(
+              { ...key, points, batch_id: batchId },
+              {
+                condition: 'points = :was AND batch_id = :wasBatch',
+                values: {
+                  ':was': previous.points,
+                  ':wasBatch': previous.batch_id,
+                },
+              },
+            )
+          : salesAwards.putItem(
+              { ...key, points, batch_id: batchId },
+              { condition: 'attribute_not_exists(user_id)' },
+            );
+        try {
+          await dynamoService.transactWrite([
+            guard,
+            ...(delta === 0
+              ? []
+              : this.ledgerItems({
+                  user_id: key.user_id,
+                  activity,
+                  category: 'sales',
+                  points: delta,
+                  subject_type: 'upload_batch',
+                  subject_id: batchId,
+                })),
+          ]);
+          return;
+        } catch (error) {
+          if (!(error instanceof DynamoConditionFailedError)) throw error;
+          previous = (await salesAwards.get(key, { consistent: true })) ?? null;
+        }
+      }
+      throw new Error(`sales award for ${key.user_id} kept changing`);
+    } catch (error) {
+      return handleRepositoryError(
+        'PointTransactionRepository.moveAward',
+        error,
+      );
+    }
+  }
+}
 
 export const pointTransactionRepository = new PointTransactionRepository();
 export default pointTransactionRepository;

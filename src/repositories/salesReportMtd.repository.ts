@@ -1,9 +1,10 @@
-import supabaseService from '@src/services/supabase.service';
-import type { Database } from '@src/types/database.types';
+import { randomUUID } from 'crypto';
+
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
+import { DynamoTable } from '@src/services/dynamo.service';
 import type { SalesReportMtdIns } from '@src/types/salesReport.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
-
-type SalesReportMtdRow = Database['public']['Tables']['sales_report_mtd']['Row'];
+import { nowUtc } from '@src/utils/period';
 
 export interface MtdMonthlyRow {
   user_id: string;
@@ -19,128 +20,203 @@ export interface MtdFycMonthlyRow {
   fyct_mtd: number;
 }
 
+export interface MtdFycRow extends MtdMonthlyRow, MtdFycMonthlyRow {
+  acs: number;
+}
+
+interface IMtdItem {
+  user_id: string;
+  ym: number;
+  id: string;
+  batch_id: string;
+  year: number;
+  month: number;
+  ace?: number;
+  noc?: number;
+  acs?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+const METRICS = ['ace', 'noc', 'acs'] as const;
+
+const mtd = new DynamoTable<IMtdItem>('SalesReportMtd');
+
+function toMonthly(item: IMtdItem): MtdMonthlyRow {
+  return {
+    user_id: item.user_id,
+    month: item.month,
+    ace: item.ace ?? 0,
+    noc: item.noc ?? 0,
+  };
+}
+
+/******************************************************************************
+                          SalesReportMtdRepository
+******************************************************************************/
+
 class SalesReportMtdRepository {
-  async bulkUpsert(rows: SalesReportMtdIns[]): Promise<void> {
+  private async findItems(
+    year: number,
+    userIds?: string[],
+    month?: number,
+  ): Promise<IMtdItem[]> {
     try {
-      if (rows.length === 0) return;
-      const response = await supabaseService.adminUpsert(
-        'sales_report_mtd',
-        rows,
-        'tenant_id,user_id,year,month',
-      );
-      if (response.error) throw new Error(response.error.message);
+      if (userIds) {
+        const from = year * 100 + (month ?? 1);
+        const to = year * 100 + (month ?? 12);
+        const pages = await Promise.all(
+          Array.from(new Set(userIds)).map((userId) =>
+            mtd.queryAll({
+              keyCondition: 'user_id = :user AND ym BETWEEN :from AND :to',
+              values: { ':user': userId, ':from': from, ':to': to },
+            }),
+          ),
+        );
+        return pages.flat();
+      }
+      return await mtd.queryAll({
+        index: 'byPeriod',
+        keyCondition: month
+          ? 'year = :year AND month = :month'
+          : 'year = :year',
+        values: month ? { ':year': year, ':month': month } : { ':year': year },
+      });
     } catch (error) {
-      handleRepositoryError('SalesReportMtdRepository.bulkUpsert', error);
+      return handleRepositoryError('SalesReportMtdRepository.findItems', error);
     }
   }
 
-  /**
-   * Returns every MTD row for a tenant + year. Used to populate the per-agent
-   * `month_ace[12]` and `month_noc[12]` arrays in the year-rollup endpoint.
-   *
-   * If `userIds` is non-empty, restricts results to those users (the /me
-   * endpoint passes a single id; the manager list endpoint omits the filter).
-   */
+  async bulkUpsert(rows: SalesReportMtdIns[]): Promise<void> {
+    try {
+      const now = nowUtc();
+      await Promise.all(
+        rows.map((row) => {
+          const metrics = METRICS.filter((m) => row[m] !== undefined);
+          return mtd.update(
+            { user_id: row.user_id, ym: row.year * 100 + row.month },
+            `SET ${[
+              ...metrics.map((m) => `${m} = :${m}`),
+              'year = :year',
+              'month = :month',
+              'batch_id = :batch',
+              'updated_at = :now',
+              'id = if_not_exists(id, :id)',
+              'created_at = if_not_exists(created_at, :now)',
+            ].join(', ')}`,
+            {
+              values: {
+                ...Object.fromEntries(metrics.map((m) => [`:${m}`, row[m]])),
+                ':year': row.year,
+                ':month': row.month,
+                ':batch': row.batch_id,
+                ':now': now,
+                ':id': randomUUID(),
+              },
+            },
+          );
+        }),
+      );
+    } catch (error) {
+      return handleRepositoryError(
+        'SalesReportMtdRepository.bulkUpsert',
+        error,
+      );
+    }
+  }
+
   async findAceNocByTenantYear(
-    tenantId: string,
+    _tenantId: string,
     year: number,
     userIds?: string[],
   ): Promise<MtdMonthlyRow[]> {
     try {
-      if (userIds && userIds.length === 0) return [];
-
-      const eqFilters = { tenant_id: tenantId, year } as Partial<SalesReportMtdRow>;
-
-      const response = userIds
-        ? await supabaseService.adminSelectInIn(
-            'sales_report_mtd',
-            'user_id, month, ace, noc',
-            [{ column: 'user_id', values: userIds }],
-            eqFilters,
-          )
-        : await supabaseService.adminSelect(
-            'sales_report_mtd',
-            'user_id, month, ace, noc',
-            eqFilters,
-          );
-
-      if (response.error) throw new Error(response.error.message);
-      return (response.data ?? []) as unknown as MtdMonthlyRow[];
+      return (await this.findItems(year, userIds)).map(toMonthly);
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportMtdRepository.findAceNocByTenantYear',
         error,
       );
     }
   }
 
-  /**
-   * Returns every MTD row for a tenant + year + month, restricted to the
-   * supplied user list. Used by the sales-points awarding service to look up
-   * each agent's MTD ACE/NOC for the just-uploaded month in a single query.
-   * Returns `[]` when `userIds` is empty.
-   */
   async findAceNocByTenantYearMonth(
-    tenantId: string,
+    _tenantId: string,
     year: number,
     month: number,
     userIds: string[],
   ): Promise<MtdMonthlyRow[]> {
     try {
       if (userIds.length === 0) return [];
-
-      const { data, error } = await supabaseService.adminSelectInIn(
-        'sales_report_mtd',
-        'user_id, month, ace, noc',
-        [{ column: 'user_id', values: userIds }],
-        { tenant_id: tenantId, year, month } as Partial<SalesReportMtdRow>,
-      );
-
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as MtdMonthlyRow[];
+      return (await this.findItems(year, userIds, month)).map(toMonthly);
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportMtdRepository.findAceNocByTenantYearMonth',
         error,
       );
     }
   }
 
-  /**
-   * Returns every `sales_report_mtd_fyc` view row for a tenant + year. Used to
-   * populate the per-agent `month_fyc[12]` and `month_fyct[12]` arrays.
-   *
-   * If `userIds` is non-empty, restricts results to those users.
-   */
+  // Replaces the `sales_report_mtd_fyc` view: each MTD row joined to the YTD
+  // row of the same month, with FYC and FYCT minus the user's previous joined
+  // month (LAG over joined rows, default 0).
+  async findFycRowsByYear(
+    year: number,
+    userIds?: string[],
+  ): Promise<MtdFycRow[]> {
+    try {
+      const [mtdItems, ytdRows] = await Promise.all([
+        this.findItems(year, userIds),
+        salesReportYtdRepository.findByYear(year),
+      ]);
+      const ytdByKey = new Map(
+        ytdRows.map((row) => [`${row.user_id}#${row.month}`, row]),
+      );
+
+      const joined = mtdItems
+        .filter((item) => ytdByKey.has(`${item.user_id}#${item.month}`))
+        .sort(
+          (a, b) => a.user_id.localeCompare(b.user_id) || a.month - b.month,
+        );
+
+      const rows: MtdFycRow[] = [];
+      let previous: { user_id: string; fyc: number; fyct: number } | null =
+        null;
+      for (const item of joined) {
+        const y = ytdByKey.get(`${item.user_id}#${item.month}`)!;
+        const prior = previous?.user_id === item.user_id ? previous : null;
+        rows.push({
+          ...toMonthly(item),
+          acs: item.acs ?? 0,
+          fyc_mtd: y.fyc - (prior?.fyc ?? 0),
+          fyct_mtd: y.fyct - (prior?.fyct ?? 0),
+        });
+        previous = { user_id: item.user_id, fyc: y.fyc, fyct: y.fyct };
+      }
+      return rows;
+    } catch (error) {
+      return handleRepositoryError(
+        'SalesReportMtdRepository.findFycRowsByYear',
+        error,
+      );
+    }
+  }
+
   async findFycByTenantYear(
-    tenantId: string,
+    _tenantId: string,
     year: number,
     userIds?: string[],
   ): Promise<MtdFycMonthlyRow[]> {
     try {
-      if (userIds && userIds.length === 0) return [];
-
-      // `sales_report_mtd_fyc` is a view (Database['public']['Views']), not a
-      // Table — the typed wrappers accept any table name when called via the
-      // string-typed `adminSelectWithJoinIn`. `.eq()` filters cover tenant +
-      // year; `.in()` covers the optional userIds filter.
-      const eqFilters = { tenant_id: tenantId, year } as Record<string, unknown>;
-      const inFilters = userIds
-        ? [{ column: 'user_id', values: userIds }]
-        : [];
-
-      const { data, error } =
-        await supabaseService.adminSelectWithJoinIn(
-          'sales_report_mtd_fyc',
-          'user_id, month, fyc_mtd, fyct_mtd',
-          inFilters,
-          eqFilters,
-        );
-
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as MtdFycMonthlyRow[];
+      const rows = await this.findFycRowsByYear(year, userIds);
+      return rows.map(({ user_id, month, fyc_mtd, fyct_mtd }) => ({
+        user_id,
+        month,
+        fyc_mtd,
+        fyct_mtd,
+      }));
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportMtdRepository.findFycByTenantYear',
         error,
       );

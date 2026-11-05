@@ -1,7 +1,11 @@
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
-import prospectRepository from '@src/repositories/prospect.repository';
-import type { IProspect } from '@src/types/auth.types';
+import prospectRepository, {
+  type IProspectUpdate,
+} from '@src/repositories/prospect.repository';
+import scopeService from '@src/services/scope.service';
+import type { ICaller, IProspect } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
 
 /******************************************************************************
                             Interfaces
@@ -12,20 +16,11 @@ interface ICreateProspectParams {
   prospectPhone?: string;
   prospectEmail?: string;
   agentId: string;
-  tenantId: string;
-  token: string;
-}
-
-interface IDeleteProspectParams {
-  prospectId: string;
-  userId: string;
-  role: string;
-  token: string;
 }
 
 interface IUpdateProspectParams {
   prospectId: string;
-  token: string;
+  caller: ICaller;
   data: {
     fullName?: string;
     phoneNum?: string;
@@ -50,28 +45,23 @@ interface IUpdateProspectParams {
 class ProspectService {
   async createProspect(params: ICreateProspectParams): Promise<IProspect> {
     try {
-      const prospect = await prospectRepository.insertProspect(
-        {
-          prospect_name: params.prospectName,
-          prospect_phone: params.prospectPhone ?? null,
-          prospect_email: params.prospectEmail ?? null,
-          agent_id: params.agentId,
-          tenant_id: params.tenantId,
-          current_stage: 'prospect',
-        },
-        params.token,
-      );
-
-      return prospect;
+      return await prospectRepository.insertProspect({
+        prospect_name: params.prospectName,
+        prospect_phone: params.prospectPhone ?? null,
+        prospect_email: params.prospectEmail ?? null,
+        agent_id: params.agentId,
+      });
     } catch (error) {
       return handleServiceError('ProspectService.createProspect', error);
     }
   }
 
-  async getProspects(token: string): Promise<IProspect[]> {
+  async getProspects(caller: ICaller): Promise<IProspect[]> {
     try {
-      const prospects = await prospectRepository.findAll(token);
-      return prospects;
+      const agentIds = await scopeService.resolveAgentScope(caller);
+      return agentIds
+        ? await prospectRepository.findByAgentIds(agentIds)
+        : await prospectRepository.findAll();
     } catch (error) {
       return handleServiceError('ProspectService.getProspects', error);
     }
@@ -79,29 +69,31 @@ class ProspectService {
 
   async getProspectById(
     prospectId: string,
-    token: string,
+    caller: ICaller,
   ): Promise<IProspect | null> {
     try {
-      const prospect = await prospectRepository.findById(prospectId, token);
+      const prospect = await prospectRepository.findById(prospectId);
+      if (!prospect || !(await scopeService.canReadAgent(caller, prospect.agent_id))) {
+        return null;
+      }
       return prospect;
     } catch (error) {
       return handleServiceError('ProspectService.getProspectById', error);
     }
   }
 
-  async deleteProspect(params: IDeleteProspectParams): Promise<void> {
+  async deleteProspect(prospectId: string, caller: ICaller): Promise<void> {
     try {
-      const existing = await prospectRepository.findById(
-        params.prospectId,
-        params.token,
-      );
+      const existing = await prospectRepository.findById(prospectId, {
+        consistent: true,
+      });
       if (!existing) {
         throw new ProspectNotFoundError();
       }
-      if (params.role !== 'admin' && existing.agent_id !== params.userId) {
+      if (caller.role !== 'admin' && existing.agent_id !== caller.id) {
         throw new ProspectNotFoundError();
       }
-      await prospectRepository.deleteProspect(params.prospectId, params.token);
+      await prospectRepository.deleteProspect(prospectId);
     } catch (error) {
       if (error instanceof ProspectNotFoundError) throw error;
       return handleServiceError('ProspectService.deleteProspect', error);
@@ -110,16 +102,15 @@ class ProspectService {
 
   async updateProspect(params: IUpdateProspectParams): Promise<IProspect> {
     try {
-      const existing = await prospectRepository.findById(
-        params.prospectId,
-        params.token,
-      );
-      if (!existing) {
+      const existing = await prospectRepository.findById(params.prospectId, {
+        consistent: true,
+      });
+      if (!existing || existing.agent_id !== params.caller.id) {
         throw new ProspectNotFoundError();
       }
 
       const { data } = params;
-      const updateData: Record<string, unknown> = {};
+      const updateData: IProspectUpdate = {};
 
       if (data.fullName !== undefined) updateData.prospect_name = data.fullName;
       if (data.phoneNum !== undefined)
@@ -130,14 +121,9 @@ class ProspectService {
         updateData.current_stage = data.currentStage;
 
         if (data.currentStage !== existing.current_stage) {
-          const history =
-            (existing.stage_history as {
-              stage: string;
-              enteredAt: string;
-            }[]) ?? [];
           updateData.stage_history = [
-            ...history,
-            { stage: data.currentStage, enteredAt: new Date().toISOString() },
+            ...existing.stage_history,
+            { stage: data.currentStage, enteredAt: nowUtc() },
           ];
         }
       }
@@ -153,7 +139,7 @@ class ProspectService {
       if (data.appointmentStatus !== undefined) {
         updateData.appointment_status = data.appointmentStatus;
         if (data.appointmentStatus === 'done') {
-          updateData.appointment_completed_at = new Date().toISOString();
+          updateData.appointment_completed_at = nowUtc();
         }
       }
       if (data.salesMeetingStages !== undefined)
@@ -162,25 +148,13 @@ class ProspectService {
       if (data.salesOutcome !== undefined) {
         updateData.sales_outcome = data.salesOutcome;
         if (data.salesOutcome === 'successful') {
-          updateData.sales_completed_at = new Date().toISOString();
+          updateData.sales_completed_at = nowUtc();
         }
       }
       if (data.unsuccessfulReason !== undefined)
         updateData.unsuccessful_reason = data.unsuccessfulReason;
 
-      updateData.updated_at = new Date().toISOString();
-
-      const updatedProspect = await prospectRepository.updateProspect(
-        params.prospectId,
-        updateData,
-        params.token,
-      );
-
-      if (!updatedProspect) {
-        throw new ProspectNotFoundError();
-      }
-
-      return updatedProspect;
+      return await prospectRepository.updateProspect(params.prospectId, updateData);
     } catch (error) {
       if (error instanceof ProspectNotFoundError) throw error;
       return handleServiceError('ProspectService.updateProspect', error);

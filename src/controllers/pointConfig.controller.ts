@@ -57,15 +57,11 @@ class PointConfigController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { activity, points } = req.body;
 
       const pointConfig = await pointConfigService.createPointConfig({
         activity,
         points,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: ICreatePointConfigRes = {
@@ -94,12 +90,7 @@ class PointConfigController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
-
-      const configs = await pointConfigService.getPointConfigs(
-        req.user!.tenant_id,
-        token,
-      );
+      const configs = await pointConfigService.getPointConfigs();
 
       const responseBody: IGetPointConfigsRes = {
         success: true,
@@ -126,16 +117,12 @@ class PointConfigController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { activity } = req.params;
       const { points } = req.body;
 
       const updatedConfig = await pointConfigService.updatePointConfig({
         activity,
         points,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: IUpdatePointConfigRes = {

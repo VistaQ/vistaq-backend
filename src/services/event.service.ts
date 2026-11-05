@@ -6,7 +6,13 @@ import {
   InvalidGroupIdsError,
   UnauthorizedGroupAccessError,
 } from '@src/models/errors/event.errors';
-import eventRepository from '@src/repositories/event.repository';
+import eventRepository, {
+  type IEventUpdate,
+} from '@src/repositories/event.repository';
+import groupRepository from '@src/repositories/group.repository';
+import userRepository from '@src/repositories/user.repository';
+import scopeService from '@src/services/scope.service';
+import type { ICaller } from '@src/types/auth.types';
 import type { IEvent, IPublicEvent } from '@src/types/event.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -26,11 +32,9 @@ interface ICreateEventParams {
   visibility?: string;
   groupIds?: string[];
   agentIds?: string[];
-  tenantId: string;
   createdBy: string;
   createdByRole: string;
   role: string;
-  token: string;
 }
 
 interface IUpdateEventParams {
@@ -46,17 +50,23 @@ interface IUpdateEventParams {
   visibility?: string;
   groupIds?: string[];
   agentIds?: string[];
-  tenantId: string;
   role: string;
   userId: string;
-  token: string;
 }
 
-interface IDeleteEventParams {
-  eventId: string;
-  userId: string;
-  role: string;
-  token: string;
+const AGENT_ROLES = ['agent', 'group_leader'];
+
+function canRead(
+  caller: ICaller,
+  event: IEvent,
+  groupScope: string[] | null,
+): boolean {
+  return (
+    groupScope === null ||
+    event.created_by === caller.id ||
+    event.agentIds.includes(caller.id) ||
+    event.groupIds.some((groupId) => groupScope.includes(groupId))
+  );
 }
 
 /******************************************************************************
@@ -64,91 +74,75 @@ interface IDeleteEventParams {
 ******************************************************************************/
 
 class EventService {
-  async createEvent(params: ICreateEventParams): Promise<IEvent> {
+  private async validateTargets(
+    role: string,
+    userId: string,
+    groupIds?: string[],
+    agentIds?: string[],
+  ): Promise<void> {
     try {
-      if (params.groupIds) {
-        const foundGroupIds = await eventRepository.findGroupsByIds(
-          params.groupIds,
-          params.token,
-        );
-
-        if (foundGroupIds.length !== params.groupIds.length) {
+      if (groupIds) {
+        const unique = Array.from(new Set(groupIds));
+        const found = await groupRepository.findByIds(unique);
+        if (found.length !== unique.length) {
           throw new InvalidGroupIdsError();
         }
-
-        if (params.role === 'trainer') {
-          const managedGroupIds = await eventRepository.findTrainerGroups(
-            params.createdBy,
-          );
-          const managedSet = new Set(managedGroupIds);
-
-          if (!params.groupIds.every((id) => managedSet.has(id))) {
+        if (role === 'trainer') {
+          const managed = new Set(await scopeService.managedGroupIds(userId));
+          if (!unique.every((id) => managed.has(id))) {
             throw new UnauthorizedGroupAccessError();
           }
         }
       }
 
-      if (params.agentIds) {
-        const agentRows = await eventRepository.findUsersByIdsAndRoles(
-          params.agentIds,
-          params.token,
+      if (agentIds) {
+        const unique = Array.from(new Set(agentIds));
+        const agents = (await userRepository.findByIds(unique)).filter(
+          (user) => user.status === 'active',
         );
-
-        if (agentRows.length !== params.agentIds.length) {
-          throw new InvalidAgentIdsError();
-        }
-
-        const allowedRoles = ['agent', 'group_leader'];
-        if (agentRows.some((row) => !allowedRoles.includes(row.role))) {
-          throw new InvalidAgentIdsError();
-        }
-
-        if (agentRows.some((row) => row.tenant_id !== params.tenantId)) {
+        if (
+          agents.length !== unique.length ||
+          agents.some((agent) => !AGENT_ROLES.includes(agent.role))
+        ) {
           throw new InvalidAgentIdsError();
         }
       }
+    } catch (error) {
+      if (
+        error instanceof InvalidGroupIdsError ||
+        error instanceof UnauthorizedGroupAccessError ||
+        error instanceof InvalidAgentIdsError
+      ) {
+        throw error;
+      }
+      return handleServiceError('EventService.validateTargets', error);
+    }
+  }
 
-      const event = await eventRepository.insertEvent(
-        {
-          event_title: params.title,
-          start_date: params.startDate,
-          end_date: params.endDate,
-          status: params.status,
-          type: params.type,
-          description: params.description,
-          meeting_link: params.link ?? null,
-          venue: params.venue ?? null,
-          tenant_id: params.tenantId,
-          created_by: params.createdBy,
-          created_by_role: params.createdByRole,
-          visibility: params.visibility,
-        },
-        params.token,
+  async createEvent(params: ICreateEventParams): Promise<IEvent> {
+    try {
+      await this.validateTargets(
+        params.role,
+        params.createdBy,
+        params.groupIds,
+        params.agentIds,
       );
 
-      if (params.groupIds) {
-        const eventGroups = params.groupIds.map((groupId) => ({
-          event_id: event.id,
-          group_id: groupId,
-        }));
-        await eventRepository.insertEventGroups(eventGroups, params.token);
-      }
-
-      if (params.agentIds) {
-        const eventAgents = params.agentIds.map((userId) => ({
-          event_id: event.id,
-          user_id: userId,
-        }));
-        await eventRepository.insertEventAgents(eventAgents, params.token);
-      }
-
-      const finalEvent = await eventRepository.findById(event.id, params.token);
-
-      if (!finalEvent) {
-        throw new EventNotFoundError();
-      }
-
-      return finalEvent;
+      return await eventRepository.insertEvent({
+        event_title: params.title,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        status: params.status,
+        type: params.type,
+        description: params.description,
+        meeting_link: params.link ?? null,
+        venue: params.venue ?? null,
+        created_by: params.createdBy,
+        created_by_role: params.createdByRole,
+        visibility: params.visibility,
+        group_ids: params.groupIds ?? [],
+        agent_ids: params.agentIds ?? [],
+      });
     } catch (error) {
       if (
         error instanceof InvalidGroupIdsError ||
@@ -163,61 +157,22 @@ class EventService {
 
   async updateEvent(params: IUpdateEventParams): Promise<IEvent> {
     try {
-      const existing = await eventRepository.findById(
-        params.eventId,
-        params.token,
-      );
-
-      if (!existing) {
+      const existing = await eventRepository.findById(params.eventId);
+      if (
+        !existing ||
+        (params.role !== 'admin' && existing.created_by !== params.userId)
+      ) {
         throw new EventNotFoundError();
       }
 
-      if (params.groupIds) {
-        const foundGroupIds = await eventRepository.findGroupsByIds(
-          params.groupIds,
-          params.token,
-        );
+      await this.validateTargets(
+        params.role,
+        params.userId,
+        params.groupIds,
+        params.agentIds,
+      );
 
-        if (foundGroupIds.length !== params.groupIds.length) {
-          throw new InvalidGroupIdsError();
-        }
-
-        if (params.role === 'trainer') {
-          const managedGroupIds = await eventRepository.findTrainerGroups(
-            params.userId,
-          );
-          const managedSet = new Set(managedGroupIds);
-
-          if (!params.groupIds.every((id) => managedSet.has(id))) {
-            throw new UnauthorizedGroupAccessError();
-          }
-        }
-      }
-
-      if (params.agentIds) {
-        const agentRows = await eventRepository.findUsersByIdsAndRoles(
-          params.agentIds,
-          params.token,
-        );
-
-        if (agentRows.length !== params.agentIds.length) {
-          throw new InvalidAgentIdsError();
-        }
-
-        const allowedRoles = ['agent', 'group_leader'];
-        if (agentRows.some((row) => !allowedRoles.includes(row.role))) {
-          throw new InvalidAgentIdsError();
-        }
-
-        if (agentRows.some((row) => row.tenant_id !== params.tenantId)) {
-          throw new InvalidAgentIdsError();
-        }
-      }
-
-      const updateData: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
-      };
-
+      const updateData: IEventUpdate = {};
       if (params.title !== undefined) updateData.event_title = params.title;
       if (params.link !== undefined) updateData.meeting_link = params.link;
       if (params.venue !== undefined) updateData.venue = params.venue;
@@ -227,64 +182,20 @@ class EventService {
       if (params.type !== undefined) updateData.type = params.type;
       if (params.visibility !== undefined)
         updateData.visibility = params.visibility;
-
       if (params.startDate !== undefined)
         updateData.start_date = params.startDate;
       if (params.endDate !== undefined) updateData.end_date = params.endDate;
+      if (params.groupIds !== undefined) updateData.group_ids = params.groupIds;
+      if (params.agentIds !== undefined) updateData.agent_ids = params.agentIds;
 
       const effectiveStart = updateData.start_date ?? existing.start_date;
       const effectiveEnd =
         updateData.end_date ?? existing.end_date ?? existing.start_date;
-      if (
-        new Date(effectiveEnd as string) <= new Date(effectiveStart as string)
-      ) {
+      if (new Date(effectiveEnd) <= new Date(effectiveStart)) {
         throw new InvalidDateRangeError();
       }
 
-      const updatedEvent = await eventRepository.updateEvent(
-        params.eventId,
-        updateData,
-        params.token,
-      );
-
-      if (!updatedEvent) {
-        throw new EventNotFoundError();
-      }
-
-      if (params.groupIds) {
-        await eventRepository.deleteEventGroupsByEventId(
-          params.eventId,
-          params.token,
-        );
-        const eventGroups = params.groupIds.map((groupId) => ({
-          event_id: params.eventId,
-          group_id: groupId,
-        }));
-        await eventRepository.insertEventGroups(eventGroups, params.token);
-      }
-
-      if (params.agentIds) {
-        await eventRepository.deleteEventAgentsByEventId(
-          params.eventId,
-          params.token,
-        );
-        const eventAgents = params.agentIds.map((userId) => ({
-          event_id: params.eventId,
-          user_id: userId,
-        }));
-        await eventRepository.insertEventAgents(eventAgents, params.token);
-      }
-
-      const finalEvent = await eventRepository.findById(
-        params.eventId,
-        params.token,
-      );
-
-      if (!finalEvent) {
-        throw new EventNotFoundError();
-      }
-
-      return finalEvent;
+      return await eventRepository.updateEvent(existing, updateData);
     } catch (error) {
       if (
         error instanceof EventNotFoundError ||
@@ -299,38 +210,39 @@ class EventService {
     }
   }
 
-  async getEvents(token: string): Promise<IEvent[]> {
+  async getEvents(caller: ICaller): Promise<IEvent[]> {
     try {
-      return await eventRepository.findAll(token);
+      const groupScope = await scopeService.resolveGroupScope(caller);
+      return groupScope === null
+        ? await eventRepository.findAll()
+        : await eventRepository.findVisible(caller.id, groupScope);
     } catch (error) {
       return handleServiceError('EventService.getEvents', error);
     }
   }
 
-  async getEventById(eventId: string, token: string): Promise<IEvent | null> {
+  async getEventById(eventId: string, caller: ICaller): Promise<IEvent | null> {
     try {
-      return await eventRepository.findById(eventId, token);
+      const [event, groupScope] = await Promise.all([
+        eventRepository.findById(eventId),
+        scopeService.resolveGroupScope(caller),
+      ]);
+      return event && canRead(caller, event, groupScope) ? event : null;
     } catch (error) {
       return handleServiceError('EventService.getEventById', error);
     }
   }
 
-  async deleteEvent(params: IDeleteEventParams): Promise<void> {
+  async deleteEvent(eventId: string, caller: ICaller): Promise<void> {
     try {
-      const event = await eventRepository.findById(
-        params.eventId,
-        params.token,
-      );
-
+      const event = await this.getEventById(eventId, caller);
       if (!event) {
         throw new EventNotFoundError();
       }
-
-      if (params.role !== 'admin' && event.created_by !== params.userId) {
+      if (caller.role !== 'admin' && event.created_by !== caller.id) {
         throw new ForbiddenEventAccessError();
       }
-
-      await eventRepository.deleteEvent(params.eventId, params.token);
+      await eventRepository.deleteEvent(event);
     } catch (error) {
       if (
         error instanceof EventNotFoundError ||
@@ -344,27 +256,25 @@ class EventService {
 
   async getPublicEventById(eventId: string): Promise<IPublicEvent | null> {
     try {
-      const raw = await eventRepository.findPublicEventById(eventId);
-
-      if (!raw) {
+      const event = await eventRepository.findById(eventId);
+      if (!event || event.status === 'cancelled' || event.visibility !== 'public') {
         return null;
       }
-
-      if (raw.status === 'cancelled' || raw.visibility !== 'public') {
-        return null;
-      }
+      const creator = event.created_by
+        ? await userRepository.findById(event.created_by)
+        : null;
 
       return {
-        id: raw.id,
-        event_title: raw.event_title,
-        description: raw.description,
-        start_date: raw.start_date,
-        end_date: raw.end_date,
-        type: raw.type,
-        venue: raw.venue,
-        meeting_link: raw.meeting_link,
-        created_by_name: raw.created_by_name,
-        status: raw.status,
+        id: event.id,
+        event_title: event.event_title,
+        description: event.description,
+        start_date: event.start_date,
+        end_date: event.end_date,
+        type: event.type,
+        venue: event.venue,
+        meeting_link: event.meeting_link,
+        created_by_name: creator?.name ?? '',
+        status: event.status,
       };
     } catch (error) {
       return handleServiceError('EventService.getPublicEventById', error);

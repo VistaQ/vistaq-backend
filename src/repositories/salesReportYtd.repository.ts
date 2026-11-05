@@ -1,14 +1,10 @@
-import supabaseService from '@src/services/supabase.service';
+import { randomUUID } from 'crypto';
+
+import { DynamoTable } from '@src/services/dynamo.service';
 import type { SalesReportYtdIns } from '@src/types/salesReport.types';
-import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
 
-type SalesReportYtdRow = Database['public']['Tables']['sales_report_ytd']['Row'];
-
-/**
- * Subset of `sales_report_ytd` columns the read API needs. Repo-local; the
- * service layer maps these into domain interfaces before returning.
- */
 export interface YtdRollupRow {
   id: string;
   user_id: string;
@@ -16,6 +12,7 @@ export interface YtdRollupRow {
   month: number;
   ace: number;
   noc: number;
+  acs: number;
   fyct: number;
   fyct_pct: number;
   mdrt_shortage_fyct: number;
@@ -23,160 +20,184 @@ export interface YtdRollupRow {
   fyc_pct: number;
   mdrt_shortage_fyc: number;
   created_at: string;
-  /**
-   * Most recent time this YTD snapshot row was written or overwritten.
-   * Re-uploads of the same (tenant, user, year, month) advance this via the
-   * `set_updated_at` trigger while preserving `created_at`. The read API
-   * surfaces this as `imported_at` so callers see when the snapshot last
-   * changed, not when it was first imported.
-   */
   updated_at: string;
 }
 
-const ROLLUP_COLUMNS =
-  'id, user_id, year, month, ace, noc, fyct, fyct_pct, mdrt_shortage_fyct, fyc, fyc_pct, mdrt_shortage_fyc, created_at, updated_at';
+type IYtdItem = YtdRollupRow & { ym: number; batch_id: string };
+
+const METRICS = [
+  'ace',
+  'noc',
+  'acs',
+  'fyc',
+  'fyc_pct',
+  'fyct',
+  'fyct_pct',
+  'mdrt_shortage_fyc',
+  'mdrt_shortage_fyct',
+] as const;
+
+const ytd = new DynamoTable<IYtdItem>('SalesReportYtd');
+
+function toRow(item: IYtdItem): YtdRollupRow {
+  const row = { ...item } as Partial<IYtdItem>;
+  delete row.ym;
+  delete row.batch_id;
+  for (const metric of METRICS) row[metric] ??= 0;
+  return row as YtdRollupRow;
+}
+
+function latestPerUser(rows: YtdRollupRow[]): YtdRollupRow[] {
+  const latest = new Map<string, YtdRollupRow>();
+  for (const row of rows) {
+    const existing = latest.get(row.user_id);
+    if (!existing || row.month > existing.month) latest.set(row.user_id, row);
+  }
+  return Array.from(latest.values());
+}
+
+/******************************************************************************
+                          SalesReportYtdRepository
+******************************************************************************/
 
 class SalesReportYtdRepository {
   async bulkUpsert(rows: SalesReportYtdIns[]): Promise<void> {
     try {
-      if (rows.length === 0) return;
-      const response = await supabaseService.adminUpsert(
-        'sales_report_ytd',
-        rows,
-        'tenant_id,user_id,year,month',
+      const now = nowUtc();
+      await Promise.all(
+        rows.map((row) => {
+          const metrics = Object.fromEntries(
+            METRICS.filter((m) => row[m] !== undefined).map((m) => [m, row[m]]),
+          );
+          const sets = Object.keys(metrics).map((m) => `${m} = :${m}`);
+          return ytd.update(
+            { user_id: row.user_id, ym: row.year * 100 + row.month },
+            `SET ${[
+              ...sets,
+              'year = :year',
+              'month = :month',
+              'batch_id = :batch',
+              'updated_at = :now',
+              'id = if_not_exists(id, :id)',
+              'created_at = if_not_exists(created_at, :now)',
+            ].join(', ')}`,
+            {
+              values: {
+                ...Object.fromEntries(
+                  Object.entries(metrics).map(([m, v]) => [`:${m}`, v]),
+                ),
+                ':year': row.year,
+                ':month': row.month,
+                ':batch': row.batch_id,
+                ':now': now,
+                ':id': randomUUID(),
+              },
+            },
+          );
+        }),
       );
-      if (response.error) throw new Error(response.error.message);
     } catch (error) {
-      handleRepositoryError('SalesReportYtdRepository.bulkUpsert', error);
+      return handleRepositoryError(
+        'SalesReportYtdRepository.bulkUpsert',
+        error,
+      );
+    }
+  }
+
+  async findByYear(year: number): Promise<YtdRollupRow[]> {
+    try {
+      const items = await ytd.queryAll({
+        index: 'byPeriod',
+        keyCondition: 'year = :year',
+        values: { ':year': year },
+      });
+      return items.map(toRow);
+    } catch (error) {
+      return handleRepositoryError(
+        'SalesReportYtdRepository.findByYear',
+        error,
+      );
     }
   }
 
   async findLatestUploadedMonth(
-    tenantId: string,
+    _tenantId: string,
     year: number,
   ): Promise<number | null> {
     try {
-      const { data, error } = await supabaseService.adminSelectOrdered(
-        'sales_report_ytd',
-        'month',
-        { tenant_id: tenantId, year } as Partial<SalesReportYtdRow>,
-        { column: 'month', ascending: false },
-        1,
-      );
-
-      if (error) throw new Error(error.message);
-      const rows = (data ?? []) as unknown as { month: number }[];
-      if (rows.length === 0) return null;
-      return rows[0].month;
+      const page = await ytd.query({
+        index: 'byPeriod',
+        keyCondition: 'year = :year',
+        values: { ':year': year },
+        descending: true,
+        limit: 1,
+      });
+      return page.items[0]?.month ?? null;
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportYtdRepository.findLatestUploadedMonth',
         error,
       );
     }
   }
 
-  /**
-   * Returns one YTD row per (user_id) — the LATEST month for that user in the
-   * given tenant + year. Backing storage holds one row per (tenant, user, year,
-   * month); we fetch all rows for the year and reduce to the highest month per
-   * user in memory.
-   */
   async findLatestYtdPerUserByTenantYear(
-    tenantId: string,
+    _tenantId: string,
     year: number,
   ): Promise<YtdRollupRow[]> {
     try {
-      const { data, error } = await supabaseService.adminSelect(
-        'sales_report_ytd',
-        ROLLUP_COLUMNS,
-        { tenant_id: tenantId, year } as Partial<SalesReportYtdRow>,
-      );
-
-      if (error) throw new Error(error.message);
-
-      const rows = (data ?? []) as unknown as YtdRollupRow[];
-      const latestByUser = new Map<string, YtdRollupRow>();
-      for (const row of rows) {
-        const existing = latestByUser.get(row.user_id);
-        if (!existing || row.month > existing.month) {
-          latestByUser.set(row.user_id, row);
-        }
-      }
-      return Array.from(latestByUser.values());
+      return latestPerUser(await this.findByYear(year));
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportYtdRepository.findLatestYtdPerUserByTenantYear',
         error,
       );
     }
   }
 
-  /**
-   * Returns every YTD row for the given tenant + year + months, restricted to
-   * the supplied user list. Used by the sales-points awarding service to look
-   * up FYCT YTD values for both the current month and the previous month in a
-   * single query (FYCT MTD = current.fyct - previous.fyct).
-   *
-   * Returns just the columns the awarding flow needs: `user_id`, `month`,
-   * `fyct`. Empty user list short-circuits to `[]`.
-   */
   async findFyctByTenantYearMonths(
-    tenantId: string,
+    _tenantId: string,
     year: number,
     months: number[],
     userIds: string[],
   ): Promise<{ user_id: string; month: number; fyct: number }[]> {
     try {
-      if (userIds.length === 0 || months.length === 0) return [];
-
-      const { data, error } = await supabaseService.adminSelectInIn(
-        'sales_report_ytd',
-        'user_id, month, fyct',
-        [
-          { column: 'month', values: months },
-          { column: 'user_id', values: userIds },
-        ],
-        { tenant_id: tenantId, year } as Partial<SalesReportYtdRow>,
+      const keys = userIds.flatMap((user_id) =>
+        months.map((month) => ({ user_id, ym: year * 100 + month })),
       );
-
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as {
-        user_id: string;
-        month: number;
-        fyct: number;
-      }[];
+      const items = await ytd.batchGet(keys);
+      return items.map((item) => ({
+        user_id: item.user_id,
+        month: item.month,
+        fyct: item.fyct ?? 0,
+      }));
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportYtdRepository.findFyctByTenantYearMonths',
         error,
       );
     }
   }
 
-  /**
-   * Returns the LATEST YTD row for a single user in the given tenant + year,
-   * or null if the user has no YTD row for that year yet.
-   */
   async findLatestYtdForUserYear(
-    tenantId: string,
+    _tenantId: string,
     userId: string,
     year: number,
   ): Promise<YtdRollupRow | null> {
     try {
-      const { data, error } = await supabaseService.adminSelectOrdered(
-        'sales_report_ytd',
-        ROLLUP_COLUMNS,
-        { tenant_id: tenantId, user_id: userId, year } as Partial<SalesReportYtdRow>,
-        { column: 'month', ascending: false },
-        1,
-      );
-
-      if (error) throw new Error(error.message);
-      const rows = (data ?? []) as unknown as YtdRollupRow[];
-      return rows.length === 0 ? null : rows[0];
+      const page = await ytd.query({
+        keyCondition: 'user_id = :user AND ym BETWEEN :from AND :to',
+        values: {
+          ':user': userId,
+          ':from': year * 100 + 1,
+          ':to': year * 100 + 12,
+        },
+        descending: true,
+        limit: 1,
+      });
+      return page.items[0] ? toRow(page.items[0]) : null;
     } catch (error) {
-      handleRepositoryError(
+      return handleRepositoryError(
         'SalesReportYtdRepository.findLatestYtdForUserYear',
         error,
       );

@@ -63,7 +63,7 @@ class ReportFileCleanupService {
       for (let i = 0; i < candidates.length; i += REMOVE_CHUNK_SIZE) {
         const chunk = candidates.slice(i, i + REMOVE_CHUNK_SIZE);
         const paths = chunk.map((c) => c.storage_path);
-        const ids = chunk.map((c) => c.id);
+        const references = chunk.map((c) => c.reference);
 
         try {
           const response = await supabaseService.removeFromStorage(
@@ -73,7 +73,7 @@ class ReportFileCleanupService {
           if (response.error) {
             throw new Error(response.error.message);
           }
-          await reportJobRepository.clearStoragePaths(ids);
+          await reportJobRepository.clearStoragePaths(references);
           deletedCount += chunk.length;
         } catch {
           failedCount += chunk.length;

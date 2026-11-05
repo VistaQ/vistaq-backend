@@ -36,18 +36,10 @@ export interface IAgentResolution {
  * `current_month_YTD − previous_month_YTD` (same math the
  * `sales_report_mtd_fyc` view does via LAG).
  *
- * Re-uploads of an existing month (corrections) trigger a reversal step that
- * inserts offsetting negative entries for every prior batch's transactions
- * before awarding the fresh positives. The ledger stays append-only.
- *
- * Concurrency guarantee: the critical reversal-then-insert section is pushed
- * into a single Postgres function (`award_sales_points_for_batch`) which
- * acquires `pg_advisory_xact_lock(hashtext('sales_points:tenant:year:month'))`
- * before reading priors and writing offsets+awards. Two simultaneous
- * re-uploads of the same period are serialised inside the database — the
- * second caller sees the first caller's writes when it acquires the lock,
- * so each correction reverses the immediately-preceding state, not a stale
- * one. See `supabase/migrations/.._add_award_sales_points_rpc.sql`.
+ * Re-uploads of an existing month (corrections) write only the difference
+ * from what each agent already holds for that month, so the ledger stays
+ * append-only and concurrent re-uploads cannot double-count (see
+ * `pointTransactionRepository.awardWithReversal`).
  *
  * The whole flow is non-throwing by design: if any step fails it is
  * swallowed — the upload itself has already succeeded by the time this runs,
@@ -63,29 +55,14 @@ class SalesPointsService {
     agentResolutions: IAgentResolution[],
   ): Promise<void> {
     try {
-      // 1. Fetch the configured rates for this tenant + category=sales. Any
-      //    missing activity defaults to 0 — a missing rate must not block the
-      //    upload.
-      const rates = await this.fetchRates(batch.tenant_id);
+      const rates = await this.fetchRates();
 
-      // 2. Compute fresh awards in-memory: for each agent in the upload, look
-      //    up MTD ACE/NOC (from sales_report_mtd) and derive MTD FYCT (current
-      //    YTD - previous YTD). Skip zero-point rows so the ledger stays clean.
       const awardRows = await this.buildAwardRows(
         batch,
         agentResolutions,
         rates,
       );
 
-      // 3. Atomic reversal+insert in a single Postgres transaction guarded by
-      //    a period-scoped advisory lock. The RPC handles:
-      //      a. acquire pg_advisory_xact_lock on (tenant, year, month)
-      //      b. find prior batches for this period (excluding current)
-      //      c. insert negative offset rows for their point_transactions
-      //      d. insert the fresh `awardRows` we just computed
-      //    All four steps run inside the function's implicit transaction, so
-      //    the second caller in a concurrent re-upload observes the first
-      //    caller's writes when it acquires the lock.
       await pointTransactionRepository.awardWithReversal({
         tenantId: batch.tenant_id,
         year: batch.year,
@@ -100,15 +77,9 @@ class SalesPointsService {
     }
   }
 
-  /**
-   * Fetches the per-tenant rates for the three sales activities. Missing
-   * activities default to 0 (defensive: tenant onboarding case).
-   */
-  private async fetchRates(tenantId: string): Promise<ISalesPointsRates> {
-    const configs = await pointConfigRepository.findByTenantAndCategoryAdmin(
-      tenantId,
-      'sales',
-    );
+  // An activity with no config earns 0, as on a fresh stage before rates are set.
+  private async fetchRates(): Promise<ISalesPointsRates> {
+    const configs = await pointConfigRepository.findByCategory('sales');
     const byActivity = new Map(configs.map((c) => [c.activity, c.points]));
     return {
       noc: byActivity.get('sales_noc') ?? 0,

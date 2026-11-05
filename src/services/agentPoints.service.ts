@@ -1,10 +1,9 @@
-import agentPointsRepository from '@src/repositories/agentPoints.repository';
+import pointTotalsRepository, {
+  LIFETIME_YM,
+} from '@src/repositories/pointTotals.repository';
+import pointTransactionRepository from '@src/repositories/pointTransaction.repository';
 import pointActivityTypeService from '@src/services/pointActivityType.service';
-import type {
-  IAgentPointsBreakdownItem,
-  IAgentPointsResponse,
-  PointCategory,
-} from '@src/types/agentPoints.types';
+import type { IAgentPointsResponse } from '@src/types/agentPoints.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************
@@ -13,59 +12,35 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 
 class AgentPointsService {
   async getAgentPoints(
-    tenantId: string,
     userId: string,
     page: number,
     limit: number,
   ): Promise<IAgentPointsResponse> {
     try {
       const offset = (page - 1) * limit;
-
-      const [summaryResponse, breakdownResponse, activityTypes] = await Promise.all([
-        agentPointsRepository.getSummary(tenantId, userId),
-        agentPointsRepository.getBreakdown(tenantId, userId, limit, offset),
+      const [lifetime, recent, activityTypes] = await Promise.all([
+        pointTotalsRepository.findOne(userId, LIFETIME_YM),
+        pointTransactionRepository.findRecentForUser(userId, offset + limit),
         pointActivityTypeService.getAllActivityTypes(),
       ]);
-
-      const labelMap = Object.fromEntries(activityTypes.map((t) => [t.name, t.label]));
-
-      const summary = (summaryResponse?.data ?? {}) as {
-        total?: number;
-        categories?: Record<PointCategory, number>;
-      };
-
-      const breakdownRaw = (breakdownResponse?.data ?? {}) as {
-        rows?: Array<{
-          id: string;
-          date: string;
-          category: PointCategory;
-          action: string;
-          subject: string | null;
-          points: number;
-        }>;
-        total_count?: number;
-      };
-
-      const totalCount = breakdownRaw.total_count ?? 0;
-      const breakdown: IAgentPointsBreakdownItem[] = (
-        breakdownRaw.rows ?? []
-      ).map((row) => ({
-        id: row.id,
-        date: row.date,
-        category: row.category,
-        action: labelMap[row.action] ?? row.action,
-        subject: row.subject,
-        points: row.points,
-      }));
+      const labels = new Map(activityTypes.map((t) => [t.name, t.label]));
+      const totalCount = lifetime?.txn_count ?? 0;
 
       return {
-        total: summary.total ?? 0,
-        categories: summary.categories ?? {
+        total: lifetime?.points ?? 0,
+        categories: lifetime?.categories ?? {
           prospect: 0,
           sales: 0,
           coaching: 0,
         },
-        breakdown,
+        breakdown: recent.slice(offset).map((row) => ({
+          id: row.id,
+          date: row.created_at,
+          category: row.category,
+          action: labels.get(row.activity) ?? row.activity,
+          subject: row.subject_label,
+          points: row.points,
+        })),
         pagination: {
           page,
           limit,

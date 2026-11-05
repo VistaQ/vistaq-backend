@@ -3,6 +3,7 @@ import type { NextFunction, Response } from 'express';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import dashboardService from '@src/services/dashboard.service';
 import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
+import { callerOf } from '@src/utils/caller';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -29,8 +30,7 @@ class DashboardController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const data = await dashboardService.getStats(token);
+      const data = await dashboardService.getStats(callerOf(req));
 
       const responseBody: IGetDashboardStatsRes = {
         success: true,

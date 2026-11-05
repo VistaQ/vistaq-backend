@@ -35,8 +35,7 @@ class LeaderboardController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const tenantId = req.user!.tenant_id;
-      const data = await leaderboardService.getLeaderboard(tenantId);
+      const data = await leaderboardService.getLeaderboard();
 
       const responseBody: IGetLeaderboardRes = {
         success: true,
@@ -63,9 +62,7 @@ class LeaderboardController {
         });
         return;
       }
-
-      const tenantId = req.user!.tenant_id;
-      const data = await leaderboardService.getStats(tenantId, parsed.data);
+      const data = await leaderboardService.getStats(parsed.data);
 
       const responseBody: IGetLeaderboardStatsRes = {
         success: true,

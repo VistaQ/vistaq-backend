@@ -1,53 +1,38 @@
-import supabaseService from '@src/services/supabase.service';
-import type { Database } from '@src/types/database.types';
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import { DynamoTable } from '@src/services/dynamo.service';
 import type { ITenantLabel } from '@src/types/tenantLabel.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
-type TenantLabelsRow = Database['public']['Tables']['tenant_labels']['Row'];
+interface ILabelItem {
+  key: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const labels = new DynamoTable<ILabelItem>('Labels');
 
 /******************************************************************************
                             TenantLabelRepository
 ******************************************************************************/
 
 class TenantLabelRepository {
-  private mapRowToTenantLabel(row: TenantLabelsRow): ITenantLabel {
-    return {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      key: row.key,
-      value: row.value,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
-  }
-
-  async findByTenant(
-    userToken: string,
-    filters: { tenant_id: string },
-  ): Promise<ITenantLabel[]> {
+  async findAll(): Promise<ITenantLabel[]> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'tenant_labels',
-        '*',
-        filters,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as TenantLabelsRow[];
-      return rows.map((row) => this.mapRowToTenantLabel(row));
+      const items = await labels.scanAll();
+      return items.map((item) => ({
+        id: item.key,
+        tenant_id: TRANSITIONAL_TENANT_ID,
+        key: item.key,
+        value: item.value,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      }));
     } catch (error) {
-      return handleRepositoryError('TenantLabelRepository.findByTenant', error);
+      return handleRepositoryError('TenantLabelRepository.findAll', error);
     }
   }
 }
-
-/******************************************************************************
-                                Export
-******************************************************************************/
 
 export const tenantLabelRepository = new TenantLabelRepository();
 export default tenantLabelRepository;

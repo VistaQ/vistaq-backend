@@ -6,10 +6,19 @@ import {
   UnauthorizedGroupAccessError,
   UnauthorizedSessionAccessError,
 } from '@src/models/errors/coachingSession.errors';
-import coachingSessionRepository from '@src/repositories/coachingSession.repository';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import coachingSessionRepository, {
+  type INewAttendance,
+  type ISessionUpdate,
+} from '@src/repositories/coachingSession.repository';
+import groupRepository from '@src/repositories/group.repository';
+import userRepository from '@src/repositories/user.repository';
+import scopeService from '@src/services/scope.service';
+import type { ICaller, IUser } from '@src/types/auth.types';
 import type {
   ICoachingSession,
   ICoachingSessionAttendance,
+  ICoachingSessionDetail,
 } from '@src/types/coachingSession.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -28,10 +37,8 @@ interface ICreateCoachingSessionParams {
   status?: string;
   groupIds?: string[];
   agentIds?: string[];
-  tenantId: string;
   createdBy: string;
   role: string;
-  token: string;
 }
 
 interface IUpdateCoachingSessionParams {
@@ -46,30 +53,30 @@ interface IUpdateCoachingSessionParams {
   status?: string;
   groupIds?: string[];
   agentIds?: string[];
-  tenantId: string;
-  role: string;
-  userId: string;
-  token: string;
+  caller: ICaller;
 }
 
-interface IDeleteCoachingSessionParams {
-  sessionId: string;
-  role: string;
-  userId: string;
-  token: string;
+const PRIVILEGED_ROLES = ['admin', 'master_trainer'];
+const AGENT_ROLES = ['agent', 'group_leader'];
+
+function canRead(
+  caller: ICaller,
+  session: ICoachingSession,
+  groupScope: string[] | null,
+): boolean {
+  const allAudience =
+    session.targetGroupIds.length === 0 && session.targetAgentIds.length === 0;
+  return (
+    groupScope === null ||
+    allAudience ||
+    session.created_by === caller.id ||
+    session.targetAgentIds.includes(caller.id) ||
+    session.targetGroupIds.some((groupId) => groupScope.includes(groupId))
+  );
 }
 
-interface IJoinSessionParams {
-  sessionId: string;
-  userId: string;
-  token: string;
-}
-
-interface IMarkNonAttendeesParams {
-  sessionId: string;
-  userId: string;
-  role: string;
-  token: string;
+function isAgent(user: IUser): boolean {
+  return user.status === 'active' && AGENT_ROLES.includes(user.role);
 }
 
 /******************************************************************************
@@ -77,122 +84,131 @@ interface IMarkNonAttendeesParams {
 ******************************************************************************/
 
 class CoachingSessionService {
-  async createSession(
-    params: ICreateCoachingSessionParams,
+  private async findVisibleSession(
+    sessionId: string,
+    caller: ICaller,
+  ): Promise<ICoachingSession | null> {
+    try {
+      const [session, groupScope] = await Promise.all([
+        coachingSessionRepository.findById(sessionId),
+        scopeService.resolveGroupScope(caller),
+      ]);
+      return session && canRead(caller, session, groupScope) ? session : null;
+    } catch (error) {
+      return handleServiceError(
+        'CoachingSessionService.findVisibleSession',
+        error,
+      );
+    }
+  }
+
+  private async findManageableSession(
+    sessionId: string,
+    caller: ICaller,
   ): Promise<ICoachingSession> {
     try {
-      // Validate groupIds if provided
-      if (params.groupIds) {
-        const foundGroupIds = await coachingSessionRepository.findGroupsByIds(
-          params.groupIds,
-          params.token,
-        );
+      const session = await this.findVisibleSession(sessionId, caller);
+      if (!session) {
+        throw new CoachingSessionNotFoundError();
+      }
+      if (
+        !PRIVILEGED_ROLES.includes(caller.role) &&
+        session.created_by !== caller.id
+      ) {
+        throw new UnauthorizedSessionAccessError();
+      }
+      return session;
+    } catch (error) {
+      if (
+        error instanceof CoachingSessionNotFoundError ||
+        error instanceof UnauthorizedSessionAccessError
+      ) {
+        throw error;
+      }
+      return handleServiceError(
+        'CoachingSessionService.findManageableSession',
+        error,
+      );
+    }
+  }
 
-        if (foundGroupIds.length !== params.groupIds.length) {
+  private async validateTargets(
+    role: string,
+    userId: string,
+    groupIds?: string[],
+    agentIds?: string[],
+  ): Promise<void> {
+    try {
+      if (groupIds) {
+        const unique = Array.from(new Set(groupIds));
+        const found = await groupRepository.findByIds(unique);
+        if (found.length !== unique.length) {
           throw new InvalidGroupIdsError();
         }
-
-        if (params.role === 'trainer') {
-          const managedGroupIds =
-            await coachingSessionRepository.findTrainerGroups(params.createdBy);
-          const managedSet = new Set(managedGroupIds);
-
-          if (!params.groupIds.every((id) => managedSet.has(id))) {
+        if (role === 'trainer') {
+          const managed = new Set(await scopeService.managedGroupIds(userId));
+          if (!unique.every((id) => managed.has(id))) {
             throw new UnauthorizedGroupAccessError();
           }
         }
       }
 
-      // Validate agentIds if provided
-      if (params.agentIds) {
-        const agentRows =
-          await coachingSessionRepository.findUsersByIdsAndRoles(
-            params.agentIds,
-            params.token,
-          );
-
-        if (agentRows.length !== params.agentIds.length) {
-          throw new InvalidAgentIdsError();
-        }
-
-        const allowedRoles = ['agent', 'group_leader'];
-        if (agentRows.some((row) => !allowedRoles.includes(row.role))) {
-          throw new InvalidAgentIdsError();
-        }
-
-        if (agentRows.some((row) => row.tenant_id !== params.tenantId)) {
+      if (agentIds) {
+        const unique = Array.from(new Set(agentIds));
+        const agents = (await userRepository.findByIds(unique)).filter(isAgent);
+        if (agents.length !== unique.length) {
           throw new InvalidAgentIdsError();
         }
       }
+    } catch (error) {
+      if (
+        error instanceof InvalidGroupIdsError ||
+        error instanceof UnauthorizedGroupAccessError ||
+        error instanceof InvalidAgentIdsError
+      ) {
+        throw error;
+      }
+      return handleServiceError(
+        'CoachingSessionService.validateTargets',
+        error,
+      );
+    }
+  }
 
-      // Look up creator details
-      const creator = await coachingSessionRepository.findUserById(
+  async createSession(
+    params: ICreateCoachingSessionParams,
+  ): Promise<ICoachingSession> {
+    try {
+      await this.validateTargets(
+        params.role,
         params.createdBy,
-      );
-
-      // Insert session
-      const session = await coachingSessionRepository.insertSession(
-        {
-          coaching_type: params.coachingType,
-          title: params.title,
-          description: params.description,
-          start_date: params.startDate,
-          end_date: params.endDate,
-          training_mode: params.trainingMode,
-          link: params.link ?? null,
-          status: params.status,
-          tenant_id: params.tenantId,
-          created_by: params.createdBy,
-          created_by_name: creator?.name ?? null,
-          created_by_role: creator?.role ?? null,
-        },
-        params.token,
-      );
-
-      // Insert junction entries if provided
-      if (params.groupIds) {
-        const sessionGroups = params.groupIds.map((groupId) => ({
-          session_id: session.id,
-          group_id: groupId,
-        }));
-        await coachingSessionRepository.insertSessionGroups(
-          sessionGroups,
-          params.token,
-        );
-      }
-
-      if (params.agentIds) {
-        const sessionAgents = params.agentIds.map((userId) => ({
-          session_id: session.id,
-          user_id: userId,
-        }));
-        await coachingSessionRepository.insertSessionAgents(
-          sessionAgents,
-          params.token,
-        );
-      }
-
-      // Pre-populate attendance records
-      await this.populateAttendance(
-        session.id,
         params.groupIds,
         params.agentIds,
-        params.createdBy,
-        params.role,
-        params.tenantId,
       );
+      const creator = await userRepository.findById(params.createdBy);
 
-      // Re-fetch and return
-      const finalSession = await coachingSessionRepository.findById(
-        session.id,
-        params.token,
+      const session = await coachingSessionRepository.insertSession({
+        coaching_type: params.coachingType,
+        title: params.title,
+        description: params.description,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        training_mode: params.trainingMode,
+        link: params.link ?? null,
+        status: params.status,
+        created_by: params.createdBy,
+        created_by_name: creator?.name ?? null,
+        created_by_role: creator?.role ?? null,
+        group_ids: params.groupIds ?? [],
+        agent_ids: params.agentIds ?? [],
+      });
+
+      await this.syncAttendance(session, params.role);
+      return (
+        (await coachingSessionRepository.findById(session.id, {
+          consistent: true,
+        })) ?? session
       );
-
-      if (!finalSession) {
-        throw new CoachingSessionNotFoundError();
-      }
-
-      return finalSession;
     } catch (error) {
       if (
         error instanceof InvalidGroupIdsError ||
@@ -209,73 +225,18 @@ class CoachingSessionService {
     params: IUpdateCoachingSessionParams,
   ): Promise<ICoachingSession> {
     try {
-      const existing = await coachingSessionRepository.findById(
+      const existing = await this.findManageableSession(
         params.sessionId,
-        params.token,
+        params.caller,
+      );
+      await this.validateTargets(
+        params.caller.role,
+        params.caller.id,
+        params.groupIds,
+        params.agentIds,
       );
 
-      if (!existing) {
-        throw new CoachingSessionNotFoundError();
-      }
-
-      // Permission check
-      const privilegedRoles = ['admin', 'master_trainer'];
-      if (
-        !privilegedRoles.includes(params.role) &&
-        existing.created_by !== params.userId
-      ) {
-        throw new UnauthorizedSessionAccessError();
-      }
-
-      // Validate groupIds if provided
-      if (params.groupIds) {
-        const foundGroupIds = await coachingSessionRepository.findGroupsByIds(
-          params.groupIds,
-          params.token,
-        );
-
-        if (foundGroupIds.length !== params.groupIds.length) {
-          throw new InvalidGroupIdsError();
-        }
-
-        if (params.role === 'trainer') {
-          const managedGroupIds =
-            await coachingSessionRepository.findTrainerGroups(params.userId);
-          const managedSet = new Set(managedGroupIds);
-
-          if (!params.groupIds.every((id) => managedSet.has(id))) {
-            throw new UnauthorizedGroupAccessError();
-          }
-        }
-      }
-
-      // Validate agentIds if provided
-      if (params.agentIds) {
-        const agentRows =
-          await coachingSessionRepository.findUsersByIdsAndRoles(
-            params.agentIds,
-            params.token,
-          );
-
-        if (agentRows.length !== params.agentIds.length) {
-          throw new InvalidAgentIdsError();
-        }
-
-        const allowedRoles = ['agent', 'group_leader'];
-        if (agentRows.some((row) => !allowedRoles.includes(row.role))) {
-          throw new InvalidAgentIdsError();
-        }
-
-        if (agentRows.some((row) => row.tenant_id !== params.tenantId)) {
-          throw new InvalidAgentIdsError();
-        }
-      }
-
-      // Build update payload (only provided fields)
-      const updateData: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
-      };
-
+      const updateData: ISessionUpdate = {};
       if (params.coachingType !== undefined)
         updateData.coaching_type = params.coachingType;
       if (params.title !== undefined) updateData.title = params.title;
@@ -285,79 +246,35 @@ class CoachingSessionService {
         updateData.training_mode = params.trainingMode;
       if (params.link !== undefined) updateData.link = params.link;
       if (params.status !== undefined) updateData.status = params.status;
-
       if (params.startDate !== undefined)
         updateData.start_date = params.startDate;
       if (params.endDate !== undefined) updateData.end_date = params.endDate;
+      if (params.groupIds !== undefined) updateData.group_ids = params.groupIds;
+      if (params.agentIds !== undefined) updateData.agent_ids = params.agentIds;
 
       const effectiveStart = updateData.start_date ?? existing.start_date;
       const effectiveEnd = updateData.end_date ?? existing.end_date;
-      if (
-        new Date(effectiveEnd as string) <= new Date(effectiveStart as string)
-      ) {
+      if (new Date(effectiveEnd) <= new Date(effectiveStart)) {
         throw new InvalidDateRangeError();
       }
 
-      await coachingSessionRepository.updateSession(
-        params.sessionId,
+      const updated = await coachingSessionRepository.updateSession(
+        existing,
         updateData,
-        params.token,
       );
 
-      // Replace junction entries if provided
-      if (params.groupIds) {
-        await coachingSessionRepository.deleteSessionGroupsBySessionId(
-          params.sessionId,
-          params.token,
-        );
-        const sessionGroups = params.groupIds.map((groupId) => ({
-          session_id: params.sessionId,
-          group_id: groupId,
-        }));
-        await coachingSessionRepository.insertSessionGroups(
-          sessionGroups,
-          params.token,
-        );
-      }
-
-      if (params.agentIds) {
-        await coachingSessionRepository.deleteSessionAgentsBySessionId(
-          params.sessionId,
-          params.token,
-        );
-        const sessionAgents = params.agentIds.map((userId) => ({
-          session_id: params.sessionId,
-          user_id: userId,
-        }));
-        await coachingSessionRepository.insertSessionAgents(
-          sessionAgents,
-          params.token,
-        );
-      }
-
-      // Attendance reconciliation if targets changed
       if (params.groupIds || params.agentIds) {
-        await this.reconcileAttendance(
-          params.sessionId,
-          params.groupIds,
-          params.agentIds,
-          existing.created_by!,
-          params.role,
-          params.tenantId,
+        await this.syncAttendance(
+          updated,
+          existing.created_by_role ?? params.caller.role,
+        );
+        return (
+          (await coachingSessionRepository.findById(updated.id, {
+            consistent: true,
+          })) ?? updated
         );
       }
-
-      // Re-fetch and return
-      const finalSession = await coachingSessionRepository.findById(
-        params.sessionId,
-        params.token,
-      );
-
-      if (!finalSession) {
-        throw new CoachingSessionNotFoundError();
-      }
-
-      return finalSession;
+      return updated;
     } catch (error) {
       if (
         error instanceof CoachingSessionNotFoundError ||
@@ -373,30 +290,10 @@ class CoachingSessionService {
     }
   }
 
-  async deleteSession(params: IDeleteCoachingSessionParams): Promise<void> {
+  async deleteSession(sessionId: string, caller: ICaller): Promise<void> {
     try {
-      const existing = await coachingSessionRepository.findById(
-        params.sessionId,
-        params.token,
-      );
-
-      if (!existing) {
-        throw new CoachingSessionNotFoundError();
-      }
-
-      // Permission check
-      const privilegedRoles = ['admin', 'master_trainer'];
-      if (
-        !privilegedRoles.includes(params.role) &&
-        existing.created_by !== params.userId
-      ) {
-        throw new UnauthorizedSessionAccessError();
-      }
-
-      await coachingSessionRepository.deleteSession(
-        params.sessionId,
-        params.token,
-      );
+      const session = await this.findManageableSession(sessionId, caller);
+      await coachingSessionRepository.deleteSession(session);
     } catch (error) {
       if (
         error instanceof CoachingSessionNotFoundError ||
@@ -408,9 +305,12 @@ class CoachingSessionService {
     }
   }
 
-  async getSessions(token: string): Promise<ICoachingSession[]> {
+  async getSessions(caller: ICaller): Promise<ICoachingSession[]> {
     try {
-      return await coachingSessionRepository.findAll(token);
+      const groupScope = await scopeService.resolveGroupScope(caller);
+      return groupScope === null
+        ? await coachingSessionRepository.findAll()
+        : await coachingSessionRepository.findVisible(caller.id, groupScope);
     } catch (error) {
       return handleServiceError('CoachingSessionService.getSessions', error);
     }
@@ -418,102 +318,60 @@ class CoachingSessionService {
 
   async getSessionById(
     sessionId: string,
-    token: string,
-  ): Promise<ICoachingSession | null> {
+    caller: ICaller,
+  ): Promise<ICoachingSessionDetail | null> {
     try {
-      return await coachingSessionRepository.findById(sessionId, token);
+      const session = await this.findVisibleSession(sessionId, caller);
+      if (!session) {
+        return null;
+      }
+      const attendance =
+        await coachingSessionRepository.findAttendance(sessionId);
+      return { ...session, attendance };
     } catch (error) {
       return handleServiceError('CoachingSessionService.getSessionById', error);
     }
   }
 
   async joinSession(
-    params: IJoinSessionParams,
+    sessionId: string,
+    caller: ICaller,
   ): Promise<ICoachingSessionAttendance> {
     try {
-      // Verify session exists
-      const session = await coachingSessionRepository.findById(
-        params.sessionId,
-        params.token,
-      );
-
+      const session = await this.findVisibleSession(sessionId, caller);
       if (!session) {
         throw new CoachingSessionNotFoundError();
       }
 
-      // Check for existing attendance record
-      const existing =
-        await coachingSessionRepository.findAttendanceBySessionAndAgent(
-          params.sessionId,
-          params.userId,
-        );
-
-      if (existing) {
-        // Already joined — no-op
-        if (existing.status === 'joined') {
-          return existing;
-        }
-
-        // Pending or did_not_attend — update to joined
-        const updated = await coachingSessionRepository.updateAttendanceRecord(
-          params.sessionId,
-          params.userId,
-          {
-            status: 'joined',
-            joined_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        );
-
-        if (!updated) {
-          throw new CoachingSessionNotFoundError('Attendance record not found');
-        }
-
-        return updated;
+      const existing = await coachingSessionRepository.findAttendanceForAgent(
+        sessionId,
+        caller.id,
+      );
+      if (existing?.status === 'joined') {
+        return existing;
       }
 
-      // No existing record — create a new one
-      const user = await coachingSessionRepository.findUserById(params.userId);
-
+      const user = await userRepository.findById(caller.id);
       if (!user) {
         throw new CoachingSessionNotFoundError('User not found');
       }
+      const [record] = await this.toAttendanceRecords([user]);
 
-      let groupName: string | null = null;
-
-      if (user.group_id) {
-        const groups = await coachingSessionRepository.findGroupsByIdsWithNames(
-          [user.group_id],
+      try {
+        return await coachingSessionRepository.join(
+          sessionId,
+          record,
+          existing,
         );
-        if (groups.length > 0) {
-          groupName = groups[0].name;
-        }
-      }
-
-      await coachingSessionRepository.insertAttendanceRecords([
-        {
-          session_id: params.sessionId,
-          agent_id: params.userId,
-          agent_name: user.name,
-          agent_email: user.email,
-          group_id: user.group_id,
-          group_name: groupName,
-          status: 'joined',
-          joined_at: new Date().toISOString(),
-        },
-      ]);
-
-      const record =
-        await coachingSessionRepository.findAttendanceBySessionAndAgent(
-          params.sessionId,
-          params.userId,
+      } catch (joinError) {
+        if (!(joinError instanceof DynamoConditionFailedError)) throw joinError;
+        const current = await coachingSessionRepository.findAttendanceForAgent(
+          sessionId,
+          caller.id,
         );
-
-      if (!record) {
-        throw new CoachingSessionNotFoundError();
+        if (current?.status === 'joined') return current;
+        return await coachingSessionRepository.join(sessionId, record, current);
       }
-
-      return record;
     } catch (error) {
       if (error instanceof CoachingSessionNotFoundError) {
         throw error;
@@ -522,29 +380,10 @@ class CoachingSessionService {
     }
   }
 
-  async markNonAttendees(params: IMarkNonAttendeesParams): Promise<void> {
+  async markNonAttendees(sessionId: string, caller: ICaller): Promise<void> {
     try {
-      const session = await coachingSessionRepository.findById(
-        params.sessionId,
-        params.token,
-      );
-
-      if (!session) {
-        throw new CoachingSessionNotFoundError();
-      }
-
-      // Permission check
-      const privilegedRoles = ['admin', 'master_trainer'];
-      if (
-        !privilegedRoles.includes(params.role) &&
-        session.created_by !== params.userId
-      ) {
-        throw new UnauthorizedSessionAccessError();
-      }
-
-      await coachingSessionRepository.bulkUpdatePendingToDidNotAttend(
-        params.sessionId,
-      );
+      await this.findManageableSession(sessionId, caller);
+      await coachingSessionRepository.markPendingAsDidNotAttend(sessionId);
     } catch (error) {
       if (
         error instanceof CoachingSessionNotFoundError ||
@@ -563,245 +402,102 @@ class CoachingSessionService {
                           Private Helpers
   ******************************************************************************/
 
-  /**
-   * Pre-populates attendance records for a newly created session.
-   * Resolves the target agent set based on groupIds, agentIds, or all-audience scope.
-   */
-  private async populateAttendance(
-    sessionId: string,
-    groupIds: string[] | undefined,
-    agentIds: string[] | undefined,
-    createdBy: string,
-    creatorRole: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async toAttendanceRecords(users: IUser[]): Promise<INewAttendance[]> {
     try {
-      const targetAgentIds = new Set<string>();
-
-      // Collect agents from explicitly provided agentIds
-      if (agentIds && agentIds.length > 0) {
-        agentIds.forEach((id) => targetAgentIds.add(id));
-      }
-
-      // Collect agents from targeted groups
-      if (groupIds && groupIds.length > 0) {
-        const groupAgents = await coachingSessionRepository.findUsersByGroupIds(
-          groupIds,
-          tenantId,
-        );
-        groupAgents.forEach((agent) => targetAgentIds.add(agent.id));
-      }
-
-      // If neither groupIds nor agentIds — determine scope by creator role
-      if (!agentIds && !groupIds) {
-        const allAgents = await this.resolveAllAudienceAgents(
-          createdBy,
-          creatorRole,
-          tenantId,
-        );
-        allAgents.forEach((id) => targetAgentIds.add(id));
-      }
-
-      if (targetAgentIds.size === 0) {
-        return;
-      }
-
-      // Batch-fetch agent details in a single query
-      const agentDetails = await coachingSessionRepository.findUserDetailsByIds(
-        Array.from(targetAgentIds),
-      );
-
-      // Collect unique group IDs and batch-fetch group names
-      const uniqueGroupIds = [
-        ...new Set(
-          agentDetails
-            .map((agent) => agent.group_id)
-            .filter((gid): gid is string => gid !== null && gid !== undefined),
-        ),
-      ];
-
-      const groupNameMap = new Map<string, string>();
-      if (uniqueGroupIds.length > 0) {
-        const groups =
-          await coachingSessionRepository.findGroupsByIdsWithNames(
-            uniqueGroupIds,
-          );
-        groups.forEach((g) => groupNameMap.set(g.id, g.name));
-      }
-
-      // Create attendance records
-      const attendanceRecords = agentDetails.map((agent) => ({
-        session_id: sessionId,
-        agent_id: agent.id,
-        agent_name: agent.name,
-        agent_email: agent.email,
-        group_id: agent.group_id,
-        group_name: agent.group_id
-          ? (groupNameMap.get(agent.group_id) ?? null)
-          : null,
-        status: 'pending' as const,
+      const groupIds = users
+        .map((user) => user.group_id)
+        .filter((id): id is string => !!id);
+      const groups = await groupRepository.findByIds(groupIds);
+      const names = new Map(groups.map((group) => [group.id, group.name]));
+      return users.map((user) => ({
+        agent_id: user.id,
+        agent_name: user.name,
+        agent_email: user.email,
+        group_id: user.group_id,
+        group_name: user.group_id ? (names.get(user.group_id) ?? null) : null,
       }));
-
-      if (attendanceRecords.length > 0) {
-        await coachingSessionRepository.insertAttendanceRecords(
-          attendanceRecords,
-        );
-      }
-    } catch (error) {
-      handleServiceError('CoachingSessionService.populateAttendance', error);
-    }
-  }
-
-  /**
-   * Resolves all agent IDs for an all-audience session based on creator role.
-   */
-  private async resolveAllAudienceAgents(
-    createdBy: string,
-    creatorRole: string,
-    tenantId: string,
-  ): Promise<string[]> {
-    try {
-      const privilegedRoles = ['admin', 'master_trainer'];
-
-      if (privilegedRoles.includes(creatorRole)) {
-        const agents =
-          await coachingSessionRepository.findAllAgentsByTenant(tenantId);
-        return agents.map((a) => a.id);
-      }
-
-      if (creatorRole === 'trainer') {
-        const managedGroupIds =
-          await coachingSessionRepository.findTrainerGroups(createdBy);
-        if (managedGroupIds.length === 0) return [];
-        const agents = await coachingSessionRepository.findUsersByGroupIds(
-          managedGroupIds,
-          tenantId,
-        );
-        return agents.map((a) => a.id);
-      }
-
-      if (creatorRole === 'group_leader') {
-        const creator = await coachingSessionRepository.findUserById(createdBy);
-        if (!creator?.group_id) return [];
-        const agents = await coachingSessionRepository.findUsersByGroupIds(
-          [creator.group_id],
-          tenantId,
-        );
-        return agents.map((a) => a.id);
-      }
-
-      return [];
     } catch (error) {
       return handleServiceError(
-        'CoachingSessionService.resolveAllAudienceAgents',
+        'CoachingSessionService.toAttendanceRecords',
         error,
       );
     }
   }
 
-  /**
-   * Reconciles attendance records when session targets (groups/agents) are updated.
-   * Removes pending records for agents no longer targeted, adds records for newly targeted agents.
-   */
-  private async reconcileAttendance(
-    sessionId: string,
-    groupIds: string[] | undefined,
-    agentIds: string[] | undefined,
-    createdBy: string,
+  private async targetAgents(
+    session: ICoachingSession,
     creatorRole: string,
-    tenantId: string,
+  ): Promise<IUser[]> {
+    try {
+      const { targetGroupIds, targetAgentIds } = session;
+      if (targetGroupIds.length === 0 && targetAgentIds.length === 0) {
+        if (PRIVILEGED_ROLES.includes(creatorRole)) {
+          return await userRepository.findByRoles(AGENT_ROLES, 'active');
+        }
+        const creator = session.created_by
+          ? await userRepository.findById(session.created_by)
+          : null;
+        const groupIds =
+          creatorRole === 'trainer' && creator
+            ? await scopeService.managedGroupIds(creator.id)
+            : creatorRole === 'group_leader' && creator?.group_id
+              ? [creator.group_id]
+              : [];
+        const members = await Promise.all(
+          groupIds.map((groupId) =>
+            userRepository.findByGroupId(groupId, 'active'),
+          ),
+        );
+        return members.flat().filter(isAgent);
+      }
+
+      const [named, ...members] = await Promise.all([
+        userRepository.findByIds(targetAgentIds),
+        ...targetGroupIds.map((groupId) =>
+          userRepository.findByGroupId(groupId, 'active'),
+        ),
+      ]);
+      const byId = new Map(
+        [...named, ...members.flat()]
+          .filter(isAgent)
+          .map((user) => [user.id, user]),
+      );
+      return Array.from(byId.values());
+    } catch (error) {
+      return handleServiceError('CoachingSessionService.targetAgents', error);
+    }
+  }
+
+  private async syncAttendance(
+    session: ICoachingSession,
+    creatorRole: string,
   ): Promise<void> {
     try {
-      // Get current attendance
-      const currentAttendance =
-        await coachingSessionRepository.findAttendanceBySessionId(sessionId);
-      const currentAgentIds = new Set(currentAttendance.map((a) => a.agent_id));
+      const [targets, current] = await Promise.all([
+        this.targetAgents(session, creatorRole),
+        coachingSessionRepository.findAttendance(session.id),
+      ]);
+      const targetIds = new Set(targets.map((user) => user.id));
+      const currentIds = new Set(current.map((row) => row.agent_id));
 
-      // Determine new target set
-      const newTargetIds = new Set<string>();
-
-      if (agentIds && agentIds.length > 0) {
-        agentIds.forEach((id) => newTargetIds.add(id));
-      }
-
-      if (groupIds && groupIds.length > 0) {
-        const groupAgents = await coachingSessionRepository.findUsersByGroupIds(
-          groupIds,
-          tenantId,
-        );
-        groupAgents.forEach((agent) => newTargetIds.add(agent.id));
-      }
-
-      if (!agentIds && !groupIds) {
-        const allAgents = await this.resolveAllAudienceAgents(
-          createdBy,
-          creatorRole,
-          tenantId,
-        );
-        allAgents.forEach((id) => newTargetIds.add(id));
-      }
-
-      // Remove pending records for agents no longer targeted (parallelized)
-      await Promise.all(
-        currentAttendance
-          .filter(
-            (record) =>
-              record.agent_id &&
-              !newTargetIds.has(record.agent_id) &&
-              record.status === 'pending',
-          )
-          .map((record) =>
-            coachingSessionRepository.deleteAttendanceRecord(record.id),
-          ),
+      const dropped = current
+        .filter(
+          (row) =>
+            row.agent_id &&
+            row.status === 'pending' &&
+            !targetIds.has(row.agent_id),
+        )
+        .map((row) => row.agent_id as string);
+      const added = await this.toAttendanceRecords(
+        targets.filter((user) => !currentIds.has(user.id)),
       );
 
-      // Add records for newly targeted agents
-      const agentsToAdd = Array.from(newTargetIds).filter(
-        (id) => !currentAgentIds.has(id),
-      );
-
-      if (agentsToAdd.length === 0) {
-        return;
-      }
-
-      // Batch-fetch agent details in a single query
-      const agentDetails =
-        await coachingSessionRepository.findUserDetailsByIds(agentsToAdd);
-
-      const uniqueGroupIds = [
-        ...new Set(
-          agentDetails
-            .map((agent) => agent.group_id)
-            .filter((gid): gid is string => gid !== null && gid !== undefined),
-        ),
-      ];
-
-      const groupNameMap = new Map<string, string>();
-      if (uniqueGroupIds.length > 0) {
-        const groups =
-          await coachingSessionRepository.findGroupsByIdsWithNames(
-            uniqueGroupIds,
-          );
-        groups.forEach((g) => groupNameMap.set(g.id, g.name));
-      }
-
-      const newRecords = agentDetails.map((agent) => ({
-        session_id: sessionId,
-        agent_id: agent.id,
-        agent_name: agent.name,
-        agent_email: agent.email,
-        group_id: agent.group_id,
-        group_name: agent.group_id
-          ? (groupNameMap.get(agent.group_id) ?? null)
-          : null,
-        status: 'pending' as const,
-      }));
-
-      if (newRecords.length > 0) {
-        await coachingSessionRepository.insertAttendanceRecords(newRecords);
-      }
+      await Promise.all([
+        coachingSessionRepository.deletePendingAttendance(session.id, dropped),
+        coachingSessionRepository.insertPendingAttendance(session.id, added),
+      ]);
     } catch (error) {
-      handleServiceError('CoachingSessionService.reconcileAttendance', error);
+      return handleServiceError('CoachingSessionService.syncAttendance', error);
     }
   }
 }

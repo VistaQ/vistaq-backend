@@ -13,6 +13,7 @@ import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import eventService from '@src/services/event.service';
 import type { IEvent, IPublicEvent } from '@src/types/event.types';
+import { callerOf } from '@src/utils/caller';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -100,7 +101,6 @@ class EventController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { title, startDate, endDate, status, type, link, venue, description } = req.body;
       let { visibility, groupIds, agentIds } = req.body;
 
@@ -128,11 +128,9 @@ class EventController {
         visibility,
         groupIds,
         agentIds,
-        tenantId: req.user!.tenant_id,
         createdBy: req.user!.id,
         createdByRole: req.user!.role,
         role: req.user!.role,
-        token,
       });
 
       const responseBody: ICreateEventRes = { success: true, data: event };
@@ -165,7 +163,6 @@ class EventController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
       const { title, startDate, endDate, status, type, link, venue, description, visibility } = req.body;
       let { groupIds, agentIds } = req.body;
@@ -197,10 +194,8 @@ class EventController {
         visibility,
         groupIds,
         agentIds,
-        tenantId: req.user!.tenant_id,
         role: req.user!.role,
         userId: req.user!.id,
-        token,
       });
 
       const responseBody: IUpdateEventRes = { success: true, data: event };
@@ -236,8 +231,7 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const events = await eventService.getEvents(token);
+      const events = await eventService.getEvents(callerOf(req));
 
       const responseBody: IGetEventsRes = { success: true, data: events };
       res.status(HttpStatusCodes.OK).json(responseBody);
@@ -252,10 +246,9 @@ class EventController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
 
-      const event = await eventService.getEventById(eventId, token);
+      const event = await eventService.getEventById(eventId, callerOf(req));
 
       if (!event) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Event not found'));
@@ -280,15 +273,9 @@ class EventController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { eventId } = req.params;
 
-      await eventService.deleteEvent({
-        eventId,
-        userId: req.user!.id,
-        role: req.user!.role,
-        token,
-      });
+      await eventService.deleteEvent(eventId, callerOf(req));
 
       res.status(HttpStatusCodes.NO_CONTENT).send();
     } catch (error) {

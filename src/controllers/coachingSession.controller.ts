@@ -11,7 +11,12 @@ import {
 import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import coachingSessionService from '@src/services/coachingSession.service';
-import type { ICoachingSession, ICoachingSessionAttendance } from '@src/types/coachingSession.types';
+import type {
+  ICoachingSession,
+  ICoachingSessionAttendance,
+  ICoachingSessionDetail,
+} from '@src/types/coachingSession.types';
+import { callerOf } from '@src/utils/caller';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -71,7 +76,7 @@ export interface IGetCoachingSessionByIdReq extends IBaseReq {
 
 export interface IGetCoachingSessionByIdRes extends IBaseRes {
   success: boolean;
-  data: ICoachingSession;
+  data: ICoachingSessionDetail;
 }
 
 export interface IJoinCoachingSessionReq extends IBaseReq {
@@ -112,8 +117,6 @@ class CoachingSessionController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const {
         coachingType, title, description, startDate, endDate,
         trainingMode, link, status, groupIds, agentIds,
@@ -130,10 +133,8 @@ class CoachingSessionController {
         status,
         groupIds,
         agentIds,
-        tenantId: req.user!.tenant_id,
         createdBy: req.user!.id,
         role: req.user!.role,
-        token,
       });
 
       const responseBody: ICreateCoachingSessionRes = { success: true, data: session };
@@ -165,8 +166,6 @@ class CoachingSessionController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { sessionId } = req.params;
       const {
         coachingType, title, description, startDate, endDate,
@@ -185,10 +184,7 @@ class CoachingSessionController {
         status,
         groupIds,
         agentIds,
-        tenantId: req.user!.tenant_id,
-        role: req.user!.role,
-        userId: req.user!.id,
-        token,
+        caller: callerOf(req),
       });
 
       const responseBody: IUpdateCoachingSessionRes = { success: true, data: session };
@@ -232,16 +228,9 @@ class CoachingSessionController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { sessionId } = req.params;
 
-      await coachingSessionService.deleteSession({
-        sessionId,
-        role: req.user!.role,
-        userId: req.user!.id,
-        token,
-      });
+      await coachingSessionService.deleteSession(sessionId, callerOf(req));
 
       res.status(HttpStatusCodes.OK).json({ success: true });
     } catch (error) {
@@ -263,8 +252,7 @@ class CoachingSessionController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const sessions = await coachingSessionService.getSessions(token);
+      const sessions = await coachingSessionService.getSessions(callerOf(req));
 
       const responseBody: IGetCoachingSessionsRes = { success: true, data: sessions };
       res.status(HttpStatusCodes.OK).json(responseBody);
@@ -279,10 +267,12 @@ class CoachingSessionController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { sessionId } = req.params;
 
-      const session = await coachingSessionService.getSessionById(sessionId, token);
+      const session = await coachingSessionService.getSessionById(
+        sessionId,
+        callerOf(req),
+      );
 
       if (!session) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Coaching session not found'));
@@ -302,14 +292,12 @@ class CoachingSessionController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { sessionId } = req.params;
 
-      const attendance = await coachingSessionService.joinSession({
+      const attendance = await coachingSessionService.joinSession(
         sessionId,
-        userId: req.user!.id,
-        token,
-      });
+        callerOf(req),
+      );
 
       const responseBody: IJoinCoachingSessionRes = { success: true, data: attendance };
       res.status(HttpStatusCodes.OK).json(responseBody);
@@ -332,16 +320,9 @@ class CoachingSessionController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { sessionId } = req.params;
 
-      await coachingSessionService.markNonAttendees({
-        sessionId,
-        userId: req.user!.id,
-        role: req.user!.role,
-        token,
-      });
+      await coachingSessionService.markNonAttendees(sessionId, callerOf(req));
 
       const responseBody: IMarkNonAttendeesRes = { success: true };
       res.status(HttpStatusCodes.OK).json(responseBody);

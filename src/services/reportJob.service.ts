@@ -84,7 +84,7 @@ class ReportJobService {
       if (!job) throw new ReportJobNotFoundError(`Job ${params.reference} not found`);
 
       if (params.status === 'failed') {
-        await reportJobRepository.markFailed(job.id, params.error ?? 'Unknown ETL failure');
+        await reportJobRepository.markFailed(job.reference, params.error ?? 'Unknown ETL failure');
         return;
       }
 
@@ -103,7 +103,7 @@ class ReportJobService {
         reportMonth: job.report_month,
       });
 
-      await reportJobRepository.markCompleted(job.id, result.batchId, result);
+      await reportJobRepository.markCompleted(job.reference, result.batchId, result);
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) throw error;
       return handleServiceError('ReportJobService.completeJob', error);
@@ -120,7 +120,7 @@ class ReportJobService {
         );
       }
 
-      await reportJobRepository.markProcessing(job.id, job.attempts + 1);
+      await reportJobRepository.markProcessing(job.reference, job.attempts + 1);
       await this.kickoffEtl(job);
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) throw error;

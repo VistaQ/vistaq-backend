@@ -2,44 +2,35 @@ import {
   TaxonomyConflictError,
   TaxonomyNotFoundError,
 } from '@src/models/errors/taxonomy.errors';
-import taxonomyRepository from '@src/repositories/taxonomy.repository';
-import type { Database } from '@src/types/database.types';
+import taxonomyRepository, {
+  type ITaxonomyUpdate,
+} from '@src/repositories/taxonomy.repository';
 import type { ITaxonomy } from '@src/types/taxonomy.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 import { getRootCause } from '@src/utils/errors';
-
-type TaxonomiesUpdate = Database['public']['Tables']['taxonomies']['Update'];
 
 /******************************************************************************
                             Interfaces
 ******************************************************************************/
 
 interface IGetTaxonomiesParams {
-  tenantId: string;
   type?: string;
-  token: string;
 }
 
 interface ICreateTaxonomyParams {
-  tenantId: string;
   type: string;
   value: string;
   sortOrder?: number;
-  token: string;
 }
 
 interface IUpdateTaxonomyParams {
   id: string;
-  tenantId: string;
   value?: string;
   sortOrder?: number;
-  token: string;
 }
 
 interface IDeleteTaxonomyParams {
   id: string;
-  tenantId: string;
-  token: string;
 }
 
 /******************************************************************************
@@ -49,15 +40,7 @@ interface IDeleteTaxonomyParams {
 class TaxonomyService {
   async getTaxonomies(params: IGetTaxonomiesParams): Promise<ITaxonomy[]> {
     try {
-      const filters = {
-        tenant_id: params.tenantId,
-        ...(params.type ? { type: params.type } : {}),
-      };
-
-      const taxonomies = await taxonomyRepository.findByTenant(
-        params.token,
-        filters,
-      );
+      const taxonomies = await taxonomyRepository.findAll(params.type);
 
       return taxonomies.sort(
         (a, b) => a.sort_order - b.sort_order || a.value.localeCompare(b.value),
@@ -69,8 +52,7 @@ class TaxonomyService {
 
   async createTaxonomy(params: ICreateTaxonomyParams): Promise<ITaxonomy> {
     try {
-      return await taxonomyRepository.insert(params.token, {
-        tenant_id: params.tenantId,
+      return await taxonomyRepository.insert({
         type: params.type,
         value: params.value,
         sort_order: params.sortOrder ?? 0,
@@ -89,15 +71,11 @@ class TaxonomyService {
 
   async updateTaxonomy(params: IUpdateTaxonomyParams): Promise<ITaxonomy> {
     try {
-      const values: TaxonomiesUpdate = {};
+      const values: ITaxonomyUpdate = {};
       if (params.value !== undefined) values.value = params.value;
       if (params.sortOrder !== undefined) values.sort_order = params.sortOrder;
 
-      return await taxonomyRepository.update(
-        params.token,
-        { id: params.id, tenant_id: params.tenantId },
-        values,
-      );
+      return await taxonomyRepository.update(params.id, values);
     } catch (error) {
       const rootCause = getRootCause(error);
       if (
@@ -112,10 +90,7 @@ class TaxonomyService {
 
   async deleteTaxonomy(params: IDeleteTaxonomyParams): Promise<void> {
     try {
-      await taxonomyRepository.remove(params.token, {
-        id: params.id,
-        tenant_id: params.tenantId,
-      });
+      await taxonomyRepository.remove(params.id);
     } catch (error) {
       const rootCause = getRootCause(error);
       if (

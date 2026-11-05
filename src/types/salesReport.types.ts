@@ -1,23 +1,37 @@
-import type { Database } from '@src/types/database.types';
-
 /******************************************************************************
                             Raw row types (Repository-only)
 ******************************************************************************/
 
-export type UploadBatchRow =
-  Database['public']['Tables']['upload_batches']['Row'];
-export type UploadBatchIns =
-  Database['public']['Tables']['upload_batches']['Insert'];
-export type SalesReportYtdRow =
-  Database['public']['Tables']['sales_report_ytd']['Row'];
-export type SalesReportYtdIns =
-  Database['public']['Tables']['sales_report_ytd']['Insert'];
-export type SalesReportMtdRow =
-  Database['public']['Tables']['sales_report_mtd']['Row'];
-export type SalesReportMtdIns =
-  Database['public']['Tables']['sales_report_mtd']['Insert'];
-export type SalesReportMtdFycRow =
-  Database['public']['Views']['sales_report_mtd_fyc']['Row'];
+export interface UploadBatchIns {
+  tenant_id?: string;
+  uploaded_by?: string | null;
+  year: number;
+  month: number;
+  file_name: string;
+  rows_loaded?: number;
+  rows_skipped?: number;
+  status?: string;
+}
+
+export interface SalesReportMtdIns {
+  tenant_id?: string;
+  user_id: string;
+  batch_id: string;
+  year: number;
+  month: number;
+  ace?: number;
+  noc?: number;
+  acs?: number;
+}
+
+export interface SalesReportYtdIns extends SalesReportMtdIns {
+  fyc?: number;
+  fyc_pct?: number;
+  fyct?: number;
+  fyct_pct?: number;
+  mdrt_shortage_fyc?: number;
+  mdrt_shortage_fyct?: number;
+}
 
 /******************************************************************************
                             Domain interfaces (Service/Controller)

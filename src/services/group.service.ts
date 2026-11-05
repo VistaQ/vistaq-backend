@@ -1,7 +1,4 @@
-import {
-  TenantNotFoundError,
-  UserNotFoundError,
-} from '@src/models/errors/auth.errors';
+import { UserNotFoundError } from '@src/models/errors/auth.errors';
 import {
   GroupNotFoundError,
   InvalidLeaderError,
@@ -11,23 +8,24 @@ import {
   MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
-import groupRepository from '@src/repositories/group.repository';
+import groupRepository, {
+  type IGroupUpdate,
+} from '@src/repositories/group.repository';
 import groupTrainerRepository from '@src/repositories/groupTrainer.repository';
 import userRepository from '@src/repositories/user.repository';
+import userStatsRepository from '@src/repositories/userStats.repository';
+import scopeService from '@src/services/scope.service';
 import userService from '@src/services/user.service';
-import type { IGroup } from '@src/types/auth.types';
+import type { ICaller, IGroup, IUser } from '@src/types/auth.types';
 import type { IDashboardPeriodStats } from '@src/types/dashboard.types';
-import type { Database } from '@src/types/database.types';
 import type {
   IAgentStats,
   IGroupDetailStats,
 } from '@src/types/group-detail-stats.types';
 import type { IGroupStats } from '@src/types/group-stats.types';
+import type { IUserStats } from '@src/types/userStats.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { periodStartsUtc } from '@src/utils/period';
-
-type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
+import { monthBucketUtc, periodStartsUtc } from '@src/utils/period';
 
 /******************************************************************************
                             Interfaces
@@ -35,15 +33,12 @@ type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
 
 interface ICreateGroupParams {
   name: string;
-  tenantId: string;
   leaderId?: string;
   trainerIds?: string[];
-  token: string;
 }
 
 interface IUpdateGroupParams {
   groupId: string;
-  token: string;
   data: {
     name?: string;
     status?: string;
@@ -53,108 +48,115 @@ interface IUpdateGroupParams {
   };
 }
 
+type ICounters = Omit<IDashboardPeriodStats, 'agents_count'>;
+
+const ZERO: ICounters = {
+  prospects: 0,
+  appointments_set: 0,
+  sales_meetings: 0,
+  sales_noc: 0,
+  sales_ace: 0,
+};
+
+const AGENT_ROLES = new Set(['agent', 'group_leader']);
+
+function plus(total: ICounters, other: ICounters | undefined): ICounters {
+  if (!other) return total;
+  return {
+    prospects: total.prospects + other.prospects,
+    appointments_set: total.appointments_set + other.appointments_set,
+    sales_meetings: total.sales_meetings + other.sales_meetings,
+    sales_noc: total.sales_noc + other.sales_noc,
+    sales_ace: total.sales_ace + other.sales_ace,
+  };
+}
+
+function countersOf(row: IUserStats): ICounters {
+  return {
+    prospects: row.prospects,
+    appointments_set: row.appointments_set,
+    sales_meetings: row.appt_done,
+    sales_noc: row.sales_noc,
+    sales_ace: row.sales_ace,
+  };
+}
+
+function sumByUser(rows: IUserStats[], fromYm = 0): Map<string, ICounters> {
+  const totals = new Map<string, ICounters>();
+  for (const row of rows) {
+    if (row.ym < fromYm) continue;
+    totals.set(row.user_id, plus(totals.get(row.user_id) ?? ZERO, countersOf(row)));
+  }
+  return totals;
+}
+
+function sumMembers(members: IUser[], totals: Map<string, ICounters>): ICounters {
+  return members.reduce((sum, member) => plus(sum, totals.get(member.id)), ZERO);
+}
+
 /******************************************************************************
                             GroupService
 ******************************************************************************/
 
 class GroupService {
+  private async findVisibleGroup(
+    groupId: string,
+    caller: ICaller,
+  ): Promise<IGroup | null> {
+    try {
+      const visible = await scopeService.resolveGroupScope(caller);
+      if (visible && !visible.includes(groupId)) {
+        return null;
+      }
+      return await groupRepository.findById(groupId);
+    } catch (error) {
+      return handleServiceError('GroupService.findVisibleGroup', error);
+    }
+  }
+
   async getGroupDetailStats(
     groupId: string,
-    token: string,
+    caller: ICaller,
   ): Promise<IGroupDetailStats> {
     try {
-      const group = await groupRepository.findById(groupId, token);
-
+      const group = await this.findVisibleGroup(groupId, caller);
       if (!group) {
         throw new GroupNotFoundError();
       }
 
       const { ytdStart, mtdStart } = periodStartsUtc();
-
-      const [ytdRes, mtdRes, agentsCount, ytdAgentsRes, mtdAgentsRes] =
-        await Promise.all([
-          groupRepository.getGroupDetailStats(token, ytdStart, groupId),
-          groupRepository.getGroupDetailStats(token, mtdStart, groupId),
-          groupRepository.getGroupAgentsCount(token, groupId),
-          groupRepository.getAgentStats(token, groupId, ytdStart),
-          groupRepository.getAgentStats(token, groupId, mtdStart),
-        ]);
-
-      const ytdStats = (ytdRes?.data ?? {}) as Omit<
-        IDashboardPeriodStats,
-        'agents_count'
-      >;
-      const mtdStats = (mtdRes?.data ?? {}) as Omit<
-        IDashboardPeriodStats,
-        'agents_count'
-      >;
-
-      type AgentRpcRow = {
-        agent_id: string;
-        agent_name: string;
-        prospects: number;
-        appointments_set: number;
-        sales_meetings: number;
-        sales_noc: number;
-        sales_ace: number;
-      };
-
-      const ytdAgentRows: AgentRpcRow[] = (ytdAgentsRes?.data ??
-        []) as AgentRpcRow[];
-      const mtdAgentRows: AgentRpcRow[] = (mtdAgentsRes?.data ??
-        []) as AgentRpcRow[];
-
-      const agentMap = new Map<string, IAgentStats>();
-
-      for (const row of ytdAgentRows) {
-        agentMap.set(row.agent_id, {
-          agent_id: row.agent_id,
-          agent_name: row.agent_name,
-          ytd_prospects: row.prospects,
-          ytd_appointments_set: row.appointments_set,
-          ytd_sales_meetings: row.sales_meetings,
-          ytd_sales_noc: row.sales_noc,
-          ytd_sales_ace: row.sales_ace,
-          mtd_prospects: 0,
-          mtd_appointments_set: 0,
-          mtd_sales_meetings: 0,
-          mtd_sales_noc: 0,
-          mtd_sales_ace: 0,
-        });
-      }
-
-      for (const row of mtdAgentRows) {
-        const existing = agentMap.get(row.agent_id);
-        if (existing) {
-          existing.mtd_prospects = row.prospects;
-          existing.mtd_appointments_set = row.appointments_set;
-          existing.mtd_sales_meetings = row.sales_meetings;
-          existing.mtd_sales_noc = row.sales_noc;
-          existing.mtd_sales_ace = row.sales_ace;
-        } else {
-          agentMap.set(row.agent_id, {
-            agent_id: row.agent_id,
-            agent_name: row.agent_name,
-            ytd_prospects: 0,
-            ytd_appointments_set: 0,
-            ytd_sales_meetings: 0,
-            ytd_sales_noc: 0,
-            ytd_sales_ace: 0,
-            mtd_prospects: row.prospects,
-            mtd_appointments_set: row.appointments_set,
-            mtd_sales_meetings: row.sales_meetings,
-            mtd_sales_noc: row.sales_noc,
-            mtd_sales_ace: row.sales_ace,
-          });
-        }
-      }
+      const members = await userRepository.findByGroupId(groupId, 'active');
+      const rows = await userStatsRepository.findSince(
+        members.map((member) => member.id),
+        monthBucketUtc(ytdStart),
+      );
+      const ytd = sumByUser(rows);
+      const mtd = sumByUser(rows, monthBucketUtc(mtdStart));
+      const agents = members.filter((member) => AGENT_ROLES.has(member.role));
 
       return {
         group_id: group.id,
         group_name: group.name,
-        ytd: { ...ytdStats, agents_count: agentsCount ?? 0 },
-        mtd: mtdStats,
-        agents: Array.from(agentMap.values()),
+        ytd: { ...sumMembers(members, ytd), agents_count: agents.length },
+        mtd: sumMembers(members, mtd),
+        agents: agents.map((agent): IAgentStats => {
+          const y = ytd.get(agent.id) ?? ZERO;
+          const m = mtd.get(agent.id) ?? ZERO;
+          return {
+            agent_id: agent.id,
+            agent_name: agent.name,
+            ytd_prospects: y.prospects,
+            ytd_appointments_set: y.appointments_set,
+            ytd_sales_meetings: y.sales_meetings,
+            ytd_sales_noc: y.sales_noc,
+            ytd_sales_ace: y.sales_ace,
+            mtd_prospects: m.prospects,
+            mtd_appointments_set: m.appointments_set,
+            mtd_sales_meetings: m.sales_meetings,
+            mtd_sales_noc: m.sales_noc,
+            mtd_sales_ace: m.sales_ace,
+          };
+        }),
       };
     } catch (error) {
       if (error instanceof GroupNotFoundError) {
@@ -164,26 +166,53 @@ class GroupService {
     }
   }
 
-  async getGroupStats(token: string): Promise<IGroupStats[]> {
+  async getGroupStats(caller: ICaller): Promise<IGroupStats[]> {
     try {
-      const response = await groupRepository.getGroupStats(token);
-      return (response?.data ?? []) as IGroupStats[];
+      const groups = await this.getGroups(caller);
+      const members = await Promise.all(
+        groups.map((group) => userRepository.findByGroupId(group.id, 'active')),
+      );
+      const rows = await userStatsRepository.findSince(
+        members.flat().map((member) => member.id),
+        monthBucketUtc(periodStartsUtc().ytdStart),
+      );
+      const ytd = sumByUser(rows);
+
+      return groups
+        .map((group, i): IGroupStats => {
+          const total = sumMembers(members[i], ytd);
+          return {
+            group_id: group.id,
+            group_name: group.name,
+            ytd_prospects: total.prospects,
+            ytd_appointments_set: total.appointments_set,
+            ytd_sales_meetings: total.sales_meetings,
+            ytd_sales_noc: total.sales_noc,
+            ytd_sales_ace: total.sales_ace,
+            ytd_agents_count: members[i].filter((m) => AGENT_ROLES.has(m.role))
+              .length,
+          };
+        })
+        .sort((a, b) => b.ytd_sales_ace - a.ytd_sales_ace);
     } catch (error) {
       return handleServiceError('GroupService.getGroupStats', error);
     }
   }
 
-  async getGroups(token: string): Promise<IGroup[]> {
+  async getGroups(caller: ICaller): Promise<IGroup[]> {
     try {
-      return await groupRepository.findAll(token);
+      const visible = await scopeService.resolveGroupScope(caller);
+      return visible
+        ? await groupRepository.findByIds(visible)
+        : await groupRepository.findAll();
     } catch (error) {
       return handleServiceError('GroupService.getGroups', error);
     }
   }
 
-  async getGroupById(groupId: string, token: string): Promise<IGroup | null> {
+  async getGroupById(groupId: string, caller: ICaller): Promise<IGroup | null> {
     try {
-      return await groupRepository.findById(groupId, token);
+      return await this.findVisibleGroup(groupId, caller);
     } catch (error) {
       return handleServiceError('GroupService.getGroupById', error);
     }
@@ -191,10 +220,8 @@ class GroupService {
 
   async getActiveGroups(): Promise<Pick<IGroup, 'id' | 'name'>[]> {
     try {
-      const rows = await groupRepository.findActiveByTenantId(
-        TRANSITIONAL_TENANT_ID,
-      );
-      return rows.map((row) => ({ id: row.id, name: row.name }));
+      const groups = await groupRepository.findByStatus('active');
+      return groups.map((group) => ({ id: group.id, name: group.name }));
     } catch (error) {
       return handleServiceError('GroupService.getActiveGroups', error);
     }
@@ -202,7 +229,6 @@ class GroupService {
 
   private async validateTrainers(
     trainerIds: string[],
-    token: string,
     errorClass: 'create' | 'update' = 'create',
   ): Promise<string[]> {
     try {
@@ -240,7 +266,6 @@ class GroupService {
 
   async createGroup(params: ICreateGroupParams): Promise<IGroup> {
     try {
-      // Step 1 — Validate leader if provided
       if (params.leaderId) {
         const leader = await userService.getUserById(
           params.leaderId
@@ -253,23 +278,16 @@ class GroupService {
         }
       }
 
-      // Step 2 — Validate trainers if provided
       if (params.trainerIds && params.trainerIds.length > 0) {
-        await this.validateTrainers(params.trainerIds, params.token, 'create');
+        await this.validateTrainers(params.trainerIds, 'create');
       }
 
-      // Step 3 — Insert group
-      const group = await groupRepository.insertGroup(
-        {
-          name: params.name,
-          tenant_id: params.tenantId,
-          status: 'active',
-          leader_id: params.leaderId ?? null,
-        },
-        params.token,
-      );
+      const group = await groupRepository.insertGroup({
+        name: params.name,
+        status: 'active',
+        leader_id: params.leaderId ?? null,
+      });
 
-      // Step 4 — Update leader role to group_leader (with rollback on failure)
       if (params.leaderId) {
         await userService.updateUser({
           userId: params.leaderId,
@@ -278,7 +296,6 @@ class GroupService {
         });
       }
 
-      // Step 5 — Insert group_trainers records (with rollback on failure)
       if (params.trainerIds && params.trainerIds.length > 0) {
         try {
           const trainerInserts = params.trainerIds.map((id) => ({
@@ -287,7 +304,6 @@ class GroupService {
           }));
           await groupTrainerRepository.insertGroupTrainers(trainerInserts);
         } catch (trainerError) {
-          // Rollback leader role back to agent
           if (params.leaderId) {
             try {
               await userService.updateUser({
@@ -319,15 +335,13 @@ class GroupService {
 
   async updateGroup(params: IUpdateGroupParams): Promise<IGroup> {
     try {
-      const { groupId, token, data } = params;
+      const { groupId, data } = params;
 
-      // Step 1 — Verify group exists
-      const existingGroup = await groupRepository.findById(groupId, token);
+      const existingGroup = await groupRepository.findById(groupId);
       if (!existingGroup) {
         throw new GroupNotFoundError();
       }
 
-      // Step 2 — Leader logic
       if (data.leader_id && data.leader_id !== existingGroup.leader_id) {
         const leader = await userService.getUserById(data.leader_id);
         if (!leader) {
@@ -337,7 +351,6 @@ class GroupService {
           throw new InvalidLeaderError();
         }
 
-        // Demote old leader
         if (existingGroup.leader_id) {
           await userService.updateUser({
             userId: existingGroup.leader_id,
@@ -346,7 +359,6 @@ class GroupService {
           });
         }
 
-        // Promote new leader
         await userService.updateUser({
           userId: data.leader_id,
           callerRole: 'admin',
@@ -354,15 +366,12 @@ class GroupService {
         });
       }
 
-      // Step 3 — Trainer logic (replace)
       if (data.trainer_ids && data.trainer_ids.length > 0) {
         const uniqueTrainerIds = await this.validateTrainers(
           data.trainer_ids,
-          token,
           'update',
         );
 
-        // Fetch existing trainers before deleting (for rollback)
         const existingTrainers =
           await groupTrainerRepository.findGroupTrainersByGroupId(groupId);
 
@@ -385,9 +394,7 @@ class GroupService {
         }
       }
 
-      // Step 4 — Members logic (replace semantics)
       if (data.member_ids !== undefined) {
-        // Validate new members exist (skip if empty array)
         if (data.member_ids.length > 0) {
           const foundMembers = await userService.findUsersByIds(
             data.member_ids
@@ -400,11 +407,7 @@ class GroupService {
         // Effective leader — use new leader_id if being changed in this same request
         const effectiveLeaderId = data.leader_id ?? existingGroup.leader_id;
 
-        // Fetch current members for diff and rollback
-        const currentMembers = await userRepository.findByGroupId(
-          groupId,
-          token,
-        );
+        const currentMembers = await userRepository.findByGroupId(groupId, null);
         const currentMemberIds = currentMembers.map((m) => m.id);
 
         // Unlink: currently in group AND not in new list AND not the leader
@@ -427,7 +430,6 @@ class GroupService {
             await userService.updateUsersGroupId(toLink, groupId);
           }
         } catch (memberError) {
-          // Rollback: re-link any unlinked users back to this group
           if (toUnlink.length > 0) {
             try {
               await userService.updateUsersGroupId(toUnlink, groupId);
@@ -439,8 +441,7 @@ class GroupService {
         }
       }
 
-      // Step 5 — Build update payload and persist (skip if nothing to update in the row)
-      const updatePayload: GroupsUpdate = {};
+      const updatePayload: IGroupUpdate = {};
       if (data.name !== undefined) updatePayload.name = data.name;
       if (data.status !== undefined) updatePayload.status = data.status;
       if (data.leader_id !== undefined)
@@ -450,13 +451,7 @@ class GroupService {
         return existingGroup;
       }
 
-      const updatedGroup = await groupRepository.updateGroup(
-        groupId,
-        updatePayload,
-        token,
-      );
-
-      return updatedGroup;
+      return await groupRepository.updateGroup(groupId, updatePayload);
     } catch (error) {
       if (
         error instanceof GroupNotFoundError ||

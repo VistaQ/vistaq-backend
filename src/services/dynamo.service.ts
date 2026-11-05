@@ -6,6 +6,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  ScanCommand,
   TransactWriteCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -304,6 +305,24 @@ class DynamoService {
     }
   }
 
+  /** Reads every item. Only for the tiny lookup tables that have no index. */
+  async scanAll<T>(table: string): Promise<T[]> {
+    try {
+      const items: T[] = [];
+      let startKey: Record<string, unknown> | undefined;
+      do {
+        const page = await client.send(
+          new ScanCommand({ TableName: table, ExclusiveStartKey: startKey }),
+        );
+        items.push(...((page.Items ?? []) as T[]));
+        startKey = page.LastEvaluatedKey;
+      } while (startKey);
+      return items;
+    } catch (error) {
+      return wrap('DynamoService.scanAll', error);
+    }
+  }
+
   async batchGet<T>(table: string, keys: IKey[]): Promise<T[]> {
     try {
       const items: T[] = [];
@@ -468,6 +487,10 @@ export class DynamoTable<TItem extends object> {
 
   queryAll(params: ITableQuery): Promise<TItem[]> {
     return dynamoService.queryAll<TItem>({ ...params, table: this.name });
+  }
+
+  scanAll(): Promise<TItem[]> {
+    return dynamoService.scanAll<TItem>(this.name);
   }
 
   batchGet(keys: IKey[]): Promise<TItem[]> {

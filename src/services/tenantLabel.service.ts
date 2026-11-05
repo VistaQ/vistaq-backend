@@ -3,24 +3,13 @@ import tenantLabelRepository from '@src/repositories/tenantLabel.repository';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************
-                            Interfaces
-******************************************************************************/
-
-interface IGetLabelsParams {
-  tenantId: string;
-  token: string;
-}
-
-/******************************************************************************
                             TenantLabelService
 ******************************************************************************/
 
 class TenantLabelService {
-  async getLabels(params: IGetLabelsParams): Promise<Record<string, string>> {
+  async getLabels(): Promise<Record<string, string>> {
     try {
-      const rows = await tenantLabelRepository.findByTenant(params.token, {
-        tenant_id: params.tenantId,
-      });
+      const rows = await tenantLabelRepository.findAll();
 
       const merged: Record<string, string> = { ...DEFAULT_LABELS };
       for (const row of rows) {

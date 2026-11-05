@@ -1,6 +1,4 @@
-import type { Database } from './database.types';
 
-type LeaderboardFunction = Database['public']['Functions']['get_agent_leaderboard'];
 
 export type ILeaderboardEntry = {
   agent_id: string;
@@ -11,7 +9,6 @@ export type ILeaderboardEntry = {
   total_points: number;
 };
 
-export type { LeaderboardFunction };
 
 export type ILeaderboardStatsIndividual = {
   user_id: string;

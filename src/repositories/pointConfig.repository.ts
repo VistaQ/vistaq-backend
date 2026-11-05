@@ -1,53 +1,60 @@
-import supabaseService from '@src/services/supabase.service';
-import type { Database } from '@src/types/database.types';
+import { randomUUID } from 'crypto';
+
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import { DynamoTable } from '@src/services/dynamo.service';
 import type { IPointConfig } from '@src/types/pointConfig.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
 
-type PointConfigsRow = Database['public']['Tables']['point_configs']['Row'];
-type PointConfigsInsert =
-  Database['public']['Tables']['point_configs']['Insert'];
-type PointConfigsUpdate =
-  Database['public']['Tables']['point_configs']['Update'];
+interface IPointConfigItem {
+  id: string;
+  activity: string;
+  category: string;
+  points: number;
+  created_at: string;
+  updated_at: string;
+}
+
+const pointConfigs = new DynamoTable<IPointConfigItem>('PointConfigs');
+
+function toPointConfig(item: IPointConfigItem): IPointConfig {
+  return {
+    id: item.id,
+    activity: item.activity,
+    category: item.category,
+    points: item.points,
+    tenant_id: TRANSITIONAL_TENANT_ID,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
 
 /******************************************************************************
                             PointConfigRepository
 ******************************************************************************/
 
 class PointConfigRepository {
-  private mapRowToPointConfig(row: PointConfigsRow): IPointConfig {
-    return {
-      id: row.id,
-      activity: row.activity,
-      category: row.category,
-      points: row.points,
-      tenant_id: row.tenant_id,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
-  }
-
-  async insertPointConfig(
-    data: PointConfigsInsert,
-    userToken: string,
-  ): Promise<IPointConfig> {
+  /** Returns null when the activity already has a config. */
+  async insertPointConfig(data: {
+    activity: string;
+    category: string;
+    points: number;
+  }): Promise<IPointConfig | null> {
     try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'point_configs',
-        data,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No point config returned after insert');
-      }
-
-      const row = response.data[0] as unknown as PointConfigsRow;
-      return this.mapRowToPointConfig(row);
+      const now = nowUtc();
+      const item: IPointConfigItem = {
+        id: randomUUID(),
+        ...data,
+        created_at: now,
+        updated_at: now,
+      };
+      await pointConfigs.put(item, {
+        condition: 'attribute_not_exists(activity)',
+      });
+      return toPointConfig(item);
     } catch (error) {
+      if (error instanceof DynamoConditionFailedError) return null;
       return handleRepositoryError(
         'PointConfigRepository.insertPointConfig',
         error,
@@ -55,130 +62,59 @@ class PointConfigRepository {
     }
   }
 
-  async findByTenantId(
-    tenantId: string,
-    userToken: string,
-  ): Promise<IPointConfig[]> {
+  async findAll(): Promise<IPointConfig[]> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'point_configs',
-        '*',
-        { tenant_id: tenantId } as Partial<PointConfigsRow>,
-      );
+      return (await pointConfigs.scanAll()).map(toPointConfig);
+    } catch (error) {
+      return handleRepositoryError('PointConfigRepository.findAll', error);
+    }
+  }
 
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as PointConfigsRow[];
-      return rows.map((row) => this.mapRowToPointConfig(row));
+  async findByCategory(category: string): Promise<IPointConfig[]> {
+    try {
+      const items = await pointConfigs.queryAll({
+        index: 'byCategory',
+        keyCondition: 'category = :category',
+        values: { ':category': category },
+      });
+      return items.map(toPointConfig);
     } catch (error) {
       return handleRepositoryError(
-        'PointConfigRepository.findByTenantId',
+        'PointConfigRepository.findByCategory',
         error,
       );
     }
   }
 
-  /**
-   * Admin variant: returns every point_configs row for a tenant + category.
-   * Used by background flows (e.g. sales-points awarding after a sales-report
-   * ingest) which run without a user JWT — manual ingests authenticate via
-   * ETL_API_KEY rather than a Bearer token, so the user-scoped helpers
-   * can't be used.
-   */
-  async findByTenantAndCategoryAdmin(
-    tenantId: string,
-    category: string,
-  ): Promise<IPointConfig[]> {
+  async findByActivity(activity: string): Promise<IPointConfig | null> {
     try {
-      const response = await supabaseService.adminSelect('point_configs', '*', {
-        tenant_id: tenantId,
-        category,
-      } as Partial<PointConfigsRow>);
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as PointConfigsRow[];
-      return rows.map((row) => this.mapRowToPointConfig(row));
+      const item = await pointConfigs.get({ activity }, { consistent: true });
+      return item ? toPointConfig(item) : null;
     } catch (error) {
       return handleRepositoryError(
-        'PointConfigRepository.findByTenantAndCategoryAdmin',
+        'PointConfigRepository.findByActivity',
         error,
       );
     }
   }
 
-  async findByTenantAndActivity(
-    tenantId: string,
+  async updatePoints(
     activity: string,
-    userToken: string,
+    points: number,
   ): Promise<IPointConfig | null> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'point_configs',
-        '*',
-        { tenant_id: tenantId, activity } as Partial<PointConfigsRow>,
+      const updated = await pointConfigs.updateFields(
+        { activity },
+        { points },
+        { condition: 'attribute_exists(activity)' },
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as PointConfigsRow;
-      return this.mapRowToPointConfig(row);
+      return updated ? toPointConfig(updated) : null;
     } catch (error) {
-      return handleRepositoryError(
-        'PointConfigRepository.findByTenantAndActivity',
-        error,
-      );
-    }
-  }
-
-  async updatePointConfig(
-    tenantId: string,
-    activity: string,
-    data: PointConfigsUpdate,
-    userToken: string,
-  ): Promise<IPointConfig | null> {
-    try {
-      const response = await supabaseService.userUpdate(
-        userToken,
-        'point_configs',
-        data,
-        { tenant_id: tenantId, activity } as Partial<PointConfigsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as PointConfigsRow;
-      return this.mapRowToPointConfig(row);
-    } catch (error) {
-      return handleRepositoryError(
-        'PointConfigRepository.updatePointConfig',
-        error,
-      );
+      if (error instanceof DynamoConditionFailedError) return null;
+      return handleRepositoryError('PointConfigRepository.updatePoints', error);
     }
   }
 }
-
-/******************************************************************************
-                                Export
-******************************************************************************/
 
 export const pointConfigRepository = new PointConfigRepository();
 export default pointConfigRepository;

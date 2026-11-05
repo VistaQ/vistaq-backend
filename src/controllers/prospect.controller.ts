@@ -5,6 +5,7 @@ import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import prospectService from '@src/services/prospect.service';
 import type { IProspect } from '@src/types/auth.types';
+import { callerOf } from '@src/utils/caller';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -87,7 +88,6 @@ class ProspectController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { fullName, phoneNum, email } = req.body;
 
       const prospect = await prospectService.createProspect({
@@ -95,8 +95,6 @@ class ProspectController {
         prospectPhone: phoneNum,
         prospectEmail: email,
         agentId: req.user!.id,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: ICreateProspectRes = {
@@ -116,8 +114,7 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const prospects = await prospectService.getProspects(token);
+      const prospects = await prospectService.getProspects(callerOf(req));
 
       const responseBody: IGetProspectsRes = {
         success: true,
@@ -136,10 +133,12 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
-      const prospect = await prospectService.getProspectById(prospectId, token);
+      const prospect = await prospectService.getProspectById(
+        prospectId,
+        callerOf(req),
+      );
 
       if (!prospect) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Prospect not found'));
@@ -168,15 +167,9 @@ class ProspectController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
-      await prospectService.deleteProspect({
-        prospectId,
-        userId: req.user!.id,
-        role: req.user!.role,
-        token,
-      });
+      await prospectService.deleteProspect(prospectId, callerOf(req));
 
       const responseBody: IDeleteProspectRes = { success: true };
       res.status(HttpStatusCodes.OK).json(responseBody);
@@ -200,12 +193,11 @@ class ProspectController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
       const updatedProspect = await prospectService.updateProspect({
         prospectId,
-        token,
+        caller: callerOf(req),
         data: req.body,
       });
 

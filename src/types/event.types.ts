@@ -1,36 +1,22 @@
-import type { Database } from '@src/types/database.types';
-
-/******************************************************************************
-                        Raw Row Types (Repository layer only)
-******************************************************************************/
-
-type EventsRow = Database['public']['Tables']['events']['Row'];
-
-/******************************************************************************
-                        Derived Domain Interfaces
-******************************************************************************/
-
-export type IEvent = Pick<
-  EventsRow,
-  | 'id'
-  | 'tenant_id'
-  | 'event_title'
-  | 'start_date'
-  | 'end_date'
-  | 'description'
-  | 'meeting_link'
-  | 'venue'
-  | 'status'
-  | 'type'
-  | 'created_by'
-  | 'created_by_role'
-  | 'created_at'
-  | 'updated_at'
-  | 'visibility'
-> & {
+export interface IEvent {
+  id: string;
+  tenant_id: string;
+  event_title: string;
+  start_date: string;
+  end_date: string | null;
+  description: string | null;
+  meeting_link: string | null;
+  venue: string | null;
+  status: string;
+  type: string;
+  created_by: string | null;
+  created_by_role: string | null;
+  created_at: string;
+  updated_at: string;
+  visibility: string;
   groupIds: string[];
   agentIds: string[];
-};
+}
 
 export interface IPublicEvent {
   id: string;

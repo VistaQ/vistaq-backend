@@ -1,19 +1,3 @@
-import type { Database } from '@src/types/database.types';
-
-/******************************************************************************
-                            Raw row types (Repository-only)
-******************************************************************************/
-
-export type PointTransactionRow =
-  Database['public']['Tables']['point_transactions']['Row'];
-
-/**
- * Insert shape for `point_transactions`. Matches the supabase-generated
- * `Insert` type 1:1 — the repository accepts and forwards this exact shape.
- */
-export type IPointTransactionIns =
-  Database['public']['Tables']['point_transactions']['Insert'];
-
 /******************************************************************************
                             Domain interfaces (Service)
 ******************************************************************************/

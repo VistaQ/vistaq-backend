@@ -46,7 +46,6 @@ class AgentPointsController {
       const { userId, page, limit } = parsed.data;
       const requestingUserId = req.user!.id;
       const requestingRole = req.user!.role;
-      const tenantId = req.user!.tenant_id;
 
       const targetUserId = userId ?? requestingUserId;
 
@@ -55,7 +54,7 @@ class AgentPointsController {
         return;
       }
 
-      const data = await agentPointsService.getAgentPoints(tenantId, targetUserId, page, limit);
+      const data = await agentPointsService.getAgentPoints(targetUserId, page, limit);
 
       const responseBody: IGetAgentPointsRes = {
         success: true,

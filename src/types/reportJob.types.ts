@@ -1,8 +1,12 @@
-import type { Database } from '@src/types/database.types';
 
-export type ReportJobRow = Database['public']['Tables']['report_jobs']['Row'];
-export type ReportJobIns = Database['public']['Tables']['report_jobs']['Insert'];
-export type ReportJobUpd = Database['public']['Tables']['report_jobs']['Update'];
+export interface ReportJobIns {
+  tenant_id?: string;
+  uploaded_by: string;
+  storage_path: string;
+  file_name: string;
+  report_year: number;
+  report_month: number;
+}
 
 export type ReportJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 

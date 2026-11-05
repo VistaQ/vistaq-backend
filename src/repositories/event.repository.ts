@@ -1,397 +1,311 @@
-import supabaseService from '@src/services/supabase.service';
-import type { Database } from '@src/types/database.types';
+import { randomUUID } from 'crypto';
+
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import { EventNotFoundError } from '@src/models/errors/event.errors';
+import { DynamoTable } from '@src/services/dynamo.service';
 import type { IEvent } from '@src/types/event.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
 
-type EventsRow = Database['public']['Tables']['events']['Row'];
-type EventsInsert = Database['public']['Tables']['events']['Insert'];
-type EventsUpdate = Database['public']['Tables']['events']['Update'];
-type EventGroupsRow = Database['public']['Tables']['event_groups']['Row'];
-type EventGroupsInsert = Database['public']['Tables']['event_groups']['Insert'];
-type EventAgentsInsert = Database['public']['Tables']['event_agents']['Insert'];
+/******************************************************************************
+                            Item and input types
+******************************************************************************/
 
-type EventWithRelationsRow = EventsRow & {
-  event_groups: { group_id: string }[];
-  event_agents: { user_id: string }[];
-};
-
-export type PublicEventRaw = {
+interface IEventItem {
   id: string;
   event_title: string;
-  description: string | null;
   start_date: string;
-  end_date: string | null;
-  type: string;
-  venue: string | null;
-  meeting_link: string | null;
-  created_by_name: string;
+  end_date?: string;
+  description?: string;
+  meeting_link?: string;
+  venue?: string;
   status: string;
+  type: string;
+  created_by?: string;
+  created_by_role?: string;
   visibility: string;
-};
+  group_ids: string[];
+  agent_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface IEventLinkItem {
+  event_id: string;
+  status: string;
+  start_date: string;
+}
+
+type IEventGroupItem = IEventLinkItem & { group_id: string };
+type IEventAgentItem = IEventLinkItem & { user_id: string };
+
+const events = new DynamoTable<IEventItem>('Events');
+const eventGroups = new DynamoTable<IEventGroupItem>('EventGroups');
+const eventAgents = new DynamoTable<IEventAgentItem>('EventAgents');
+
+const unique = (ids: string[]): string[] => Array.from(new Set(ids));
+
+export interface INewEvent {
+  event_title: string;
+  start_date: string;
+  end_date?: string | null;
+  description?: string | null;
+  meeting_link?: string | null;
+  venue?: string | null;
+  status?: string;
+  type: string;
+  created_by: string;
+  created_by_role: string;
+  visibility?: string;
+  group_ids: string[];
+  agent_ids: string[];
+}
+
+export interface IEventUpdate {
+  event_title?: string;
+  start_date?: string;
+  end_date?: string | null;
+  description?: string | null;
+  meeting_link?: string | null;
+  venue?: string | null;
+  status?: string;
+  type?: string;
+  visibility?: string;
+  group_ids?: string[];
+  agent_ids?: string[];
+}
+
+const EVENT_STATUSES = ['upcoming', 'completed', 'cancelled'] as const;
+
+function toEvent(item: IEventItem): IEvent {
+  return {
+    id: item.id,
+    tenant_id: TRANSITIONAL_TENANT_ID,
+    event_title: item.event_title,
+    start_date: item.start_date,
+    end_date: item.end_date ?? null,
+    description: item.description ?? null,
+    meeting_link: item.meeting_link ?? null,
+    venue: item.venue ?? null,
+    status: item.status,
+    type: item.type,
+    created_by: item.created_by ?? null,
+    created_by_role: item.created_by_role ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+    visibility: item.visibility,
+    groupIds: item.group_ids ?? [],
+    agentIds: item.agent_ids ?? [],
+  };
+}
+
+function byStartDesc(a: IEvent, b: IEvent): number {
+  return b.start_date.localeCompare(a.start_date);
+}
 
 /******************************************************************************
                             EventRepository
 ******************************************************************************/
 
 class EventRepository {
-  private mapRowWithRelationsToEvent(row: EventWithRelationsRow): IEvent {
-    return {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      event_title: row.event_title,
-      start_date: row.start_date,
-      end_date: row.end_date,
-      status: row.status,
-      type: row.type,
-      description: row.description,
-      meeting_link: row.meeting_link,
-      venue: row.venue,
-      created_by: row.created_by,
-      created_by_role: row.created_by_role,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      visibility: row.visibility,
-      groupIds: (row.event_groups ?? []).map((eg) => eg.group_id),
-      agentIds: (row.event_agents ?? []).map((ea) => ea.user_id),
-    };
-  }
-
-  private mapInsertRowToEvent(row: EventsRow): IEvent {
-    return {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      event_title: row.event_title,
-      start_date: row.start_date,
-      end_date: row.end_date,
-      status: row.status,
-      type: row.type,
-      description: row.description,
-      meeting_link: row.meeting_link,
-      venue: row.venue,
-      created_by: row.created_by,
-      created_by_role: row.created_by_role,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      visibility: row.visibility,
-      groupIds: [],
-      agentIds: [],
-    };
-  }
-
-  async insertEvent(data: EventsInsert, userToken: string): Promise<IEvent> {
+  // The link items copy status and start_date for their index sort keys, so
+  // they are rewritten whenever either changes, not only when the sets change.
+  private async writeLinks(
+    event: IEventItem,
+    previous?: { group_ids: string[]; agent_ids: string[] },
+  ): Promise<void> {
     try {
-      const response = await supabaseService.userInsert(userToken, 'events', data);
+      const link = {
+        event_id: event.id,
+        status: event.status,
+        start_date: event.start_date,
+      };
+      const removed = (ids: string[], next: string[]) =>
+        ids.filter((id) => !next.includes(id));
+      await Promise.all([
+        ...removed(previous?.group_ids ?? [], event.group_ids).map((groupId) =>
+          eventGroups.delete({
+            event_id: event.id,
+            group_id: groupId,
+          }),
+        ),
+        ...removed(previous?.agent_ids ?? [], event.agent_ids).map((userId) =>
+          eventAgents.delete({
+            event_id: event.id,
+            user_id: userId,
+          }),
+        ),
+        ...event.group_ids.map((groupId) =>
+          eventGroups.put({ ...link, group_id: groupId }),
+        ),
+        ...event.agent_ids.map((userId) =>
+          eventAgents.put({ ...link, user_id: userId }),
+        ),
+      ]);
+    } catch (error) {
+      return handleRepositoryError('EventRepository.writeLinks', error);
+    }
+  }
 
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No event returned after insert');
-      }
-
-      const row = response.data[0] as unknown as EventsRow;
-      return this.mapInsertRowToEvent(row);
+  async insertEvent(event: INewEvent): Promise<IEvent> {
+    try {
+      const now = nowUtc();
+      const item: IEventItem = {
+        id: randomUUID(),
+        event_title: event.event_title,
+        start_date: event.start_date,
+        ...(event.end_date && { end_date: event.end_date }),
+        ...(event.description && { description: event.description }),
+        ...(event.meeting_link && { meeting_link: event.meeting_link }),
+        ...(event.venue && { venue: event.venue }),
+        status: event.status ?? 'upcoming',
+        type: event.type,
+        created_by: event.created_by,
+        created_by_role: event.created_by_role,
+        visibility: event.visibility ?? 'private',
+        group_ids: unique(event.group_ids),
+        agent_ids: unique(event.agent_ids),
+        created_at: now,
+        updated_at: now,
+      };
+      await events.put(
+        { ...item },
+        {
+          condition: 'attribute_not_exists(id)',
+        },
+      );
+      await this.writeLinks(item);
+      return toEvent(item);
     } catch (error) {
       return handleRepositoryError('EventRepository.insertEvent', error);
     }
   }
 
-  async findAll(userToken: string): Promise<IEvent[]> {
+  async findById(eventId: string): Promise<IEvent | null> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'events',
-        '*, event_groups(group_id), event_agents(user_id)',
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as EventWithRelationsRow[];
-      return rows.map((row) => this.mapRowWithRelationsToEvent(row));
-    } catch (error) {
-      return handleRepositoryError('EventRepository.findAll', error);
-    }
-  }
-
-  async findById(eventId: string, userToken: string): Promise<IEvent | null> {
-    try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'events',
-        '*, event_groups(group_id), event_agents(user_id)',
-        { id: eventId } as Partial<EventsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as EventWithRelationsRow;
-      return this.mapRowWithRelationsToEvent(row);
+      const item = await events.get({
+        id: eventId,
+      });
+      return item ? toEvent(item) : null;
     } catch (error) {
       return handleRepositoryError('EventRepository.findById', error);
     }
   }
 
-  async updateEvent(
-    eventId: string,
-    data: EventsUpdate,
-    userToken: string,
-  ): Promise<IEvent | null> {
+  async findAll(): Promise<IEvent[]> {
     try {
-      const response = await supabaseService.userUpdate(
-        userToken,
-        'events',
-        data,
-        { id: eventId } as Partial<EventsRow>,
+      const pages = await Promise.all(
+        EVENT_STATUSES.map((status) =>
+          events.queryAll({
+            index: 'byStatus',
+            keyCondition: 'status = :status',
+            values: { ':status': status },
+            descending: true,
+          }),
+        ),
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as EventsRow;
-      return this.mapInsertRowToEvent(row);
+      return pages.flat().map(toEvent).sort(byStartDesc);
     } catch (error) {
+      return handleRepositoryError('EventRepository.findAll', error);
+    }
+  }
+
+  async findVisible(userId: string, groupIds: string[]): Promise<IEvent[]> {
+    try {
+      const [created, agentLinks, ...groupLinks] = await Promise.all([
+        events.queryAll({
+          index: 'byCreator',
+          keyCondition: 'created_by = :user',
+          values: { ':user': userId },
+        }),
+        eventAgents.queryAll({
+          index: 'byUser',
+          keyCondition: 'user_id = :user',
+          values: { ':user': userId },
+        }),
+        ...unique(groupIds).map((groupId) =>
+          eventGroups.queryAll({
+            index: 'byGroup',
+            keyCondition: 'group_id = :group',
+            values: { ':group': groupId },
+          }),
+        ),
+      ]);
+
+      const createdIds = new Set(created.map((item) => item.id));
+      const linkedIds = Array.from(
+        new Set(
+          [...agentLinks, ...groupLinks.flat()].map((link) => link.event_id),
+        ),
+      ).filter((id) => !createdIds.has(id));
+      const linked = linkedIds.length
+        ? await events.batchGet(linkedIds.map((id) => ({ id })))
+        : [];
+
+      return [...created, ...linked].map(toEvent).sort(byStartDesc);
+    } catch (error) {
+      return handleRepositoryError('EventRepository.findVisible', error);
+    }
+  }
+
+  async updateEvent(previous: IEvent, data: IEventUpdate): Promise<IEvent> {
+    try {
+      const updated = await events.updateFields(
+        { id: previous.id },
+        {
+          ...data,
+          ...(data.group_ids && { group_ids: unique(data.group_ids) }),
+          ...(data.agent_ids && { agent_ids: unique(data.agent_ids) }),
+        },
+        { condition: 'attribute_exists(id)' },
+      );
+      if (!updated) {
+        throw new EventNotFoundError();
+      }
+
+      const linksChanged =
+        data.group_ids !== undefined ||
+        data.agent_ids !== undefined ||
+        updated.status !== previous.status ||
+        updated.start_date !== previous.start_date;
+      if (linksChanged) {
+        await this.writeLinks(updated, {
+          group_ids: previous.groupIds,
+          agent_ids: previous.agentIds,
+        });
+      }
+      return toEvent(updated);
+    } catch (error) {
+      if (
+        error instanceof EventNotFoundError ||
+        error instanceof DynamoConditionFailedError
+      ) {
+        throw new EventNotFoundError();
+      }
       return handleRepositoryError('EventRepository.updateEvent', error);
     }
   }
 
-  async insertEventGroups(
-    entries: EventGroupsInsert[],
-    userToken: string,
-  ): Promise<void> {
+  async deleteEvent(event: IEvent): Promise<void> {
     try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'event_groups',
-        entries,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError('EventRepository.insertEventGroups', error);
-    }
-  }
-
-  async deleteEventGroupsByEventId(
-    eventId: string,
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userDelete(
-        userToken,
-        'event_groups',
-        { event_id: eventId } as Partial<EventGroupsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'EventRepository.deleteEventGroupsByEventId',
-        error,
-      );
-    }
-  }
-
-  async findGroupsByIds(
-    groupIds: string[],
-    userToken: string,
-  ): Promise<string[]> {
-    try {
-      const response = await supabaseService.userSelectIn(
-        userToken,
-        'groups',
-        'id',
-        'id',
-        groupIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as { id: string }[];
-      return rows.map((r) => r.id);
-    } catch (error) {
-      return handleRepositoryError('EventRepository.findGroupsByIds', error);
-    }
-  }
-
-  async findTrainerGroups(trainerId: string): Promise<string[]> {
-    try {
-      const response = await supabaseService.adminSelect(
-        'group_trainers',
-        'group_id',
-        { trainer_id: trainerId } as Partial<
-          Database['public']['Tables']['group_trainers']['Row']
-        >,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as { group_id: string }[];
-      return rows.map((r) => r.group_id);
-    } catch (error) {
-      return handleRepositoryError('EventRepository.findTrainerGroups', error);
-    }
-  }
-
-  async findUsersByIdsAndRoles(
-    userIds: string[],
-    userToken: string,
-  ): Promise<{ id: string; role: string; tenant_id: string }[]> {
-    try {
-      const response = await supabaseService.userSelectIn(
-        userToken,
-        'users',
-        'id,role,tenant_id,status',
-        'id',
-        userIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as {
-        id: string;
-        role: string;
-        tenant_id: string;
-        status: string;
-      }[];
-      return rows
-        .filter((r) => r.status === 'active')
-        .map(({ id, role, tenant_id }) => ({ id, role, tenant_id }));
-    } catch (error) {
-      return handleRepositoryError(
-        'EventRepository.findUsersByIdsAndRoles',
-        error,
-      );
-    }
-  }
-
-  async insertEventAgents(
-    entries: EventAgentsInsert[],
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'event_agents',
-        entries,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError('EventRepository.insertEventAgents', error);
-    }
-  }
-
-  async deleteEventAgentsByEventId(
-    eventId: string,
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userDelete(
-        userToken,
-        'event_agents',
-        { event_id: eventId } as Partial<
-          Database['public']['Tables']['event_agents']['Row']
-        >,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'EventRepository.deleteEventAgentsByEventId',
-        error,
-      );
-    }
-  }
-
-  async deleteEvent(eventId: string, userToken: string): Promise<void> {
-    try {
-      const response = await supabaseService.userDelete(
-        userToken,
-        'events',
-        { id: eventId } as Partial<EventsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
+      await Promise.all([
+        ...event.groupIds.map((groupId) =>
+          eventGroups.delete({
+            event_id: event.id,
+            group_id: groupId,
+          }),
+        ),
+        ...event.agentIds.map((userId) =>
+          eventAgents.delete({
+            event_id: event.id,
+            user_id: userId,
+          }),
+        ),
+      ]);
+      await events.delete({ id: event.id });
     } catch (error) {
       return handleRepositoryError('EventRepository.deleteEvent', error);
-    }
-  }
-
-  async findPublicEventById(eventId: string): Promise<PublicEventRaw | null> {
-    try {
-      const response = await supabaseService.adminSelectWithJoin(
-        'events',
-        'id, event_title, description, start_date, end_date, type, venue, meeting_link, status, visibility, users!events_created_by_fkey(name)',
-        { id: eventId },
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as {
-        id: string;
-        event_title: string;
-        description: string | null;
-        start_date: string;
-        end_date: string | null;
-        type: string;
-        venue: string | null;
-        meeting_link: string | null;
-        status: string;
-        visibility: string;
-        users: { name: string } | null;
-      };
-
-      return {
-        id: row.id,
-        event_title: row.event_title,
-        description: row.description,
-        start_date: row.start_date,
-        end_date: row.end_date,
-        type: row.type,
-        venue: row.venue,
-        meeting_link: row.meeting_link,
-        created_by_name: row.users?.name ?? '',
-        status: row.status,
-        visibility: row.visibility,
-      };
-    } catch (error) {
-      return handleRepositoryError('EventRepository.findPublicEventById', error);
     }
   }
 }

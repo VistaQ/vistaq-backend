@@ -9,18 +9,9 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
                             Interfaces
 ******************************************************************************/
 
-interface ICreatePointConfigParams {
+interface IPointConfigParams {
   activity: string;
   points: number;
-  tenantId: string;
-  token: string;
-}
-
-interface IUpdatePointConfigParams {
-  activity: string;
-  points: number;
-  tenantId: string;
-  token: string;
 }
 
 /******************************************************************************
@@ -28,9 +19,11 @@ interface IUpdatePointConfigParams {
 ******************************************************************************/
 
 class PointConfigService {
-  async createPointConfig(params: ICreatePointConfigParams): Promise<IPointConfig> {
+  async createPointConfig(params: IPointConfigParams): Promise<IPointConfig> {
     try {
-      const activityType = await pointActivityTypeService.getActivityType(params.activity);
+      const activityType = await pointActivityTypeService.getActivityType(
+        params.activity,
+      );
       if (!activityType) {
         throw new RouteError(
           HttpStatusCodes.BAD_REQUEST,
@@ -38,29 +31,17 @@ class PointConfigService {
         );
       }
 
-      const existing = await pointConfigRepository.findByTenantAndActivity(
-        params.tenantId,
-        params.activity,
-        params.token,
-      );
-
-      if (existing) {
+      const pointConfig = await pointConfigRepository.insertPointConfig({
+        activity: params.activity,
+        category: activityType.category,
+        points: params.points,
+      });
+      if (!pointConfig) {
         throw new RouteError(
           HttpStatusCodes.BAD_REQUEST,
           'Config already exists for this activity.',
         );
       }
-
-      const pointConfig = await pointConfigRepository.insertPointConfig(
-        {
-          tenant_id: params.tenantId,
-          activity: params.activity,
-          category: activityType.category,
-          points: params.points,
-        },
-        params.token,
-      );
-
       return pointConfig;
     } catch (error) {
       if (error instanceof RouteError) throw error;
@@ -68,49 +49,26 @@ class PointConfigService {
     }
   }
 
-  async getPointConfigs(tenantId: string, token: string): Promise<IPointConfig[]> {
+  async getPointConfigs(): Promise<IPointConfig[]> {
     try {
-      const configs = await pointConfigRepository.findByTenantId(tenantId, token);
-      return configs;
+      return await pointConfigRepository.findAll();
     } catch (error) {
       return handleServiceError('PointConfigService.getPointConfigs', error);
     }
   }
 
-  async updatePointConfig(params: IUpdatePointConfigParams): Promise<IPointConfig> {
+  async updatePointConfig(params: IPointConfigParams): Promise<IPointConfig> {
     try {
-      const existing = await pointConfigRepository.findByTenantAndActivity(
-        params.tenantId,
+      const updated = await pointConfigRepository.updatePoints(
         params.activity,
-        params.token,
+        params.points,
       );
-
-      if (!existing) {
-        throw new RouteError(
-          HttpStatusCodes.NOT_FOUND,
-          'Point config not found.',
-        );
-      }
-
-      const updateData = {
-        points: params.points,
-        updated_at: new Date().toISOString(),
-      };
-
-      const updated = await pointConfigRepository.updatePointConfig(
-        params.tenantId,
-        params.activity,
-        updateData,
-        params.token,
-      );
-
       if (!updated) {
         throw new RouteError(
           HttpStatusCodes.NOT_FOUND,
           'Point config not found.',
         );
       }
-
       return updated;
     } catch (error) {
       if (error instanceof RouteError) throw error;

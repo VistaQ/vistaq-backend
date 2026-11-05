@@ -14,6 +14,7 @@ import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import groupService from '@src/services/group.service';
 import type { IGroup } from '@src/types/auth.types';
+import { callerOf } from '@src/utils/caller';
 import type { IGroupDetailStats } from '@src/types/group-detail-stats.types';
 import type { IGroupStats } from '@src/types/group-stats.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
@@ -87,8 +88,7 @@ export interface IGetGroupStatsByIdRes extends IBaseRes {
 class GroupController {
   async getStats(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const data = await groupService.getGroupStats(token);
+      const data = await groupService.getGroupStats(callerOf(req));
 
       const responseBody: IGetGroupStatsRes = {
         success: true,
@@ -103,8 +103,7 @@ class GroupController {
 
   async getAll(req: IBaseReq, res: Response, next: NextFunction): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const groups = await groupService.getGroups(token);
+      const groups = await groupService.getGroups(callerOf(req));
 
       const responseBody: IGetGroupsRes = {
         success: true,
@@ -123,10 +122,9 @@ class GroupController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { groupId } = req.params;
 
-      const group = await groupService.getGroupById(groupId, token);
+      const group = await groupService.getGroupById(groupId, callerOf(req));
 
       if (!group) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Group not found'));
@@ -155,15 +153,12 @@ class GroupController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { name, leader_id, trainer_ids } = req.body;
 
       const group = await groupService.createGroup({
         name,
-        tenantId: req.user!.tenant_id,
         leaderId: leader_id,
         trainerIds: trainer_ids,
-        token,
       });
 
       const responseBody: ICreateGroupRes = {
@@ -192,10 +187,9 @@ class GroupController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { groupId } = req.params;
 
-      const data = await groupService.getGroupDetailStats(groupId, token);
+      const data = await groupService.getGroupDetailStats(groupId, callerOf(req));
 
       const responseBody: IGetGroupStatsByIdRes = {
         success: true,
@@ -223,12 +217,10 @@ class GroupController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { groupId } = req.params;
 
       const group = await groupService.updateGroup({
         groupId,
-        token,
         data: req.body,
       });
 

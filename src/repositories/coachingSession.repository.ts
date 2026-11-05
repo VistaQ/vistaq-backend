@@ -1,136 +1,262 @@
-import supabaseService from '@src/services/supabase.service';
-import type { Database } from '@src/types/database.types';
+import { randomUUID } from 'crypto';
+
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import { CoachingSessionNotFoundError } from '@src/models/errors/coachingSession.errors';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import dynamoService, { DynamoTable } from '@src/services/dynamo.service';
 import type {
   ICoachingSession,
   ICoachingSessionAttendance,
 } from '@src/types/coachingSession.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
-
-type CoachingSessionsRow =
-  Database['public']['Tables']['coaching_sessions']['Row'];
-type CoachingSessionsInsert =
-  Database['public']['Tables']['coaching_sessions']['Insert'];
-type CoachingSessionsUpdate =
-  Database['public']['Tables']['coaching_sessions']['Update'];
-type CoachingSessionGroupsInsert =
-  Database['public']['Tables']['coaching_session_groups']['Insert'];
-type CoachingSessionGroupsRow =
-  Database['public']['Tables']['coaching_session_groups']['Row'];
-type CoachingSessionAgentsInsert =
-  Database['public']['Tables']['coaching_session_agents']['Insert'];
-type CoachingSessionAgentsRow =
-  Database['public']['Tables']['coaching_session_agents']['Row'];
-type CoachingSessionAttendanceRow =
-  Database['public']['Tables']['coaching_session_attendance']['Row'];
-type CoachingSessionAttendanceInsert =
-  Database['public']['Tables']['coaching_session_attendance']['Insert'];
-type CoachingSessionAttendanceUpdate =
-  Database['public']['Tables']['coaching_session_attendance']['Update'];
-
-type CoachingSessionWithRelationsRow = CoachingSessionsRow & {
-  coaching_session_groups: { group_id: string }[];
-  coaching_session_agents: { user_id: string }[];
-  coaching_session_attendance: CoachingSessionAttendanceRow[];
-};
+import { nowUtc } from '@src/utils/period';
 
 /******************************************************************************
-                            CoachingSessionRepository
+                            Item and input types
+******************************************************************************/
+
+interface ISessionItem {
+  id: string;
+  coaching_type: string;
+  title: string;
+  description?: string;
+  start_date: string;
+  end_date: string;
+  training_mode: string;
+  link?: string;
+  status: string;
+  created_by?: string;
+  created_by_name?: string;
+  created_by_role?: string;
+  group_ids: string[];
+  agent_ids: string[];
+  audience_all?: 1;
+  attendance_total: number;
+  attendance_joined: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ISessionGroupItem {
+  session_id: string;
+  group_id: string;
+  start_date: string;
+}
+
+interface ISessionAgentItem {
+  session_id: string;
+  user_id: string;
+  start_date: string;
+}
+
+interface IAttendanceItem {
+  id: string;
+  session_id: string;
+  agent_key: string;
+  agent_id?: string;
+  agent_name: string;
+  agent_email: string;
+  group_id?: string;
+  group_name?: string;
+  status: string;
+  joined_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface INewSession {
+  coaching_type: string;
+  title: string;
+  description?: string | null;
+  start_date: string;
+  end_date: string;
+  training_mode: string;
+  link?: string | null;
+  status?: string;
+  created_by: string;
+  created_by_name?: string | null;
+  created_by_role?: string | null;
+  group_ids: string[];
+  agent_ids: string[];
+}
+
+export interface ISessionUpdate {
+  coaching_type?: string;
+  title?: string;
+  description?: string | null;
+  start_date?: string;
+  end_date?: string;
+  training_mode?: string;
+  link?: string | null;
+  status?: string;
+  group_ids?: string[];
+  agent_ids?: string[];
+}
+
+export interface INewAttendance {
+  agent_id: string;
+  agent_name: string;
+  agent_email: string;
+  group_id: string | null;
+  group_name: string | null;
+}
+
+const sessions = new DynamoTable<ISessionItem>('CoachingSessions');
+const sessionGroups = new DynamoTable<ISessionGroupItem>(
+  'CoachingSessionGroups',
+);
+const sessionAgents = new DynamoTable<ISessionAgentItem>(
+  'CoachingSessionAgents',
+);
+const attendance = new DynamoTable<IAttendanceItem>('CoachingAttendance');
+
+const SESSION_STATUSES = ['upcoming', 'ongoing', 'completed', 'cancelled'];
+
+const unique = (ids: string[]): string[] => Array.from(new Set(ids));
+
+function toSession(item: ISessionItem): ICoachingSession {
+  return {
+    id: item.id,
+    tenant_id: TRANSITIONAL_TENANT_ID,
+    coaching_type: item.coaching_type,
+    title: item.title,
+    description: item.description ?? null,
+    start_date: item.start_date,
+    end_date: item.end_date,
+    training_mode: item.training_mode,
+    link: item.link ?? null,
+    status: item.status,
+    created_by: item.created_by ?? null,
+    created_by_name: item.created_by_name ?? null,
+    created_by_role: item.created_by_role ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+    targetGroupIds: item.group_ids ?? [],
+    targetAgentIds: item.agent_ids ?? [],
+    attendance_total: item.attendance_total ?? 0,
+    attendance_joined: item.attendance_joined ?? 0,
+  };
+}
+
+function toAttendance(item: IAttendanceItem): ICoachingSessionAttendance {
+  return {
+    id: item.id,
+    session_id: item.session_id,
+    agent_id: item.agent_id ?? null,
+    agent_name: item.agent_name,
+    agent_email: item.agent_email,
+    group_id: item.group_id ?? null,
+    group_name: item.group_name ?? null,
+    status: item.status,
+    joined_at: item.joined_at ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
+
+function byStartDesc(a: ICoachingSession, b: ICoachingSession): number {
+  return b.start_date.localeCompare(a.start_date);
+}
+
+/******************************************************************************
+                        CoachingSessionRepository
 ******************************************************************************/
 
 class CoachingSessionRepository {
-  // ---------------------------------------------------------------------------
-  // Private Mappers
-  // ---------------------------------------------------------------------------
-
-  private mapRowWithRelationsToSession(
-    row: CoachingSessionWithRelationsRow,
-  ): ICoachingSession {
-    return {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      coaching_type: row.coaching_type,
-      title: row.title,
-      description: row.description,
-      start_date: row.start_date,
-      end_date: row.end_date,
-      training_mode: row.training_mode,
-      link: row.link,
-      status: row.status,
-      created_by: row.created_by,
-      created_by_name: row.created_by_name,
-      created_by_role: row.created_by_role,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      targetGroupIds: (row.coaching_session_groups ?? []).map(
-        (csg) => csg.group_id,
-      ),
-      targetAgentIds: (row.coaching_session_agents ?? []).map(
-        (csa) => csa.user_id,
-      ),
-      attendance: (row.coaching_session_attendance ?? []).map((a) => ({
-        id: a.id,
-        session_id: a.session_id,
-        agent_id: a.agent_id,
-        agent_name: a.agent_name,
-        agent_email: a.agent_email,
-        group_id: a.group_id,
-        group_name: a.group_name,
-        status: a.status,
-        joined_at: a.joined_at,
-        created_at: a.created_at,
-        updated_at: a.updated_at,
-      })),
-    };
-  }
-
-  private mapInsertRowToSession(row: CoachingSessionsRow): ICoachingSession {
-    return {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      coaching_type: row.coaching_type,
-      title: row.title,
-      description: row.description,
-      start_date: row.start_date,
-      end_date: row.end_date,
-      training_mode: row.training_mode,
-      link: row.link,
-      status: row.status,
-      created_by: row.created_by,
-      created_by_name: row.created_by_name,
-      created_by_role: row.created_by_role,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      targetGroupIds: [],
-      targetAgentIds: [],
-      attendance: [],
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Session CRUD (user-scoped)
-  // ---------------------------------------------------------------------------
-
-  async insertSession(
-    data: CoachingSessionsInsert,
-    userToken: string,
-  ): Promise<ICoachingSession> {
+  // The link items copy start_date for their index sort key, so they are
+  // rewritten when it changes, not only when the target sets change.
+  private async writeLinks(
+    session: ISessionItem,
+    previous?: { group_ids: string[]; agent_ids: string[] },
+  ): Promise<void> {
     try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'coaching_sessions',
-        data,
+      const removed = (ids: string[], next: string[]) =>
+        ids.filter((id) => !next.includes(id));
+      await Promise.all([
+        ...removed(previous?.group_ids ?? [], session.group_ids).map(
+          (groupId) =>
+            sessionGroups.delete({ session_id: session.id, group_id: groupId }),
+        ),
+        ...removed(previous?.agent_ids ?? [], session.agent_ids).map((userId) =>
+          sessionAgents.delete({ session_id: session.id, user_id: userId }),
+        ),
+        ...session.group_ids.map((groupId) =>
+          sessionGroups.put({
+            session_id: session.id,
+            group_id: groupId,
+            start_date: session.start_date,
+          }),
+        ),
+        ...session.agent_ids.map((userId) =>
+          sessionAgents.put({
+            session_id: session.id,
+            user_id: userId,
+            start_date: session.start_date,
+          }),
+        ),
+      ]);
+    } catch (error) {
+      return handleRepositoryError(
+        'CoachingSessionRepository.writeLinks',
+        error,
       );
+    }
+  }
 
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
+  private async addCounts(
+    sessionId: string,
+    total: number,
+    joined = 0,
+  ): Promise<void> {
+    try {
+      if (total === 0 && joined === 0) return;
+      await sessions.update(
+        { id: sessionId },
+        'ADD attendance_total :total, attendance_joined :joined',
+        { values: { ':total': total, ':joined': joined } },
+      );
+    } catch (error) {
+      return handleRepositoryError(
+        'CoachingSessionRepository.addCounts',
+        error,
+      );
+    }
+  }
 
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No coaching session returned after insert');
-      }
-
-      const row = response.data[0] as unknown as CoachingSessionsRow;
-      return this.mapInsertRowToSession(row);
+  async insertSession(session: INewSession): Promise<ICoachingSession> {
+    try {
+      const now = nowUtc();
+      const groupIds = unique(session.group_ids);
+      const agentIds = unique(session.agent_ids);
+      const item: ISessionItem = {
+        id: randomUUID(),
+        coaching_type: session.coaching_type,
+        title: session.title,
+        ...(session.description && { description: session.description }),
+        start_date: session.start_date,
+        end_date: session.end_date,
+        training_mode: session.training_mode,
+        ...(session.link && { link: session.link }),
+        status: session.status ?? 'upcoming',
+        created_by: session.created_by,
+        ...(session.created_by_name && {
+          created_by_name: session.created_by_name,
+        }),
+        ...(session.created_by_role && {
+          created_by_role: session.created_by_role,
+        }),
+        group_ids: groupIds,
+        agent_ids: agentIds,
+        ...(groupIds.length === 0 &&
+          agentIds.length === 0 && { audience_all: 1 }),
+        attendance_total: 0,
+        attendance_joined: 0,
+        created_at: now,
+        updated_at: now,
+      };
+      await sessions.put(item, { condition: 'attribute_not_exists(id)' });
+      await this.writeLinks(item);
+      return toSession(item);
     } catch (error) {
       return handleRepositoryError(
         'CoachingSessionRepository.insertSession',
@@ -139,84 +265,128 @@ class CoachingSessionRepository {
     }
   }
 
-  async findAll(userToken: string): Promise<ICoachingSession[]> {
+  async findById(
+    sessionId: string,
+    options?: { consistent?: boolean },
+  ): Promise<ICoachingSession | null> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'coaching_sessions',
-        '*, coaching_session_groups(group_id), coaching_session_agents(user_id), coaching_session_attendance(*)',
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows =
-        (response.data ?? []) as unknown as CoachingSessionWithRelationsRow[];
-      return rows.map((row) => this.mapRowWithRelationsToSession(row));
+      const item = await sessions.get({ id: sessionId }, options);
+      return item ? toSession(item) : null;
     } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findAll',
-        error,
-      );
+      return handleRepositoryError('CoachingSessionRepository.findById', error);
     }
   }
 
-  async findById(
-    sessionId: string,
-    userToken: string,
-  ): Promise<ICoachingSession | null> {
+  async findAll(): Promise<ICoachingSession[]> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'coaching_sessions',
-        '*, coaching_session_groups(group_id), coaching_session_agents(user_id), coaching_session_attendance(*)',
-        { id: sessionId } as Partial<CoachingSessionsRow>,
+      const pages = await Promise.all(
+        SESSION_STATUSES.map((status) =>
+          sessions.queryAll({
+            index: 'byStatus',
+            keyCondition: 'status = :status',
+            values: { ':status': status },
+            descending: true,
+          }),
+        ),
       );
+      return pages.flat().map(toSession).sort(byStartDesc);
+    } catch (error) {
+      return handleRepositoryError('CoachingSessionRepository.findAll', error);
+    }
+  }
 
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
+  async findVisible(
+    userId: string,
+    groupIds: string[],
+  ): Promise<ICoachingSession[]> {
+    try {
+      const [created, allAudience, agentLinks, ...groupLinks] =
+        await Promise.all([
+          sessions.queryAll({
+            index: 'byCreator',
+            keyCondition: 'created_by = :user',
+            values: { ':user': userId },
+          }),
+          sessions.queryAll({
+            index: 'allAudience',
+            keyCondition: 'audience_all = :all',
+            values: { ':all': 1 },
+          }),
+          sessionAgents.queryAll({
+            index: 'byUser',
+            keyCondition: 'user_id = :user',
+            values: { ':user': userId },
+          }),
+          ...unique(groupIds).map((groupId) =>
+            sessionGroups.queryAll({
+              index: 'byGroup',
+              keyCondition: 'group_id = :group',
+              values: { ':group': groupId },
+            }),
+          ),
+        ]);
 
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
+      const loaded = new Map(
+        [...created, ...allAudience].map((item) => [item.id, item]),
+      );
+      const linkedIds = unique(
+        [...agentLinks, ...groupLinks.flat()].map((link) => link.session_id),
+      ).filter((id) => !loaded.has(id));
+      const linked = await sessions.batchGet(linkedIds.map((id) => ({ id })));
 
-      const row =
-        response.data[0] as unknown as CoachingSessionWithRelationsRow;
-      return this.mapRowWithRelationsToSession(row);
+      return [...loaded.values(), ...linked].map(toSession).sort(byStartDesc);
     } catch (error) {
       return handleRepositoryError(
-        'CoachingSessionRepository.findById',
+        'CoachingSessionRepository.findVisible',
         error,
       );
     }
   }
 
   async updateSession(
-    sessionId: string,
-    data: CoachingSessionsUpdate,
-    userToken: string,
-  ): Promise<ICoachingSession | null> {
+    previous: ICoachingSession,
+    data: ISessionUpdate,
+  ): Promise<ICoachingSession> {
     try {
-      const response = await supabaseService.userUpdate(
-        userToken,
-        'coaching_sessions',
-        data,
-        { id: sessionId } as Partial<CoachingSessionsRow>,
+      const groupIds = data.group_ids
+        ? unique(data.group_ids)
+        : previous.targetGroupIds;
+      const agentIds = data.agent_ids
+        ? unique(data.agent_ids)
+        : previous.targetAgentIds;
+      const updated = await sessions.updateFields(
+        { id: previous.id },
+        {
+          ...data,
+          group_ids: groupIds,
+          agent_ids: agentIds,
+          audience_all:
+            groupIds.length === 0 && agentIds.length === 0 ? 1 : null,
+        },
+        { condition: 'attribute_exists(id)' },
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
+      if (!updated) {
+        throw new CoachingSessionNotFoundError();
       }
 
-      if (!response.data || response.data.length === 0) {
-        return null;
+      if (
+        data.group_ids !== undefined ||
+        data.agent_ids !== undefined ||
+        updated.start_date !== previous.start_date
+      ) {
+        await this.writeLinks(updated, {
+          group_ids: previous.targetGroupIds,
+          agent_ids: previous.targetAgentIds,
+        });
       }
-
-      const row = response.data[0] as unknown as CoachingSessionsRow;
-      return this.mapInsertRowToSession(row);
+      return toSession(updated);
     } catch (error) {
+      if (
+        error instanceof CoachingSessionNotFoundError ||
+        error instanceof DynamoConditionFailedError
+      ) {
+        throw new CoachingSessionNotFoundError();
+      }
       return handleRepositoryError(
         'CoachingSessionRepository.updateSession',
         error,
@@ -224,20 +394,27 @@ class CoachingSessionRepository {
     }
   }
 
-  async deleteSession(
-    sessionId: string,
-    userToken: string,
-  ): Promise<void> {
+  async deleteSession(session: ICoachingSession): Promise<void> {
     try {
-      const response = await supabaseService.userDelete(
-        userToken,
-        'coaching_sessions',
-        { id: sessionId } as Partial<CoachingSessionsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
+      const rows = await attendance.queryAll({
+        keyCondition: 'session_id = :session',
+        values: { ':session': session.id },
+      });
+      await Promise.all([
+        ...session.targetGroupIds.map((groupId) =>
+          sessionGroups.delete({ session_id: session.id, group_id: groupId }),
+        ),
+        ...session.targetAgentIds.map((userId) =>
+          sessionAgents.delete({ session_id: session.id, user_id: userId }),
+        ),
+        ...rows.map((row) =>
+          attendance.delete({
+            session_id: row.session_id,
+            agent_key: row.agent_key,
+          }),
+        ),
+      ]);
+      await sessions.delete({ id: session.id });
     } catch (error) {
       return handleRepositoryError(
         'CoachingSessionRepository.deleteSession',
@@ -246,556 +423,214 @@ class CoachingSessionRepository {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Junction Table Methods (user-scoped)
-  // ---------------------------------------------------------------------------
-
-  async insertSessionGroups(
-    entries: CoachingSessionGroupsInsert[],
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'coaching_session_groups',
-        entries,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.insertSessionGroups',
-        error,
-      );
-    }
-  }
-
-  async deleteSessionGroupsBySessionId(
-    sessionId: string,
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userDelete(
-        userToken,
-        'coaching_session_groups',
-        { session_id: sessionId } as Partial<CoachingSessionGroupsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.deleteSessionGroupsBySessionId',
-        error,
-      );
-    }
-  }
-
-  async insertSessionAgents(
-    entries: CoachingSessionAgentsInsert[],
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'coaching_session_agents',
-        entries,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.insertSessionAgents',
-        error,
-      );
-    }
-  }
-
-  async deleteSessionAgentsBySessionId(
-    sessionId: string,
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userDelete(
-        userToken,
-        'coaching_session_agents',
-        { session_id: sessionId } as Partial<CoachingSessionAgentsRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.deleteSessionAgentsBySessionId',
-        error,
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Validation Helpers
-  // ---------------------------------------------------------------------------
-
-  async findGroupsByIds(
-    groupIds: string[],
-    userToken: string,
-  ): Promise<string[]> {
-    try {
-      const response = await supabaseService.userSelectIn(
-        userToken,
-        'groups',
-        'id',
-        'id',
-        groupIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as { id: string }[];
-      return rows.map((r) => r.id);
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findGroupsByIds',
-        error,
-      );
-    }
-  }
-
-  async findTrainerGroups(trainerId: string): Promise<string[]> {
-    try {
-      const response = await supabaseService.adminSelect(
-        'group_trainers',
-        'group_id',
-        { trainer_id: trainerId } as Partial<
-          Database['public']['Tables']['group_trainers']['Row']
-        >,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as { group_id: string }[];
-      return rows.map((r) => r.group_id);
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findTrainerGroups',
-        error,
-      );
-    }
-  }
-
-  async findUsersByIdsAndRoles(
-    userIds: string[],
-    userToken: string,
-  ): Promise<{ id: string; role: string; tenant_id: string }[]> {
-    try {
-      const response = await supabaseService.userSelectIn(
-        userToken,
-        'users',
-        'id,role,tenant_id,status',
-        'id',
-        userIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as {
-        id: string;
-        role: string;
-        tenant_id: string;
-        status: string;
-      }[];
-      return rows
-        .filter((r) => r.status === 'active')
-        .map(({ id, role, tenant_id }) => ({ id, role, tenant_id }));
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findUsersByIdsAndRoles',
-        error,
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Attendance Methods (admin client — no RLS on attendance)
-  // ---------------------------------------------------------------------------
-
-  async insertAttendanceRecords(
-    records: CoachingSessionAttendanceInsert[],
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.adminInsert(
-        'coaching_session_attendance',
-        records,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.insertAttendanceRecords',
-        error,
-      );
-    }
-  }
-
-  async findAttendanceBySessionAndAgent(
-    sessionId: string,
-    agentId: string,
-  ): Promise<ICoachingSessionAttendance | null> {
-    try {
-      const response = await supabaseService.adminSelect(
-        'coaching_session_attendance',
-        '*',
-        {
-          session_id: sessionId,
-          agent_id: agentId,
-        } as Partial<CoachingSessionAttendanceRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as CoachingSessionAttendanceRow;
-      return {
-        id: row.id,
-        session_id: row.session_id,
-        agent_id: row.agent_id,
-        agent_name: row.agent_name,
-        agent_email: row.agent_email,
-        group_id: row.group_id,
-        group_name: row.group_name,
-        status: row.status,
-        joined_at: row.joined_at,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findAttendanceBySessionAndAgent',
-        error,
-      );
-    }
-  }
-
-  async updateAttendanceRecord(
-    sessionId: string,
-    agentId: string,
-    data: CoachingSessionAttendanceUpdate,
-  ): Promise<ICoachingSessionAttendance | null> {
-    try {
-      const response = await supabaseService.adminUpdate(
-        'coaching_session_attendance',
-        data,
-        {
-          session_id: sessionId,
-          agent_id: agentId,
-        } as Partial<CoachingSessionAttendanceRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as CoachingSessionAttendanceRow;
-      return {
-        id: row.id,
-        session_id: row.session_id,
-        agent_id: row.agent_id,
-        agent_name: row.agent_name,
-        agent_email: row.agent_email,
-        group_id: row.group_id,
-        group_name: row.group_name,
-        status: row.status,
-        joined_at: row.joined_at,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.updateAttendanceRecord',
-        error,
-      );
-    }
-  }
-
-  async bulkUpdatePendingToDidNotAttend(sessionId: string): Promise<void> {
-    try {
-      const response = await supabaseService.adminUpdate(
-        'coaching_session_attendance',
-        {
-          status: 'did_not_attend',
-          updated_at: new Date().toISOString(),
-        } as CoachingSessionAttendanceUpdate,
-        {
-          session_id: sessionId,
-          status: 'pending',
-        } as Partial<CoachingSessionAttendanceRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.bulkUpdatePendingToDidNotAttend',
-        error,
-      );
-    }
-  }
-
-  async findAttendanceBySessionId(
+  async findAttendance(
     sessionId: string,
   ): Promise<ICoachingSessionAttendance[]> {
     try {
-      const response = await supabaseService.adminSelect(
-        'coaching_session_attendance',
-        '*',
-        { session_id: sessionId } as Partial<CoachingSessionAttendanceRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows =
-        (response.data ?? []) as unknown as CoachingSessionAttendanceRow[];
-      return rows.map((row) => ({
-        id: row.id,
-        session_id: row.session_id,
-        agent_id: row.agent_id,
-        agent_name: row.agent_name,
-        agent_email: row.agent_email,
-        group_id: row.group_id,
-        group_name: row.group_name,
-        status: row.status,
-        joined_at: row.joined_at,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
+      const rows = await attendance.queryAll({
+        keyCondition: 'session_id = :session',
+        values: { ':session': sessionId },
+        consistent: true,
+      });
+      return rows.map(toAttendance);
     } catch (error) {
       return handleRepositoryError(
-        'CoachingSessionRepository.findAttendanceBySessionId',
+        'CoachingSessionRepository.findAttendance',
         error,
       );
     }
   }
 
-  async deleteAttendanceRecord(attendanceId: string): Promise<void> {
+  async findAttendanceForAgent(
+    sessionId: string,
+    agentId: string,
+  ): Promise<ICoachingSessionAttendance | null> {
     try {
-      const response = await supabaseService.adminDelete(
-        'coaching_session_attendance',
-        { id: attendanceId } as Partial<CoachingSessionAttendanceRow>,
+      const item = await attendance.get(
+        { session_id: sessionId, agent_key: agentId },
+        { consistent: true },
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
+      return item ? toAttendance(item) : null;
     } catch (error) {
       return handleRepositoryError(
-        'CoachingSessionRepository.deleteAttendanceRecord',
+        'CoachingSessionRepository.findAttendanceForAgent',
         error,
       );
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // User/Group Resolution (admin client)
-  // ---------------------------------------------------------------------------
-
-  async findUserById(
-    userId: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    group_id: string | null;
-    tenant_id: string;
-  } | null> {
+  async insertPendingAttendance(
+    sessionId: string,
+    records: INewAttendance[],
+  ): Promise<void> {
     try {
-      const response = await supabaseService.adminSelect(
-        'users',
-        'id, name, email, role, group_id, tenant_id',
-        { id: userId } as Partial<Database['public']['Tables']['users']['Row']>,
+      const now = nowUtc();
+      const results = await Promise.all(
+        records.map((record) =>
+          attendance
+            .put(
+              {
+                id: randomUUID(),
+                session_id: sessionId,
+                agent_key: record.agent_id,
+                agent_id: record.agent_id,
+                agent_name: record.agent_name,
+                agent_email: record.agent_email,
+                ...(record.group_id && { group_id: record.group_id }),
+                ...(record.group_name && { group_name: record.group_name }),
+                status: 'pending',
+                created_at: now,
+                updated_at: now,
+              },
+              { condition: 'attribute_not_exists(agent_key)' },
+            )
+            .then(() => 1)
+            .catch((error: unknown) => {
+              if (error instanceof DynamoConditionFailedError) return 0;
+              throw error;
+            }),
+        ),
       );
+      await this.addCounts(
+        sessionId,
+        results.reduce<number>((a, b) => a + b, 0),
+      );
+    } catch (error) {
+      return handleRepositoryError(
+        'CoachingSessionRepository.insertPendingAttendance',
+        error,
+      );
+    }
+  }
 
-      if (response.error) {
-        throw new Error(response.error.message);
+  async deletePendingAttendance(
+    sessionId: string,
+    agentIds: string[],
+  ): Promise<void> {
+    try {
+      const results = await Promise.all(
+        agentIds.map((agentId) =>
+          attendance
+            .delete(
+              { session_id: sessionId, agent_key: agentId },
+              {
+                condition: 'status = :pending',
+                values: { ':pending': 'pending' },
+              },
+            )
+            .then(() => 1)
+            .catch((error: unknown) => {
+              if (error instanceof DynamoConditionFailedError) return 0;
+              throw error;
+            }),
+        ),
+      );
+      await this.addCounts(
+        sessionId,
+        -results.reduce<number>((a, b) => a + b, 0),
+      );
+    } catch (error) {
+      return handleRepositoryError(
+        'CoachingSessionRepository.deletePendingAttendance',
+        error,
+      );
+    }
+  }
+
+  // One transaction per join so concurrent joins never lose a count. A
+  // condition failure (row created or joined meanwhile) reaches the caller.
+  async join(
+    sessionId: string,
+    record: INewAttendance,
+    existing: ICoachingSessionAttendance | null,
+  ): Promise<ICoachingSessionAttendance> {
+    try {
+      const now = nowUtc();
+      const one = { ':one': 1 };
+      if (existing) {
+        await dynamoService.transactWrite([
+          attendance.updateItem(
+            { session_id: sessionId, agent_key: record.agent_id },
+            'SET status = :joined, joined_at = :now, updated_at = :now',
+            {
+              condition: 'status <> :joined',
+              values: { ':joined': 'joined', ':now': now },
+            },
+          ),
+          sessions.updateItem({ id: sessionId }, 'ADD attendance_joined :one', {
+            values: one,
+          }),
+        ]);
+        return {
+          ...existing,
+          status: 'joined',
+          joined_at: now,
+          updated_at: now,
+        };
       }
 
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as {
-        id: string;
-        name: string;
-        email: string;
-        role: string;
-        group_id: string | null;
-        tenant_id: string;
+      const item: IAttendanceItem = {
+        id: randomUUID(),
+        session_id: sessionId,
+        agent_key: record.agent_id,
+        agent_id: record.agent_id,
+        agent_name: record.agent_name,
+        agent_email: record.agent_email,
+        ...(record.group_id && { group_id: record.group_id }),
+        ...(record.group_name && { group_name: record.group_name }),
+        status: 'joined',
+        joined_at: now,
+        created_at: now,
+        updated_at: now,
       };
-      return row;
+      await dynamoService.transactWrite([
+        attendance.putItem(item, {
+          condition: 'attribute_not_exists(agent_key)',
+        }),
+        sessions.updateItem(
+          { id: sessionId },
+          'ADD attendance_total :one, attendance_joined :one',
+          { values: one },
+        ),
+      ]);
+      return toAttendance(item);
     } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findUserById',
-        error,
-      );
+      if (error instanceof DynamoConditionFailedError) throw error;
+      return handleRepositoryError('CoachingSessionRepository.join', error);
     }
   }
 
-  async findUsersByGroupIds(
-    groupIds: string[],
-    tenantId: string,
-  ): Promise<
-    { id: string; name: string; email: string; group_id: string }[]
-  > {
+  async markPendingAsDidNotAttend(sessionId: string): Promise<void> {
     try {
-      const response = await supabaseService.adminSelectIn(
-        'users',
-        'id, name, email, role, group_id',
-        'group_id',
-        groupIds,
-        { tenant_id: tenantId, status: 'active' } as Partial<
-          Database['public']['Tables']['users']['Row']
-        >,
+      const pending = await attendance.queryAll({
+        keyCondition: 'session_id = :session',
+        filter: 'status = :pending',
+        values: { ':session': sessionId, ':pending': 'pending' },
+      });
+      const now = nowUtc();
+      await Promise.all(
+        pending.map((row) =>
+          attendance
+            .update(
+              { session_id: sessionId, agent_key: row.agent_key },
+              'SET status = :dna, updated_at = :now',
+              {
+                condition: 'status = :pending',
+                values: {
+                  ':dna': 'did_not_attend',
+                  ':pending': 'pending',
+                  ':now': now,
+                },
+              },
+            )
+            .catch((error: unknown) => {
+              if (!(error instanceof DynamoConditionFailedError)) throw error;
+            }),
+        ),
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as {
-        id: string;
-        name: string;
-        email: string;
-        role: string;
-        group_id: string;
-      }[];
-      // Filter to only agents and group_leaders
-      // Note: adminSelectIn with filters only supports .eq(), so we filter roles in memory
-      const allowedRoles = ['agent', 'group_leader'];
-      return rows
-        .filter((r) => allowedRoles.includes(r.role))
-        .map(({ id, name, email, group_id }) => ({ id, name, email, group_id }));
     } catch (error) {
       return handleRepositoryError(
-        'CoachingSessionRepository.findUsersByGroupIds',
-        error,
-      );
-    }
-  }
-
-  async findGroupsByIdsWithNames(
-    groupIds: string[],
-  ): Promise<{ id: string; name: string }[]> {
-    try {
-      const response = await supabaseService.adminSelectIn(
-        'groups',
-        'id, name',
-        'id',
-        groupIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as {
-        id: string;
-        name: string;
-      }[];
-      return rows;
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findGroupsByIdsWithNames',
-        error,
-      );
-    }
-  }
-
-  async findUserDetailsByIds(
-    userIds: string[],
-  ): Promise<{ id: string; name: string; email: string; group_id: string | null }[]> {
-    try {
-      const response = await supabaseService.adminSelectIn(
-        'users',
-        'id, name, email, group_id',
-        'id',
-        userIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as {
-        id: string;
-        name: string;
-        email: string;
-        group_id: string | null;
-      }[];
-      return rows;
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findUserDetailsByIds',
-        error,
-      );
-    }
-  }
-
-  async findAllAgentsByTenant(
-    tenantId: string,
-  ): Promise<
-    { id: string; name: string; email: string; group_id: string | null }[]
-  > {
-    try {
-      const response = await supabaseService.adminSelectIn(
-        'users',
-        'id, name, email, group_id',
-        'role',
-        ['agent', 'group_leader'],
-        { tenant_id: tenantId, status: 'active' } as Partial<
-          Database['public']['Tables']['users']['Row']
-        >,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as {
-        id: string;
-        name: string;
-        email: string;
-        group_id: string | null;
-      }[];
-      return rows;
-    } catch (error) {
-      return handleRepositoryError(
-        'CoachingSessionRepository.findAllAgentsByTenant',
+        'CoachingSessionRepository.markPendingAsDidNotAttend',
         error,
       );
     }

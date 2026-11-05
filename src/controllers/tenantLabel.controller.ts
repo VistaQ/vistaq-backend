@@ -25,12 +25,8 @@ class TenantLabelController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
 
-      const data = await tenantLabelService.getLabels({
-        tenantId: req.user!.tenant_id,
-        token,
-      });
+      const data = await tenantLabelService.getLabels();
 
       const responseBody: IGetLabelsRes = {
         success: true,
