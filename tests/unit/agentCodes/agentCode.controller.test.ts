@@ -1,6 +1,20 @@
 // Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+const env: Record<string, string> = {
+  SUPABASE_URL: 'https://test.supabase.co',
+  SUPABASE_ANON_KEY: 'test-anon-key',
+  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+  USERS_TABLE: 'users',
+  AGENT_CODES_TABLE: 'agent-codes',
+  GROUP_TRAINERS_TABLE: 'group-trainers',
+  COGNITO_USER_POOL_ID: 'pool',
+  COGNITO_CLIENT_ID: 'client',
+  ETL_SERVICE_URL: 'http://etl.test',
+  ETL_API_KEY: 'key',
+  BACKEND_BASE_URL: 'http://backend.test',
+};
+for (const [name, value] of Object.entries(env)) {
+  process.env[name] ??= value;
+}
 
 jest.mock('@src/services/supabase.service', () => ({
   __esModule: true,
@@ -113,7 +127,7 @@ describe('AgentCodeController.createMany', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls service with agentCodes, tenantId from JWT, and bearer token', async () => {
+  it('calls service with agentCodes', async () => {
     const spy = jest
       .spyOn(agentCodeService, 'createMany')
       .mockResolvedValue(mockResult);
@@ -128,8 +142,6 @@ describe('AgentCodeController.createMany', () => {
 
     expect(spy).toHaveBeenCalledWith({
       agentCodes: ['X', 'Y'],
-      tenantId: TENANT_ID,
-      token: USER_TOKEN,
     });
   });
 
@@ -246,7 +258,7 @@ describe('AgentCodeController.list', () => {
     );
   });
 
-  it('calls agentCodeService.list with { isUsed: true, token } when ?isUsed=true', async () => {
+  it('calls agentCodeService.list with { isUsed: true } when ?isUsed=true', async () => {
     const spy = jest
       .spyOn(agentCodeService, 'list')
       .mockResolvedValue(mockListResult);
@@ -257,10 +269,10 @@ describe('AgentCodeController.list', () => {
 
     await agentCodeController.list(req, res, next as NextFunction);
 
-    expect(spy).toHaveBeenCalledWith({ isUsed: true, token: USER_TOKEN });
+    expect(spy).toHaveBeenCalledWith({ isUsed: true });
   });
 
-  it('calls agentCodeService.list with { isUsed: false, token } when ?isUsed=false', async () => {
+  it('calls agentCodeService.list with { isUsed: false } when ?isUsed=false', async () => {
     const spy = jest
       .spyOn(agentCodeService, 'list')
       .mockResolvedValue(mockListResult);
@@ -271,10 +283,10 @@ describe('AgentCodeController.list', () => {
 
     await agentCodeController.list(req, res, next as NextFunction);
 
-    expect(spy).toHaveBeenCalledWith({ isUsed: false, token: USER_TOKEN });
+    expect(spy).toHaveBeenCalledWith({ isUsed: false });
   });
 
-  it('calls agentCodeService.list with { isUsed: undefined, token } when no query param', async () => {
+  it('calls agentCodeService.list with { isUsed: undefined } when no query param', async () => {
     const spy = jest
       .spyOn(agentCodeService, 'list')
       .mockResolvedValue(mockListResult);
@@ -285,7 +297,7 @@ describe('AgentCodeController.list', () => {
 
     await agentCodeController.list(req, res, next as NextFunction);
 
-    expect(spy).toHaveBeenCalledWith({ isUsed: undefined, token: USER_TOKEN });
+    expect(spy).toHaveBeenCalledWith({ isUsed: undefined });
   });
 
   it('returns 200 with { success: true, data: [...] } and maps user_id to userId', async () => {
@@ -395,8 +407,6 @@ describe('AgentCodeController.update', () => {
     expect(spy).toHaveBeenCalledWith({
       currentAgentCode: 'OLD001',
       newAgentCode: 'NEW001',
-      tenantId: TENANT_ID,
-      token: USER_TOKEN,
     });
   });
 
@@ -528,8 +538,6 @@ describe('AgentCodeController.remove', () => {
 
     expect(spy).toHaveBeenCalledWith({
       agentCode: 'DEL001',
-      tenantId: TENANT_ID,
-      token: USER_TOKEN,
     });
   });
 

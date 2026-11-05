@@ -6,6 +6,16 @@ interface IRoute {
   httpApi: { method: string; path: string; authorizer?: { name: string } };
 }
 
+interface ITable {
+  Properties: {
+    KeySchema: { AttributeName: string; KeyType: string }[];
+    GlobalSecondaryIndexes?: {
+      IndexName: string;
+      KeySchema: { AttributeName: string; KeyType: string }[];
+    }[];
+  };
+}
+
 interface IServerlessConfig {
   provider: { environment: Record<string, unknown> };
   functions: { api: { events: IRoute[] } };
@@ -13,6 +23,9 @@ interface IServerlessConfig {
     Resources: {
       UserPool: { Properties: Record<string, unknown> };
       UserPoolClient: { Properties: Record<string, unknown> };
+      UsersTable: ITable;
+      AgentCodesTable: ITable;
+      GroupTrainersTable: ITable;
       PointTransactionsTable: {
         Properties: {
           GlobalSecondaryIndexes: {
@@ -70,6 +83,58 @@ describe('serverless.yml gateway routes', () => {
     const catchAll = routes.find((r) => label(r) === 'ANY /{proxy+}');
 
     expect(catchAll?.httpApi.authorizer?.name).toBe('cognito');
+  });
+});
+
+describe('serverless.yml data tables', () => {
+  const { UsersTable, AgentCodesTable, GroupTrainersTable } =
+    config.resources.Resources;
+  const indexNames = (table: ITable): string[] =>
+    (table.Properties.GlobalSecondaryIndexes ?? []).map((i) => i.IndexName);
+
+  it('gives Users a byGroup, byRoleStatus and byAgentCode index keyed by id', () => {
+    expect(UsersTable.Properties.KeySchema).toEqual([
+      { AttributeName: 'id', KeyType: 'HASH' },
+    ]);
+    expect(indexNames(UsersTable).sort()).toEqual([
+      'byAgentCode',
+      'byGroup',
+      'byRoleStatus',
+    ]);
+  });
+
+  it('keys Users.byGroup on group with status, role and name as the sort key', () => {
+    const byGroup = UsersTable.Properties.GlobalSecondaryIndexes!.find(
+      (i) => i.IndexName === 'byGroup',
+    );
+
+    expect(byGroup?.KeySchema.map((k) => `${k.AttributeName}:${k.KeyType}`)).toEqual([
+      'group_id:HASH',
+      'status:RANGE',
+      'role:RANGE',
+      'name:RANGE',
+    ]);
+  });
+
+  it('keys AgentCodes on the code with a byUsed index', () => {
+    expect(AgentCodesTable.Properties.KeySchema).toEqual([
+      { AttributeName: 'agent_code', KeyType: 'HASH' },
+    ]);
+    expect(indexNames(AgentCodesTable)).toEqual(['byUsed']);
+  });
+
+  it('keys GroupTrainers on group and trainer with a byTrainer index', () => {
+    expect(GroupTrainersTable.Properties.KeySchema).toEqual([
+      { AttributeName: 'group_id', KeyType: 'HASH' },
+      { AttributeName: 'trainer_id', KeyType: 'RANGE' },
+    ]);
+    expect(indexNames(GroupTrainersTable)).toEqual(['byTrainer']);
+  });
+
+  it('passes every table name to the function', () => {
+    for (const variable of ['USERS_TABLE', 'AGENT_CODES_TABLE', 'GROUP_TRAINERS_TABLE']) {
+      expect(config.provider.environment).toHaveProperty(variable);
+    }
   });
 });
 

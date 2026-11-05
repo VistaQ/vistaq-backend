@@ -101,10 +101,7 @@ class SalesReportService {
 
       // 4. Resolve agentCode → user_id
       const agentCodes = etlResult.records.map((r) => r.agentCode);
-      const matched = await userRepository.findByAgentCodes(
-        tenantId,
-        agentCodes,
-      );
+      const matched = await userRepository.findByAgentCodes(agentCodes);
       const userIdByCode = new Map(matched.map((m) => [m.agent_code, m.id]));
 
       // 5. Build YTD rows (report month only) + MTD rows (every month present in rowData)

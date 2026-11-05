@@ -1,3 +1,5 @@
+import '../../helpers/setEnv';
+
 import salesReportService from '@src/services/salesReport.service';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';

@@ -1,3 +1,5 @@
+import '../helpers/setEnv';
+
 import { SupabaseServiceError } from '@src/models/errors/supabase.error';
 
 /******************************************************************************

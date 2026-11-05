@@ -11,8 +11,9 @@ import {
   MissingMembersError,
   UserNotInTenantError,
 } from '@src/models/errors/group.errors';
-import authRepository from '@src/repositories/auth.repository';
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import groupRepository from '@src/repositories/group.repository';
+import groupTrainerRepository from '@src/repositories/groupTrainer.repository';
 import userRepository from '@src/repositories/user.repository';
 import userService from '@src/services/user.service';
 import type { IGroup } from '@src/types/auth.types';
@@ -188,25 +189,14 @@ class GroupService {
     }
   }
 
-  async getActiveGroupsByTenantSlug(
-    tenantSlug: string,
-  ): Promise<Pick<IGroup, 'id' | 'name'>[]> {
+  async getActiveGroups(): Promise<Pick<IGroup, 'id' | 'name'>[]> {
     try {
-      const tenant = await authRepository.findTenantBySlug(tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
-
-      const rows = await groupRepository.findActiveByTenantId(tenant.id);
+      const rows = await groupRepository.findActiveByTenantId(
+        TRANSITIONAL_TENANT_ID,
+      );
       return rows.map((row) => ({ id: row.id, name: row.name }));
     } catch (error) {
-      if (error instanceof TenantNotFoundError) {
-        throw error;
-      }
-      return handleServiceError(
-        'GroupService.getActiveGroupsByTenantSlug',
-        error,
-      );
+      return handleServiceError('GroupService.getActiveGroups', error);
     }
   }
 
@@ -217,7 +207,7 @@ class GroupService {
   ): Promise<string[]> {
     try {
       const uniqueIds = [...new Set(trainerIds)];
-      const foundTrainers = await userService.findUsersByIds(uniqueIds, token);
+      const foundTrainers = await userService.findUsersByIds(uniqueIds);
 
       if (foundTrainers.length !== uniqueIds.length) {
         const foundIds = new Set(foundTrainers.map((u) => u.id));
@@ -253,8 +243,7 @@ class GroupService {
       // Step 1 — Validate leader if provided
       if (params.leaderId) {
         const leader = await userService.getUserById(
-          params.leaderId,
-          params.token,
+          params.leaderId
         );
         if (!leader) {
           throw new UserNotInTenantError();
@@ -285,7 +274,6 @@ class GroupService {
         await userService.updateUser({
           userId: params.leaderId,
           callerRole: 'admin',
-          token: params.token,
           data: { role: 'group_leader' },
         });
       }
@@ -297,10 +285,7 @@ class GroupService {
             group_id: group.id,
             trainer_id: id,
           }));
-          await groupRepository.insertGroupTrainers(
-            trainerInserts,
-            params.token,
-          );
+          await groupTrainerRepository.insertGroupTrainers(trainerInserts);
         } catch (trainerError) {
           // Rollback leader role back to agent
           if (params.leaderId) {
@@ -308,7 +293,6 @@ class GroupService {
               await userService.updateUser({
                 userId: params.leaderId,
                 callerRole: 'admin',
-                token: params.token,
                 data: { role: 'agent' },
               });
             } catch {
@@ -345,7 +329,7 @@ class GroupService {
 
       // Step 2 — Leader logic
       if (data.leader_id && data.leader_id !== existingGroup.leader_id) {
-        const leader = await userService.getUserById(data.leader_id, token);
+        const leader = await userService.getUserById(data.leader_id);
         if (!leader) {
           throw new UserNotFoundError();
         }
@@ -358,7 +342,6 @@ class GroupService {
           await userService.updateUser({
             userId: existingGroup.leader_id,
             callerRole: 'admin',
-            token,
             data: { role: 'agent' },
           });
         }
@@ -367,7 +350,6 @@ class GroupService {
         await userService.updateUser({
           userId: data.leader_id,
           callerRole: 'admin',
-          token,
           data: { role: 'group_leader' },
         });
       }
@@ -382,25 +364,19 @@ class GroupService {
 
         // Fetch existing trainers before deleting (for rollback)
         const existingTrainers =
-          await groupRepository.findGroupTrainersByGroupId(groupId, token);
+          await groupTrainerRepository.findGroupTrainersByGroupId(groupId);
 
-        await groupRepository.deleteGroupTrainersByGroupId(groupId, token);
+        await groupTrainerRepository.deleteGroupTrainersByGroupId(groupId);
         const trainerInserts = uniqueTrainerIds.map((id) => ({
           group_id: groupId,
           trainer_id: id,
         }));
         try {
-          await groupRepository.insertGroupTrainers(trainerInserts, token);
+          await groupTrainerRepository.insertGroupTrainers(trainerInserts);
         } catch (insertError) {
           if (existingTrainers.length > 0) {
             try {
-              await groupRepository.insertGroupTrainers(
-                existingTrainers.map((t) => ({
-                  group_id: t.group_id,
-                  trainer_id: t.trainer_id,
-                })),
-                token,
-              );
+              await groupTrainerRepository.insertGroupTrainers(existingTrainers);
             } catch {
               // Best-effort rollback; the original error is rethrown
             }
@@ -414,8 +390,7 @@ class GroupService {
         // Validate new members exist (skip if empty array)
         if (data.member_ids.length > 0) {
           const foundMembers = await userService.findUsersByIds(
-            data.member_ids,
-            token,
+            data.member_ids
           );
           if (foundMembers.length !== data.member_ids.length) {
             throw new MissingMembersError();
@@ -446,16 +421,16 @@ class GroupService {
 
         try {
           if (toUnlink.length > 0) {
-            await userService.updateUsersGroupId(toUnlink, null, token);
+            await userService.updateUsersGroupId(toUnlink, null);
           }
           if (toLink.length > 0) {
-            await userService.updateUsersGroupId(toLink, groupId, token);
+            await userService.updateUsersGroupId(toLink, groupId);
           }
         } catch (memberError) {
           // Rollback: re-link any unlinked users back to this group
           if (toUnlink.length > 0) {
             try {
-              await userService.updateUsersGroupId(toUnlink, groupId, token);
+              await userService.updateUsersGroupId(toUnlink, groupId);
             } catch {
               // Best-effort rollback; the original error is rethrown
             }

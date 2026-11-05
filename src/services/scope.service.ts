@@ -1,3 +1,4 @@
+import groupTrainerRepository from '@src/repositories/groupTrainer.repository';
 import userRepository from '@src/repositories/user.repository';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -47,7 +48,7 @@ class ScopeService {
       }
 
       if (role === 'trainer') {
-        const map = await userRepository.findManagedGroupIdsByUserIds([userId]);
+        const map = await groupTrainerRepository.findGroupIdsByTrainerIds([userId]);
         const groupIds = map.get(userId) ?? [];
         return { type: 'group_ids', groupIds };
       }

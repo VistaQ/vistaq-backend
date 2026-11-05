@@ -1,8 +1,7 @@
-import type { Database } from '@src/types/database.types';
-
-type AgentCodeRow = Database['public']['Tables']['agent_codes']['Row'];
-
-export type IAgentCode = Pick<
-  AgentCodeRow,
-  'agent_code' | 'is_used' | 'user_id' | 'created_at' | 'updated_at'
->;
+export interface IAgentCode {
+  agent_code: string;
+  is_used: boolean;
+  user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}

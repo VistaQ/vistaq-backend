@@ -1,3 +1,5 @@
+import '../../helpers/setEnv';
+
 // Supply env vars before env.ts runs so the validation guards do not throw
 process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';

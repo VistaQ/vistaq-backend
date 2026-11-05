@@ -4,9 +4,7 @@ import type { Database } from '@src/types/database.types';
                             Raw Row Types (Repository layer only)
 ******************************************************************************/
 
-type UsersRow = Database['public']['Tables']['users']['Row'];
 type TenantsRow = Database['public']['Tables']['tenants']['Row'];
-type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
 type GroupsRow = Database['public']['Tables']['groups']['Row'];
 type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
 type ProspectsRow = Database['public']['Tables']['prospects']['Row'];
@@ -15,40 +13,32 @@ type ProspectsRow = Database['public']['Tables']['prospects']['Row'];
                             Derived Domain Interfaces
 ******************************************************************************/
 
-export type IUser = Pick<
-  UsersRow,
-  | 'id'
-  | 'tenant_id'
-  | 'email'
-  | 'name'
-  | 'role'
-  | 'agent_code'
-  | 'location'
-  | 'group_id'
-  | 'phone'
-  | 'agency'
-  | 'sales_target'
-  | 'fyct_target'
-  | 'fyc_target'
-  | 'status'
-  | 'created_at'
-  | 'updated_at'
->;
+export interface IUser {
+  id: string;
+  tenant_id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  agent_code: string | null;
+  location: string | null;
+  group_id: string | null;
+  phone: string | null;
+  agency: string | null;
+  sales_target: number | null;
+  fyct_target: number | null;
+  fyc_target: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IUserContext extends IUser {
+  signed_out_at?: string | null;
+}
 
 export type ITenant = Pick<
   TenantsRow,
   'id' | 'slug' | 'name' | 'status' | 'created_at'
->;
-
-export type IAgentCode = Pick<
-  AgentCodesRow,
-  | 'id'
-  | 'tenant_id'
-  | 'agent_code'
-  | 'user_id'
-  | 'is_used'
-  | 'created_at'
-  | 'updated_at'
 >;
 
 export type IGroup = Pick<

@@ -1,13 +1,11 @@
 import supabaseService from '@src/services/supabase.service';
-import type { IGroup, IGroupTrainer } from '@src/types/auth.types';
+import type { IGroup } from '@src/types/auth.types';
 import type { Database } from '@src/types/database.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 
 type GroupsRow = Database['public']['Tables']['groups']['Row'];
-type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
 type GroupsInsert = Database['public']['Tables']['groups']['Insert'];
 type GroupsUpdate = Database['public']['Tables']['groups']['Update'];
-type GroupTrainersInsert = Database['public']['Tables']['group_trainers']['Insert'];
 
 /******************************************************************************
                             GroupRepository
@@ -179,91 +177,6 @@ class GroupRepository {
       );
     } catch (error) {
       return handleRepositoryError('GroupRepository.getGroupAgentsCount', error);
-    }
-  }
-
-  async findGroupTrainersByGroupId(groupId: string, userToken: string): Promise<Array<{ group_id: string; trainer_id: string }>> {
-    try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'group_trainers',
-        'group_id,trainer_id',
-        { group_id: groupId } as Partial<GroupTrainersRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as GroupTrainersRow[];
-      return rows.map((row) => ({
-        group_id: row.group_id,
-        trainer_id: row.trainer_id,
-      }));
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.findGroupTrainersByGroupId', error);
-    }
-  }
-
-  async insertGroupTrainer(data: GroupTrainersInsert, userToken: string): Promise<IGroupTrainer> {
-    try {
-      const response = await supabaseService.userInsert(userToken, 'group_trainers', data);
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No group trainer returned after insert');
-      }
-
-      const row = response.data[0] as unknown as GroupTrainersRow;
-      const groupTrainer: IGroupTrainer = {
-        group_id: row.group_id,
-        trainer_id: row.trainer_id,
-        created_at: row.created_at,
-      };
-
-      return groupTrainer;
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.insertGroupTrainer', error);
-    }
-  }
-
-  async insertGroupTrainers(data: GroupTrainersInsert[], userToken: string): Promise<IGroupTrainer[]> {
-    try {
-      const response = await supabaseService.userInsert(userToken, 'group_trainers', data);
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No group trainers returned after insert');
-      }
-
-      const rows = response.data as unknown as GroupTrainersRow[];
-      return rows.map((row) => ({
-        group_id: row.group_id,
-        trainer_id: row.trainer_id,
-        created_at: row.created_at,
-      }));
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.insertGroupTrainers', error);
-    }
-  }
-
-  async deleteGroupTrainersByGroupId(groupId: string, userToken: string): Promise<void> {
-    try {
-      const response = await supabaseService.userDelete(userToken, 'group_trainers', {
-        group_id: groupId,
-      } as Partial<GroupTrainersRow>);
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError('GroupRepository.deleteGroupTrainersByGroupId', error);
     }
   }
 

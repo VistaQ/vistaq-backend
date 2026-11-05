@@ -42,15 +42,46 @@ provider:
             - cognito-idp:AdminDeleteUser
             - cognito-idp:AdminDisableUser
             - cognito-idp:AdminEnableUser
+            - cognito-idp:AdminSetUserPassword
             - cognito-idp:AdminUpdateUserAttributes
             - cognito-idp:AdminUserGlobalSignOut
           Resource:
             Fn::GetAtt: [UserPool, Arn]
+        - Effect: Allow
+          Action:
+            - dynamodb:BatchGetItem
+            - dynamodb:DeleteItem
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:UpdateItem
+          Resource:
+            - Fn::GetAtt: [UsersTable, Arn]
+            - Fn::Join:
+                - ''
+                - - Fn::GetAtt: [UsersTable, Arn]
+                  - /index/*
+            - Fn::GetAtt: [AgentCodesTable, Arn]
+            - Fn::Join:
+                - ''
+                - - Fn::GetAtt: [AgentCodesTable, Arn]
+                  - /index/*
+            - Fn::GetAtt: [GroupTrainersTable, Arn]
+            - Fn::Join:
+                - ''
+                - - Fn::GetAtt: [GroupTrainersTable, Arn]
+                  - /index/*
   environment:
     COGNITO_USER_POOL_ID:
       Ref: UserPool
     COGNITO_CLIENT_ID:
       Ref: UserPoolClient
+    USERS_TABLE:
+      Ref: UsersTable
+    AGENT_CODES_TABLE:
+      Ref: AgentCodesTable
+    GROUP_TRAINERS_TABLE:
+      Ref: GroupTrainersTable
     NODE_ENV: production
     STAGE: ${sls:stage}
     ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS}
@@ -60,7 +91,6 @@ provider:
     SUPABASE_URL: ${env:SUPABASE_URL}
     SUPABASE_ANON_KEY: ${env:SUPABASE_ANON_KEY}
     SUPABASE_SERVICE_ROLE_KEY: ${env:SUPABASE_SERVICE_ROLE_KEY}
-    FRONTEND_RESET_PASSWORD_URL: ${env:FRONTEND_RESET_PASSWORD_URL}
 
 package:
   patterns:
@@ -153,6 +183,108 @@ resources:
           AccessToken: minutes
           IdToken: minutes
           RefreshToken: days
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${self:service}-${sls:stage}-users
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: group_id
+            AttributeType: S
+          - AttributeName: role
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: name
+            AttributeType: S
+          - AttributeName: agent_code
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byAgentCode
+            KeySchema:
+              - AttributeName: agent_code
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byGroup
+            KeySchema:
+              - AttributeName: group_id
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+              - AttributeName: role
+                KeyType: RANGE
+              - AttributeName: name
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byRoleStatus
+            KeySchema:
+              - AttributeName: role
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+              - AttributeName: name
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    AgentCodesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${self:service}-${sls:stage}-agent-codes
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: agent_code
+            AttributeType: S
+          - AttributeName: used_flag
+            AttributeType: N
+        KeySchema:
+          - AttributeName: agent_code
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byUsed
+            KeySchema:
+              - AttributeName: used_flag
+                KeyType: HASH
+              - AttributeName: agent_code
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    GroupTrainersTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${self:service}-${sls:stage}-group-trainers
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: group_id
+            AttributeType: S
+          - AttributeName: trainer_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: group_id
+            KeyType: HASH
+          - AttributeName: trainer_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byTrainer
+            KeySchema:
+              - AttributeName: trainer_id
+                KeyType: HASH
+              - AttributeName: group_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
     PointTransactionsTable:
       Type: AWS::DynamoDB::Table
       DeletionPolicy: ${param:tableDeletionPolicy}
@@ -190,6 +322,15 @@ resources:
             Projection:
               ProjectionType: ALL
   Outputs:
+    UsersTableName:
+      Value:
+        Ref: UsersTable
+    AgentCodesTableName:
+      Value:
+        Ref: AgentCodesTable
+    GroupTrainersTableName:
+      Value:
+        Ref: GroupTrainersTable
     PointTransactionsTableName:
       Value:
         Ref: PointTransactionsTable

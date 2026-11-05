@@ -1,507 +1,334 @@
-import supabaseService from '@src/services/supabase.service';
-import type { IAgentCode, IUser } from '@src/types/auth.types';
-import type { Database } from '@src/types/database.types';
+import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
+import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
+import {
+  UserAlreadyExistsError,
+  UserNotFoundError,
+} from '@src/models/errors/auth.errors';
+import dynamoService from '@src/services/dynamo.service';
+import type { IUser, IUserContext } from '@src/types/auth.types';
+import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
+import { nowUtc } from '@src/utils/period';
 
-type AgentCodesRow = Database['public']['Tables']['agent_codes']['Row'];
-type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
-type UsersRow = Database['public']['Tables']['users']['Row'];
-type UsersInsert = Database['public']['Tables']['users']['Insert'];
-type UsersUpdate = Database['public']['Tables']['users']['Update'];
+/******************************************************************************
+                            Item and input types
+******************************************************************************/
+
+interface IUserItem {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  agent_code?: string;
+  location?: string;
+  group_id?: string;
+  phone?: string;
+  agency?: string;
+  sales_target?: number;
+  fyct_target?: number;
+  fyc_target?: number;
+  signed_out_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface INewUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status?: string;
+  agent_code?: string | null;
+  location?: string | null;
+  group_id?: string | null;
+  phone?: string | null;
+  agency?: string | null;
+}
+
+export interface IUserUpdate {
+  email?: string;
+  name?: string;
+  role?: string;
+  status?: string;
+  agent_code?: string | null;
+  location?: string | null;
+  group_id?: string | null;
+  phone?: string | null;
+  agency?: string | null;
+  sales_target?: number | null;
+  fyct_target?: number | null;
+  fyc_target?: number | null;
+}
+
+const OPTIONAL_FIELDS = [
+  'agent_code',
+  'location',
+  'group_id',
+  'phone',
+  'agency',
+  'sales_target',
+  'fyct_target',
+  'fyc_target',
+] as const;
+
+function toUser(item: IUserItem): IUser {
+  return {
+    id: item.id,
+    tenant_id: TRANSITIONAL_TENANT_ID,
+    email: item.email,
+    name: item.name,
+    role: item.role,
+    status: item.status,
+    agent_code: item.agent_code ?? null,
+    location: item.location ?? null,
+    group_id: item.group_id ?? null,
+    phone: item.phone ?? null,
+    agency: item.agency ?? null,
+    sales_target: item.sales_target ?? null,
+    fyct_target: item.fyct_target ?? null,
+    fyc_target: item.fyc_target ?? null,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
 
 /******************************************************************************
                             UserRepository
 ******************************************************************************/
 
 class UserRepository {
-  async findAgentCode(
-    agentCode: string,
-    tenantId: string,
-    userToken: string,
-  ): Promise<IAgentCode | null> {
+  async insertUser(user: INewUser): Promise<IUser> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'agent_codes',
-        '*',
-        {
-          agent_code: agentCode,
-          tenant_id: tenantId,
-          is_used: false,
-        } as Partial<AgentCodesRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as AgentCodesRow;
-      const agentCodeRecord: IAgentCode = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        agent_code: row.agent_code,
-        user_id: row.user_id,
-        is_used: row.is_used,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
+      const now = nowUtc();
+      const item: IUserItem = {
+        id: user.id,
+        email: user.email.toLowerCase(),
+        name: user.name,
+        role: user.role,
+        status: user.status ?? 'active',
+        created_at: now,
+        updated_at: now,
       };
-
-      return agentCodeRecord;
-    } catch (error) {
-      return handleRepositoryError('UserRepository.findAgentCode', error);
-    }
-  }
-
-  async createAuthUser(
-    email: string,
-    password: string,
-  ): Promise<{ id: string }> {
-    try {
-      const authUser = await supabaseService.adminCreateAuthUser(
-        email,
-        password,
-      );
-
-      return { id: authUser.id };
-    } catch (error) {
-      return handleRepositoryError('UserRepository.createAuthUser', error);
-    }
-  }
-
-  async insertUser(userData: UsersInsert, userToken: string): Promise<IUser> {
-    try {
-      const response = await supabaseService.userInsert(
-        userToken,
-        'users',
-        userData,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
+      for (const field of OPTIONAL_FIELDS) {
+        const value = (user as unknown as Record<string, unknown>)[field];
+        if (value !== undefined && value !== null) {
+          (item as unknown as Record<string, unknown>)[field] = value;
+        }
       }
 
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No user returned after insert');
-      }
-
-      const row = response.data[0] as unknown as UsersRow;
-      const user: IUser = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        agent_code: row.agent_code,
-        location: row.location,
-        group_id: row.group_id,
-        phone: row.phone,
-        agency: row.agency,
-        sales_target: row.sales_target,
-        fyct_target: row.fyct_target,
-        fyc_target: row.fyc_target,
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-
-      return user;
+      await dynamoService.put(EnvVars.UsersTable, { ...item }, {
+        condition: 'attribute_not_exists(id)',
+      });
+      return toUser(item);
     } catch (error) {
+      if (error instanceof DynamoConditionFailedError) {
+        throw new UserAlreadyExistsError();
+      }
       return handleRepositoryError('UserRepository.insertUser', error);
-    }
-  }
-
-  async findAll(userToken: string): Promise<IUser[]> {
-    try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'users',
-        '*',
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as UsersRow[];
-      const users: IUser[] = rows.map((row) => ({
-        id: row.id,
-        tenant_id: row.tenant_id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        agent_code: row.agent_code,
-        location: row.location,
-        group_id: row.group_id,
-        phone: row.phone,
-        agency: row.agency,
-        sales_target: row.sales_target,
-        fyct_target: row.fyct_target,
-        fyc_target: row.fyc_target,
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
-
-      return users;
-    } catch (error) {
-      return handleRepositoryError('UserRepository.findAll', error);
     }
   }
 
   async findById(
     userId: string,
-    userToken: string,
+    options?: { consistent?: boolean },
   ): Promise<IUser | null> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'users',
-        '*',
-        { id: userId } as Partial<UsersRow>,
+      const item = await dynamoService.get<IUserItem>(
+        EnvVars.UsersTable,
+        { id: userId },
+        options,
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        return null;
-      }
-
-      const row = response.data[0] as unknown as UsersRow;
-      const user: IUser = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        agent_code: row.agent_code,
-        location: row.location,
-        group_id: row.group_id,
-        phone: row.phone,
-        agency: row.agency,
-        sales_target: row.sales_target,
-        fyct_target: row.fyct_target,
-        fyc_target: row.fyc_target,
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-
-      return user;
+      return item ? toUser(item) : null;
     } catch (error) {
       return handleRepositoryError('UserRepository.findById', error);
     }
   }
 
-  async deleteUser(userId: string): Promise<void> {
+  async findContextById(userId: string): Promise<IUserContext | null> {
     try {
-      await supabaseService.adminDelete('users', { id: userId });
-    } catch (error) {
-      return handleRepositoryError('UserRepository.deleteUser', error);
-    }
-  }
-
-  async deleteAuthUser(userId: string): Promise<void> {
-    try {
-      await supabaseService.adminDeleteAuthUser(userId);
-    } catch (error) {
-      return handleRepositoryError('UserRepository.deleteAuthUser', error);
-    }
-  }
-
-  async updateUser(
-    userId: string,
-    data: UsersUpdate,
-    userToken: string,
-  ): Promise<IUser> {
-    try {
-      const response = await supabaseService.userUpdate(
-        userToken,
-        'users',
-        data,
-        { id: userId } as Partial<UsersRow>,
+      const item = await dynamoService.get<IUserItem>(
+        EnvVars.UsersTable,
+        { id: userId },
+        { consistent: true },
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No user returned after update');
-      }
-
-      const row = response.data[0] as unknown as UsersRow;
-      const user: IUser = {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        agent_code: row.agent_code,
-        location: row.location,
-        group_id: row.group_id,
-        phone: row.phone,
-        agency: row.agency,
-        sales_target: row.sales_target,
-        fyct_target: row.fyct_target,
-        fyc_target: row.fyc_target,
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      };
-
-      return user;
+      return item
+        ? { ...toUser(item), signed_out_at: item.signed_out_at ?? null }
+        : null;
     } catch (error) {
-      return handleRepositoryError('UserRepository.updateUser', error);
+      return handleRepositoryError('UserRepository.findContextById', error);
     }
   }
 
-  async findByIds(userIds: string[], userToken: string): Promise<IUser[]> {
+  async markSignedOut(userId: string): Promise<void> {
     try {
-      const response = await supabaseService.userSelectIn(
-        userToken,
-        'users',
-        '*',
-        'id',
-        userIds,
+      await dynamoService.update<IUserItem>(
+        EnvVars.UsersTable,
+        { id: userId },
+        'SET signed_out_at = :signedOutAt',
+        {
+          values: { ':signedOutAt': nowUtc() },
+          condition: 'attribute_exists(id)',
+        },
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
+    } catch (error) {
+      if (error instanceof DynamoConditionFailedError) {
+        return;
       }
+      return handleRepositoryError('UserRepository.markSignedOut', error);
+    }
+  }
 
-      const rows = (response.data ?? []) as unknown as UsersRow[];
-      const users: IUser[] = rows.map((row) => ({
-        id: row.id,
-        tenant_id: row.tenant_id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        agent_code: row.agent_code,
-        location: row.location,
-        group_id: row.group_id,
-        phone: row.phone,
-        agency: row.agency,
-        sales_target: row.sales_target,
-        fyct_target: row.fyct_target,
-        fyc_target: row.fyc_target,
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
-
-      return users;
+  async findByIds(userIds: string[]): Promise<IUser[]> {
+    try {
+      const unique = Array.from(new Set(userIds));
+      const items = await dynamoService.batchGet<IUserItem>(
+        EnvVars.UsersTable,
+        unique.map((id) => ({ id })),
+      );
+      return items.map(toUser);
     } catch (error) {
       return handleRepositoryError('UserRepository.findByIds', error);
     }
   }
 
-  async findByGroupId(groupId: string, userToken: string): Promise<IUser[]> {
+  /** Active members of a group, or every status when `status` is null. */
+  async findByGroupId(
+    groupId: string,
+    status: string | null = 'active',
+  ): Promise<IUser[]> {
     try {
-      const response = await supabaseService.userSelect(
-        userToken,
-        'users',
-        '*',
-        { group_id: groupId, status: 'active' } as Partial<UsersRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as UsersRow[];
-      const users: IUser[] = rows.map((row) => ({
-        id: row.id,
-        tenant_id: row.tenant_id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        agent_code: row.agent_code,
-        location: row.location,
-        group_id: row.group_id,
-        phone: row.phone,
-        agency: row.agency,
-        sales_target: row.sales_target,
-        fyct_target: row.fyct_target,
-        fyc_target: row.fyc_target,
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
-
-      return users;
+      const items = await dynamoService.queryAll<IUserItem>({
+        table: EnvVars.UsersTable,
+        index: 'byGroup',
+        keyCondition: status
+          ? 'group_id = :group AND status = :status'
+          : 'group_id = :group',
+        values: status ? { ':group': groupId, ':status': status } : { ':group': groupId },
+      });
+      return items.map(toUser);
     } catch (error) {
       return handleRepositoryError('UserRepository.findByGroupId', error);
+    }
+  }
+
+  async findByRoles(roles: string[], status?: string): Promise<IUser[]> {
+    try {
+      const pages = await Promise.all(
+        roles.map((role) =>
+          dynamoService.queryAll<IUserItem>({
+            table: EnvVars.UsersTable,
+            index: 'byRoleStatus',
+            keyCondition: status
+              ? 'role = :role AND status = :status'
+              : 'role = :role',
+            values: status ? { ':role': role, ':status': status } : { ':role': role },
+          }),
+        ),
+      );
+      return pages.flat().map(toUser);
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findByRoles', error);
+    }
+  }
+
+  /** Active users holding any of the given agent codes. */
+  async findByAgentCodes(
+    agentCodes: string[],
+  ): Promise<{ id: string; agent_code: string }[]> {
+    try {
+      const pages = await Promise.all(
+        Array.from(new Set(agentCodes)).map((agentCode) =>
+          dynamoService.queryAll<IUserItem>({
+            table: EnvVars.UsersTable,
+            index: 'byAgentCode',
+            keyCondition: 'agent_code = :code',
+            values: { ':code': agentCode },
+          }),
+        ),
+      );
+      return pages
+        .flat()
+        .filter((item) => item.status === 'active')
+        .map((item) => ({ id: item.id, agent_code: item.agent_code as string }));
+    } catch (error) {
+      return handleRepositoryError('UserRepository.findByAgentCodes', error);
+    }
+  }
+
+  async updateUser(userId: string, data: IUserUpdate): Promise<IUser> {
+    try {
+      const sets: string[] = ['updated_at = :updated_at'];
+      const removes: string[] = [];
+      const values: Record<string, unknown> = { ':updated_at': nowUtc() };
+
+      for (const [field, value] of Object.entries(data)) {
+        if (value === undefined) continue;
+        if (value === null) {
+          removes.push(field);
+        } else {
+          sets.push(`${field} = :${field}`);
+          values[`:${field}`] = field === 'email' ? String(value).toLowerCase() : value;
+        }
+      }
+
+      const expression =
+        `SET ${sets.join(', ')}` + (removes.length ? ` REMOVE ${removes.join(', ')}` : '');
+      const updated = await dynamoService.update<IUserItem>(
+        EnvVars.UsersTable,
+        { id: userId },
+        expression,
+        { values, condition: 'attribute_exists(id)' },
+      );
+      if (!updated) {
+        throw new UserNotFoundError();
+      }
+      return toUser(updated);
+    } catch (error) {
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof DynamoConditionFailedError
+      ) {
+        throw new UserNotFoundError();
+      }
+      return handleRepositoryError('UserRepository.updateUser', error);
     }
   }
 
   async updateGroupIdForUsers(
     userIds: string[],
     groupId: string | null,
-    userToken: string,
   ): Promise<void> {
     try {
-      const response = await supabaseService.userUpdateIn(
-        userToken,
-        'users',
-        { group_id: groupId },
-        'id',
-        userIds,
+      await Promise.all(
+        userIds.map((id) => this.updateUser(id, { group_id: groupId })),
       );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
     } catch (error) {
-      return handleRepositoryError(
-        'UserRepository.updateGroupIdForUsers',
-        error,
-      );
+      return handleRepositoryError('UserRepository.updateGroupIdForUsers', error);
     }
   }
 
-  async updateAuthUserEmail(userId: string, email: string): Promise<void> {
+  async deleteUser(userId: string): Promise<void> {
     try {
-      await supabaseService.adminUpdateAuthUserEmail(userId, email);
+      await dynamoService.delete(EnvVars.UsersTable, { id: userId });
     } catch (error) {
-      return handleRepositoryError(
-        'UserRepository.updateAuthUserEmail',
-        error,
-      );
+      return handleRepositoryError('UserRepository.deleteUser', error);
     }
   }
 
-  /**
-   * Admin-mode lookup of `group_trainers` rows for the supplied trainer ids.
-   * Returns a `trainer_id → group_ids[]` map. The caller has already been
-   * authenticated by the JWT-verifying middleware, so RLS adds no security
-   * value here; routing through the admin client keeps scope-resolution
-   * paths consistent with `findGroupIdById`.
-   */
-  async findManagedGroupIdsByUserIds(
-    userIds: string[],
-  ): Promise<Map<string, string[]>> {
-    try {
-      if (userIds.length === 0) return new Map();
-
-      const response = await supabaseService.adminSelectIn(
-        'group_trainers',
-        'group_id,trainer_id',
-        'trainer_id',
-        userIds,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as GroupTrainersRow[];
-      const map = new Map<string, string[]>();
-      for (const row of rows) {
-        const existing = map.get(row.trainer_id) ?? [];
-        existing.push(row.group_id);
-        map.set(row.trainer_id, existing);
-      }
-      return map;
-    } catch (error) {
-      return handleRepositoryError(
-        'UserRepository.findManagedGroupIdsByUserIds',
-        error,
-      );
-    }
-  }
-
-  async updateAgentCode(
-    agentCodeId: string,
-    userId: string,
-    userToken: string,
-  ): Promise<void> {
-    try {
-      const response = await supabaseService.userUpdate(
-        userToken,
-        'agent_codes',
-        { is_used: true, user_id: userId },
-        { id: agentCodeId },
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-    } catch (error) {
-      return handleRepositoryError('UserRepository.updateAgentCode', error);
-    }
-  }
-
-  async updateAuthUserPassword(userId: string, password: string): Promise<void> {
-    try {
-      await supabaseService.adminUpdateAuthUserPassword(userId, password);
-    } catch (error) {
-      return handleRepositoryError('UserRepository.updateAuthUserPassword', error);
-    }
-  }
-
-  async findByAgentCodes(
-    tenantId: string,
-    agentCodes: string[],
-  ): Promise<{ id: string; agent_code: string }[]> {
-    try {
-      if (agentCodes.length === 0) return [];
-
-      const { data, error } = await supabaseService.adminSelectIn(
-        'users',
-        'id, agent_code',
-        'agent_code',
-        agentCodes,
-        { tenant_id: tenantId, status: 'active' } as Partial<UsersRow>,
-      );
-
-      if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as { id: string; agent_code: string }[];
-    } catch (error) {
-      handleRepositoryError('UserRepository.findByAgentCodes', error);
-    }
-  }
-
-  /**
-   * Returns the caller's `users.group_id` (nullable) using the service-role
-   * client. Used by the sales-report read API to scope a `group_leader`'s
-   * view to their own group's agents — the caller is always identified by a
-   * verified JWT, so bypassing RLS for this lookup is safe.
-   */
   async findGroupIdById(userId: string): Promise<string | null> {
     try {
-      const response = await supabaseService.adminSelect(
-        'users',
-        'group_id',
-        { id: userId } as Partial<UsersRow>,
-      );
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const rows = (response.data ?? []) as unknown as { group_id: string | null }[];
-      if (rows.length === 0) return null;
-      return rows[0].group_id ?? null;
+      const user = await this.findById(userId);
+      return user?.group_id ?? null;
     } catch (error) {
       return handleRepositoryError('UserRepository.findGroupIdById', error);
     }
   }
 
   /**
-   * Resolves a set of user IDs to `{ id, name, agent_code }` triples using the
-   * service-role client (bypasses RLS). Used by the sales-report read API to
-   * decorate aggregated YTD rows with the agent's display name + code.
-   *
-   * When `groupIds` is supplied, the result is additionally filtered to users
-   * whose `users.group_id` is in that set — this is how role-based scoping for
-   * `trainer` and `group_leader` callers is enforced. An empty `groupIds`
-   * array short-circuits to `[]` (caller has no permitted scope).
+   * Resolves user ids to `{ id, name, agent_code, fyct_target, fyc_target }`.
+   * When `groupIds` is given, only users in those groups are returned; an empty
+   * `groupIds` means the caller has no permitted scope.
    */
   async findIdNameAgentCodeByIds(
     userIds: string[],
@@ -519,27 +346,18 @@ class UserRepository {
       if (userIds.length === 0) return [];
       if (groupIds !== undefined && groupIds.length === 0) return [];
 
-      const inFilters = [{ column: 'id', values: userIds }];
-      if (groupIds !== undefined) {
-        inFilters.push({ column: 'group_id', values: groupIds });
-      }
-
-      const response = await supabaseService.adminSelectInIn(
-        'users',
-        'id, name, agent_code, fyct_target, fyc_target',
-        inFilters,
-      );
-
-      if (response.error) throw new Error(response.error.message);
-      return (response.data ?? []) as unknown as {
-        id: string;
-        name: string;
-        agent_code: string | null;
-        fyct_target: number | null;
-        fyc_target: number | null;
-      }[];
+      const users = await this.findByIds(userIds);
+      return users
+        .filter((u) => groupIds === undefined || (u.group_id !== null && groupIds.includes(u.group_id)))
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          agent_code: u.agent_code,
+          fyct_target: u.fyct_target,
+          fyc_target: u.fyc_target,
+        }));
     } catch (error) {
-      handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
+      return handleRepositoryError('UserRepository.findIdNameAgentCodeByIds', error);
     }
   }
 }
