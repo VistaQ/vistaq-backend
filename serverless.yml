@@ -150,7 +150,7 @@ functions:
           type: dynamodb
           arn:
             Fn::GetAtt: [ProspectsTable, StreamArn]
-          startingPosition: LATEST
+          startingPosition: TRIM_HORIZON
           batchSize: 25
           maximumRetryAttempts: 5
           bisectBatchOnFunctionError: true
@@ -164,7 +164,7 @@ functions:
           type: dynamodb
           arn:
             Fn::GetAtt: [CoachingAttendanceTable, StreamArn]
-          startingPosition: LATEST
+          startingPosition: TRIM_HORIZON
           batchSize: 25
           maximumRetryAttempts: 5
           bisectBatchOnFunctionError: true
@@ -182,7 +182,7 @@ functions:
           type: dynamodb
           arn:
             Fn::GetAtt: [ProspectsTable, StreamArn]
-          startingPosition: LATEST
+          startingPosition: TRIM_HORIZON
           batchSize: 100
           maximumRetryAttempts: 5
           bisectBatchOnFunctionError: true
