@@ -1,413 +1,231 @@
-// Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
-process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
-process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
+import jwt from 'jsonwebtoken';
 
-// ---------------------------------------------------------------------------
-// LoggingService mock — must be registered before any imports that trigger side effects
-// ---------------------------------------------------------------------------
+const mockFindByCode = jest.fn();
+const mockClaim = jest.fn();
+const mockRelease = jest.fn();
+const mockInsertUser = jest.fn();
+const mockFindById = jest.fn();
+const mockCreateUser = jest.fn();
+const mockDeleteUser = jest.fn();
+const mockStartLogin = jest.fn();
+const mockVerifyLogin = jest.fn();
+const mockSignOut = jest.fn();
 
-// ---------------------------------------------------------------------------
-// SupabaseService mock — prevent real client instantiation
-// ---------------------------------------------------------------------------
-
-jest.mock('@src/services/supabase.service', () => ({
+jest.mock('@src/repositories/agentCode.repository', () => ({
   __esModule: true,
   default: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    adminCreateAuthUser: jest.fn(),
-    adminDeleteAuthUser: jest.fn(),
-    signInWithPassword: jest.fn(),
-    signOut: jest.fn(),
-  },
-  supabaseService: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    adminCreateAuthUser: jest.fn(),
-    adminDeleteAuthUser: jest.fn(),
-    signInWithPassword: jest.fn(),
-    signOut: jest.fn(),
+    findByCode: mockFindByCode,
+    claim: mockClaim,
+    release: mockRelease,
   },
 }));
 
-import { authService } from '@src/services/auth.service';
-import { authRepository } from '@src/repositories/auth.repository';
-import { TenantNotFoundError, AgentCodeInvalidError, InvalidCredentialsError } from '@src/models/errors/auth.errors';
+jest.mock('@src/repositories/user.repository', () => ({
+  __esModule: true,
+  default: { insertUser: mockInsertUser, findById: mockFindById },
+}));
+
+jest.mock('@src/services/cognito.service', () => ({
+  __esModule: true,
+  default: {
+    createUser: mockCreateUser,
+    deleteUser: mockDeleteUser,
+    startLogin: mockStartLogin,
+    verifyLogin: mockVerifyLogin,
+    signOut: mockSignOut,
+  },
+}));
+
+import {
+  AgentCodeInvalidError,
+  InvalidCredentialsError,
+  UserAlreadyExistsError,
+  UserInactiveError,
+} from '@src/models/errors/auth.errors';
+import { CognitoRateLimitedError } from '@src/models/errors/cognito.error';
 import { ServiceError } from '@src/models/errors/layer.errors';
-import type { ITenant, IAgentCode, IUser } from '@src/types/auth.types';
+import authService from '@src/services/auth.service';
 
-/******************************************************************************
-  Fixtures
-******************************************************************************/
-
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const USER_ID = 'ffffffff-0000-1111-2222-333333333333';
-const AGENT_CODE_ID = '44444444-5555-6666-7777-888888888888';
-const GROUP_ID = '99999999-aaaa-bbbb-cccc-dddddddddddd';
-
-const mockTenant: ITenant = {
-  id: TENANT_ID,
-  slug: 'acme',
-  name: 'Acme Corp',
-  status: 'active',
-  created_at: '2024-01-01T00:00:00.000Z',
+const registerParams = {
+  fullName: 'Ann Agent',
+  agentCode: 'A100',
+  email: 'Ann@Example.com',
+  groupId: 'g1',
+  location: 'KL',
 };
 
-const mockAgentCode: IAgentCode = {
-  id: AGENT_CODE_ID,
-  tenant_id: TENANT_ID,
-  agent_code: 'AGT-001',
-  user_id: null,
-  is_used: false,
-  created_at: '2024-01-01T00:00:00.000Z',
-  updated_at: '2024-01-01T00:00:00.000Z',
+const activeUser = { id: 'sub-1', email: 'ann@example.com', status: 'active' };
+const accessToken = jwt.sign({ sub: 'sub-1' }, 'test-secret');
+const tokens = {
+  accessToken,
+  refreshToken: 'r',
+  idToken: 'i',
+  expiresIn: 900,
 };
 
-const mockUser: IUser = {
-  id: USER_ID,
-  tenant_id: TENANT_ID,
-  email: 'jane.doe@example.com',
-  name: 'Jane Doe',
-  role: 'agent',
-  agent_code: 'AGT-001',
-  location: 'Sydney',
-  group_id: GROUP_ID,
-  phone: null,
-  agency: null,
-  sales_target: null,
-  fyct_target: null,
-  fyc_target: null,
-  status: 'active',
-  created_at: '2024-01-01T00:00:00.000Z',
-  updated_at: '2024-01-01T00:00:00.000Z',
-};
-
-const REGISTER_PARAMS = {
-  tenantSlug: 'acme',
-  fullName: 'Jane Doe',
-  agentCode: 'AGT-001',
-  email: 'jane.doe@example.com',
-  password: 'Secret1!',
-  groupId: GROUP_ID,
-  location: 'Sydney',
-};
-
-/******************************************************************************
-  Test suite — AuthService.register
-******************************************************************************/
+beforeEach(() => {
+  jest.resetAllMocks();
+  mockRelease.mockResolvedValue(undefined);
+  mockDeleteUser.mockResolvedValue(undefined);
+  mockSignOut.mockResolvedValue(undefined);
+});
 
 describe('AuthService.register', () => {
-  afterEach(() => jest.restoreAllMocks());
-
-  it('happy path — all steps succeed, returns { user, token }', async () => {
-    const token = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
-
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findAgentCode').mockResolvedValue(mockAgentCode);
-    jest.spyOn(authRepository, 'createAuthUser').mockResolvedValue({ id: USER_ID });
-    jest.spyOn(authRepository, 'insertUser').mockResolvedValue(mockUser);
-    jest.spyOn(authRepository, 'updateAgentCode').mockResolvedValue(undefined);
-    jest.spyOn(authRepository, 'signInWithPassword').mockResolvedValue({ userId: USER_ID, token });
-
-    const result = await authService.register(REGISTER_PARAMS);
-
-    expect(result).toEqual({ user: mockUser, token });
+  beforeEach(() => {
+    mockFindByCode.mockResolvedValue({ agent_code: 'A100', is_used: false });
+    mockCreateUser.mockResolvedValue({ id: 'sub-1' });
+    mockClaim.mockResolvedValue(undefined);
+    mockInsertUser.mockResolvedValue(activeUser);
   });
 
-  it('token is null when signInWithPassword returns null — service returns { user, token: null } without throwing', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findAgentCode').mockResolvedValue(mockAgentCode);
-    jest.spyOn(authRepository, 'createAuthUser').mockResolvedValue({ id: USER_ID });
-    jest.spyOn(authRepository, 'insertUser').mockResolvedValue(mockUser);
-    jest.spyOn(authRepository, 'updateAgentCode').mockResolvedValue(undefined);
-    jest.spyOn(authRepository, 'signInWithPassword').mockResolvedValue(null);
+  it('creates the Cognito user, claims the code and stores an agent user without a token', async () => {
+    const result = await authService.register(registerParams);
 
-    const result = await authService.register(REGISTER_PARAMS);
-
-    expect(result).toEqual({ user: mockUser, token: null });
+    expect(mockCreateUser).toHaveBeenCalledWith('ann@example.com');
+    expect(mockClaim).toHaveBeenCalledWith('A100', 'sub-1');
+    expect(mockInsertUser).toHaveBeenCalledWith({
+      id: 'sub-1',
+      email: 'ann@example.com',
+      name: 'Ann Agent',
+      role: 'agent',
+      agent_code: 'A100',
+      location: 'KL',
+      group_id: 'g1',
+    });
+    expect(result).toEqual({ user: activeUser });
   });
 
-  it('throws TenantNotFoundError when findTenantBySlug returns null', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(null);
+  it.each([
+    ['is unknown', null],
+    ['is already used', { agent_code: 'A100', is_used: true }],
+  ])('rejects an agent code that %s and creates nothing', async (_name, record) => {
+    mockFindByCode.mockResolvedValue(record);
 
-    await expect(authService.register(REGISTER_PARAMS)).rejects.toBeInstanceOf(TenantNotFoundError);
+    await expect(authService.register(registerParams)).rejects.toBeInstanceOf(
+      AgentCodeInvalidError,
+    );
+    expect(mockCreateUser).not.toHaveBeenCalled();
   });
 
-  it('throws AgentCodeInvalidError when findAgentCode returns null', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findAgentCode').mockResolvedValue(null);
+  it('surfaces a duplicate email without touching the agent code', async () => {
+    mockCreateUser.mockRejectedValue(new UserAlreadyExistsError());
 
-    await expect(authService.register(REGISTER_PARAMS)).rejects.toBeInstanceOf(AgentCodeInvalidError);
+    await expect(authService.register(registerParams)).rejects.toBeInstanceOf(
+      UserAlreadyExistsError,
+    );
+    expect(mockClaim).not.toHaveBeenCalled();
   });
 
-  it('calls deleteAuthUser (rollback) when insertUser throws, then rethrows wrapped in ServiceError', async () => {
-    const insertError = new Error('insert failed: duplicate key');
+  it('deletes the Cognito user when another request claims the code first', async () => {
+    mockClaim.mockRejectedValue(new AgentCodeInvalidError());
 
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findAgentCode').mockResolvedValue(mockAgentCode);
-    jest.spyOn(authRepository, 'createAuthUser').mockResolvedValue({ id: USER_ID });
-    jest.spyOn(authRepository, 'insertUser').mockRejectedValue(insertError);
-    const deleteAuthUserSpy = jest
-      .spyOn(authRepository, 'deleteAuthUser')
-      .mockResolvedValue(undefined);
-
-    await expect(authService.register(REGISTER_PARAMS)).rejects.toBeInstanceOf(ServiceError);
-
-    // Rollback was attempted exactly once
-    expect(deleteAuthUserSpy).toHaveBeenCalledTimes(1);
-    expect(deleteAuthUserSpy).toHaveBeenCalledWith(USER_ID);
+    await expect(authService.register(registerParams)).rejects.toBeInstanceOf(
+      AgentCodeInvalidError,
+    );
+    expect(mockDeleteUser).toHaveBeenCalledWith('ann@example.com');
+    expect(mockInsertUser).not.toHaveBeenCalled();
   });
 
-  it('propagates the original insertError (not the rollback error) when both insertUser and deleteAuthUser throw', async () => {
-    const insertError = new Error('insert failed: constraint violation');
-    const rollbackError = new Error('rollback failed: user not found in auth');
+  it('releases the code and deletes the Cognito user when storing the user fails', async () => {
+    mockInsertUser.mockRejectedValue(new Error('write failed'));
 
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findAgentCode').mockResolvedValue(mockAgentCode);
-    jest.spyOn(authRepository, 'createAuthUser').mockResolvedValue({ id: USER_ID });
-    jest.spyOn(authRepository, 'insertUser').mockRejectedValue(insertError);
-    jest.spyOn(authRepository, 'deleteAuthUser').mockRejectedValue(rollbackError);
-
-    let thrownError: unknown;
-    try {
-      await authService.register(REGISTER_PARAMS);
-    } catch (err) {
-      thrownError = err;
-    }
-
-    // A ServiceError is thrown (the outer handleServiceError wraps the insertError)
-    expect(thrownError).toBeInstanceOf(ServiceError);
-
-    // The cause should ultimately trace back to the insertError
-    const serviceErr = thrownError as ServiceError;
-    expect(serviceErr.cause).toBe(insertError);
-
-    // The rollback error was logged as a warning
+    await expect(authService.register(registerParams)).rejects.toBeInstanceOf(
+      ServiceError,
+    );
+    expect(mockRelease).toHaveBeenCalledWith('A100');
+    expect(mockDeleteUser).toHaveBeenCalledWith('ann@example.com');
   });
 });
-
-/******************************************************************************
-  Test suite — AuthService.login
-******************************************************************************/
-
-const LOGIN_PARAMS = {
-  tenantSlug: 'acme',
-  email: 'jane.doe@example.com',
-  password: 'Secret1!',
-};
 
 describe('AuthService.login', () => {
-  afterEach(() => jest.restoreAllMocks());
+  it('lowercases the email and returns the session', async () => {
+    mockStartLogin.mockResolvedValue({ session: 'sess' });
 
-  it('happy path — returns { user, token } when all steps succeed', async () => {
-    const token = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
+    const result = await authService.login('Ann@Example.com');
 
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'signInWithPassword').mockResolvedValue({ userId: USER_ID, token });
-    jest.spyOn(authRepository, 'findUserById').mockResolvedValue(mockUser);
-
-    const result = await authService.login(LOGIN_PARAMS);
-
-    expect(result).toEqual({ user: mockUser, token });
+    expect(mockStartLogin).toHaveBeenCalledWith('ann@example.com');
+    expect(result).toEqual({ session: 'sess' });
   });
 
-  it('throws TenantNotFoundError when findTenantBySlug returns null', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(null);
+  it.each([
+    ['invalid credentials', new InvalidCredentialsError()],
+    ['rate limiting', new CognitoRateLimitedError()],
+  ])('passes %s through unwrapped', async (_name, error) => {
+    mockStartLogin.mockRejectedValue(error);
 
-    await expect(authService.login(LOGIN_PARAMS)).rejects.toBeInstanceOf(TenantNotFoundError);
-  });
-
-  it('throws InvalidCredentialsError when signInWithPassword returns null', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'signInWithPassword').mockResolvedValue(null);
-
-    await expect(authService.login(LOGIN_PARAMS)).rejects.toBeInstanceOf(InvalidCredentialsError);
-  });
-
-  it('throws InvalidCredentialsError when findUserById returns null', async () => {
-    const token = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
-
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'signInWithPassword').mockResolvedValue({ userId: USER_ID, token });
-    jest.spyOn(authRepository, 'findUserById').mockResolvedValue(null);
-
-    await expect(authService.login(LOGIN_PARAMS)).rejects.toBeInstanceOf(InvalidCredentialsError);
-  });
-
-  it('throws InvalidCredentialsError when user tenant_id does not match resolved tenant', async () => {
-    const token = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
-    const differentTenantUser: IUser = {
-      ...mockUser,
-      tenant_id: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-    };
-
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'signInWithPassword').mockResolvedValue({ userId: USER_ID, token });
-    jest.spyOn(authRepository, 'findUserById').mockResolvedValue(differentTenantUser);
-
-    await expect(authService.login(LOGIN_PARAMS)).rejects.toBeInstanceOf(InvalidCredentialsError);
+    await expect(authService.login('a@b.co')).rejects.toBe(error);
   });
 });
 
-/******************************************************************************
-  Test suite — AuthService.forgotPassword
-******************************************************************************/
+describe('AuthService.verifyLogin', () => {
+  const params = { email: 'Ann@Example.com', session: 'sess', code: '123456' };
 
-const FORGOT_PASSWORD_PARAMS = {
-  tenantSlug: 'acme',
-  email: 'jane.doe@example.com',
-};
+  it('returns the stored user with the tokens', async () => {
+    mockVerifyLogin.mockResolvedValue(tokens);
+    mockFindById.mockResolvedValue(activeUser);
 
-const mockInactiveUser: IUser = {
-  ...mockUser,
-  status: 'inactive',
-};
+    const result = await authService.verifyLogin(params);
 
-describe('AuthService.forgotPassword', () => {
-  afterEach(() => jest.restoreAllMocks());
+    expect(mockVerifyLogin).toHaveBeenCalledWith('ann@example.com', 'sess', '123456');
+    expect(mockFindById).toHaveBeenCalledWith('sub-1', { consistent: true });
+    expect(result).toEqual({ user: activeUser, tokens });
+  });
 
-  it('happy path — calls resetPasswordForEmail when user is active', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(mockUser);
-    const resetSpy = jest
-      .spyOn(authRepository, 'resetPasswordForEmail')
-      .mockResolvedValue(undefined);
+  it('rejects an inactive user and revokes the tokens', async () => {
+    mockVerifyLogin.mockResolvedValue(tokens);
+    mockFindById.mockResolvedValue({ ...activeUser, status: 'inactive' });
 
-    await authService.forgotPassword(FORGOT_PASSWORD_PARAMS);
-
-    expect(resetSpy).toHaveBeenCalledTimes(1);
-    expect(resetSpy).toHaveBeenCalledWith(
-      FORGOT_PASSWORD_PARAMS.email,
-      expect.any(String),
+    await expect(authService.verifyLogin(params)).rejects.toBeInstanceOf(
+      UserInactiveError,
     );
+    expect(mockSignOut).toHaveBeenCalledWith(accessToken);
   });
 
-  it('returns without calling resetPasswordForEmail when user status is inactive', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(mockInactiveUser);
-    const resetSpy = jest
-      .spyOn(authRepository, 'resetPasswordForEmail')
-      .mockResolvedValue(undefined);
+  it('rejects a Cognito user with no stored user and revokes the tokens', async () => {
+    mockVerifyLogin.mockResolvedValue(tokens);
+    mockFindById.mockResolvedValue(null);
 
-    await authService.forgotPassword(FORGOT_PASSWORD_PARAMS);
-
-    expect(resetSpy).not.toHaveBeenCalled();
+    await expect(authService.verifyLogin(params)).rejects.toBeInstanceOf(
+      InvalidCredentialsError,
+    );
+    expect(mockSignOut).toHaveBeenCalledWith(accessToken);
   });
 
-  it('returns without calling resetPasswordForEmail when user is not found', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-    jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(null);
-    const resetSpy = jest
-      .spyOn(authRepository, 'resetPasswordForEmail')
-      .mockResolvedValue(undefined);
+  it('passes a wrong or expired code through as invalid credentials', async () => {
+    mockVerifyLogin.mockRejectedValue(new InvalidCredentialsError());
 
-    await authService.forgotPassword(FORGOT_PASSWORD_PARAMS);
-
-    expect(resetSpy).not.toHaveBeenCalled();
-  });
-
-  it('throws TenantNotFoundError when findTenantBySlug returns null', async () => {
-    jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(null);
-
-    await expect(
-      authService.forgotPassword(FORGOT_PASSWORD_PARAMS),
-    ).rejects.toBeInstanceOf(TenantNotFoundError);
-  });
-
-  describe('redirectTo resolution from Origin', () => {
-    const FALLBACK = 'https://test.example.com/reset-password';
-
-    async function redirectFor(origin?: string): Promise<string> {
-      jest.spyOn(authRepository, 'findTenantBySlug').mockResolvedValue(mockTenant);
-      jest.spyOn(authRepository, 'findUserByEmail').mockResolvedValue(mockUser);
-      const resetSpy = jest
-        .spyOn(authRepository, 'resetPasswordForEmail')
-        .mockResolvedValue(undefined);
-
-      await authService.forgotPassword({ ...FORGOT_PASSWORD_PARAMS, origin });
-
-      expect(resetSpy).toHaveBeenCalledTimes(1);
-      return resetSpy.mock.calls[0][1] as string;
-    }
-
-    it('uses <origin>/reset-password for an allowlisted origin', async () => {
-      expect(await redirectFor('https://app.example.com')).toBe(
-        'https://app.example.com/reset-password',
-      );
-    });
-
-    it('supports a second allowlisted origin (localhost with port)', async () => {
-      expect(await redirectFor('http://localhost:5173')).toBe(
-        'http://localhost:5173/reset-password',
-      );
-    });
-
-    it('falls back to FRONTEND_RESET_PASSWORD_URL for a non-allowlisted origin', async () => {
-      expect(await redirectFor('https://evil.example.com')).toBe(FALLBACK);
-    });
-
-    it('falls back when origin is undefined', async () => {
-      expect(await redirectFor(undefined)).toBe(FALLBACK);
-    });
-
-    it('falls back when origin is an empty string', async () => {
-      expect(await redirectFor('')).toBe(FALLBACK);
-    });
-
-    it('falls back when origin is malformed', async () => {
-      expect(await redirectFor('not a url')).toBe(FALLBACK);
-    });
-
-    it('normalises an allowlisted origin with a trailing slash', async () => {
-      expect(await redirectFor('https://app.example.com/')).toBe(
-        'https://app.example.com/reset-password',
-      );
-    });
-
-    it('normalises an allowlisted origin with a path', async () => {
-      expect(await redirectFor('https://app.example.com/some/path?x=1')).toBe(
-        'https://app.example.com/reset-password',
-      );
-    });
-
-    it('does not match a different scheme of an allowlisted host', async () => {
-      expect(await redirectFor('http://app.example.com')).toBe(FALLBACK);
-    });
-
-    it('does not match a different port of an allowlisted host', async () => {
-      expect(await redirectFor('http://localhost:3000')).toBe(FALLBACK);
-    });
+    await expect(authService.verifyLogin(params)).rejects.toBeInstanceOf(
+      InvalidCredentialsError,
+    );
+    expect(mockFindById).not.toHaveBeenCalled();
   });
 });
 
-/******************************************************************************
-  Test suite — AuthService.logout
-******************************************************************************/
+describe('AuthService.logout, me and getUserContext', () => {
+  it('logout signs the access token out', async () => {
+    await authService.logout('tok');
 
-const LOGOUT_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.mock-logout-token';
-
-describe('AuthService.logout', () => {
-  afterEach(() => jest.restoreAllMocks());
-
-  it('calls authRepository.signOut with the token and resolves void', async () => {
-    const signOutSpy = jest.spyOn(authRepository, 'signOut').mockResolvedValue(undefined);
-
-    await expect(authService.logout(LOGOUT_TOKEN)).resolves.toBeUndefined();
-
-    expect(signOutSpy).toHaveBeenCalledTimes(1);
-    expect(signOutSpy).toHaveBeenCalledWith(LOGOUT_TOKEN);
+    expect(mockSignOut).toHaveBeenCalledWith('tok');
   });
 
-  it('calls handleServiceError when authRepository.signOut throws', async () => {
-    jest.spyOn(authRepository, 'signOut').mockRejectedValue(new Error('signout db failure'));
+  it('logout wraps a Cognito failure', async () => {
+    mockSignOut.mockRejectedValue(new Error('down'));
 
-    await expect(authService.logout(LOGOUT_TOKEN)).rejects.toBeInstanceOf(ServiceError);
+    await expect(authService.logout('tok')).rejects.toBeInstanceOf(ServiceError);
+  });
+
+  it('getUserContext reads the user with a strongly consistent read', async () => {
+    mockFindById.mockResolvedValue(activeUser);
+
+    expect(await authService.getUserContext('sub-1')).toBe(activeUser);
+    expect(mockFindById).toHaveBeenCalledWith('sub-1', { consistent: true });
+  });
+
+  it('me reads the user without forcing a consistent read', async () => {
+    mockFindById.mockResolvedValue(activeUser);
+
+    await authService.me('sub-1');
+
+    expect(mockFindById).toHaveBeenCalledWith('sub-1');
   });
 });

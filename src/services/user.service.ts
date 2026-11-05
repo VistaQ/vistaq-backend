@@ -1,8 +1,14 @@
 import {
   AgentCodeInvalidError,
+  UserAlreadyExistsError,
   UserNotFoundError,
 } from '@src/models/errors/auth.errors';
-import userRepository from '@src/repositories/user.repository';
+import agentCodeRepository from '@src/repositories/agentCode.repository';
+import groupTrainerRepository from '@src/repositories/groupTrainer.repository';
+import userRepository, {
+  type IUserUpdate,
+} from '@src/repositories/user.repository';
+import cognitoService from '@src/services/cognito.service';
 import type { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
@@ -10,10 +16,15 @@ import { handleServiceError } from '@src/utils/errorHandlers';
                             Interfaces
 ******************************************************************************/
 
+export interface ICaller {
+  id: string;
+  role: string;
+  group_id: string | null;
+}
+
 interface IUpdateUserParams {
   userId: string;
   callerRole: string;
-  token: string;
   data: {
     email?: string;
     name?: string;
@@ -31,12 +42,18 @@ interface IUpdateUserParams {
 interface ICreateUserParams {
   email: string;
   name: string;
-  password: string;
   role: string;
   agentCode?: string;
-  tenantId: string;
-  token: string;
 }
+
+const ALL_ROLES = [
+  'admin',
+  'master_trainer',
+  'trainer',
+  'group_leader',
+  'agent',
+];
+const ROLES_BELOW_ADMIN = ALL_ROLES.filter((role) => role !== 'admin');
 
 /******************************************************************************
                             UserService
@@ -47,9 +64,11 @@ class UserService {
     users: IUser[],
   ): Promise<IUserWithManagedGroups[]> {
     try {
-      const userIds = users.map((u) => u.id);
+      const trainerIds = users
+        .filter((u) => u.role === 'trainer')
+        .map((u) => u.id);
       const managedGroupMap =
-        await userRepository.findManagedGroupIdsByUserIds(userIds);
+        await groupTrainerRepository.findGroupIdsByTrainerIds(trainerIds);
       return users.map((user) => ({
         ...user,
         managed_group_ids: managedGroupMap.get(user.id) ?? [],
@@ -59,18 +78,43 @@ class UserService {
     }
   }
 
-  async getUsers(token: string): Promise<IUserWithManagedGroups[]> {
+  /**
+   * Lists the users the caller may see: admin all, master trainer everyone but
+   * admins, trainer the active members of their groups, group leader their
+   * active group, agent only themselves.
+   */
+  async getUsers(caller: ICaller): Promise<IUserWithManagedGroups[]> {
     try {
-      const users = await userRepository.findAll(token);
+      let users: IUser[];
+      if (caller.role === 'admin') {
+        users = await userRepository.findByRoles(ALL_ROLES);
+      } else if (caller.role === 'master_trainer') {
+        users = await userRepository.findByRoles(ROLES_BELOW_ADMIN, 'active');
+      } else if (caller.role === 'trainer') {
+        const groups = await groupTrainerRepository.findGroupIdsByTrainerIds([
+          caller.id,
+        ]);
+        const pages = await Promise.all(
+          (groups.get(caller.id) ?? []).map((groupId) =>
+            userRepository.findByGroupId(groupId),
+          ),
+        );
+        users = pages.flat();
+      } else if (caller.role === 'group_leader' && caller.group_id) {
+        users = await userRepository.findByGroupId(caller.group_id);
+      } else {
+        const self = await userRepository.findById(caller.id);
+        users = self ? [self] : [];
+      }
       return await this.enrichWithManagedGroupIds(users);
     } catch (error) {
       return handleServiceError('UserService.getUsers', error);
     }
   }
 
-  async getUserById(userId: string, token: string): Promise<IUserWithManagedGroups | null> {
+  async getUserById(userId: string): Promise<IUserWithManagedGroups | null> {
     try {
-      const user = await userRepository.findById(userId, token);
+      const user = await userRepository.findById(userId);
       if (!user) return null;
       const [enriched] = await this.enrichWithManagedGroupIds([user]);
       return enriched;
@@ -82,41 +126,26 @@ class UserService {
   async updateUser(params: IUpdateUserParams): Promise<IUser> {
     try {
       // Strip admin-only fields for non-admin callers
-      const updateData = { ...params.data };
+      const updateData: IUserUpdate = { ...params.data };
       if (params.callerRole !== 'admin') {
         delete updateData.role;
       }
 
-      // Fetch existing user
-      const existingUser = await userRepository.findById(
-        params.userId,
-        params.token,
-      );
+      const existingUser = await userRepository.findById(params.userId);
       if (!existingUser) {
         throw new UserNotFoundError();
       }
 
-      // Handle email update (two-phase: Auth first, then DB)
+      // An email change is two-phase: Cognito first, then the user item
       if (updateData.email && updateData.email !== existingUser.email) {
         const oldEmail = existingUser.email;
+        await cognitoService.updateEmail(oldEmail, updateData.email);
 
-        // Phase 1 — Update Supabase Auth email
-        await userRepository.updateAuthUserEmail(
-          params.userId,
-          updateData.email,
-        );
-
-        // Phase 2 — Update users table (with rollback on failure)
         try {
-          const updatedUser = await userRepository.updateUser(
-            params.userId,
-            updateData,
-            params.token,
-          );
-          return updatedUser;
+          return await userRepository.updateUser(params.userId, updateData);
         } catch (dbError) {
           try {
-            await userRepository.updateAuthUserEmail(params.userId, oldEmail);
+            await cognitoService.updateEmail(updateData.email, oldEmail);
           } catch {
             // Best-effort rollback; the original error is rethrown
           }
@@ -124,14 +153,7 @@ class UserService {
         }
       }
 
-      // Non-email update
-      const updatedUser = await userRepository.updateUser(
-        params.userId,
-        updateData,
-        params.token,
-      );
-
-      return updatedUser;
+      return await userRepository.updateUser(params.userId, updateData);
     } catch (error) {
       if (error instanceof UserNotFoundError) {
         throw error;
@@ -140,9 +162,9 @@ class UserService {
     }
   }
 
-  async deleteUser(userId: string, token: string): Promise<void> {
+  async deleteUser(userId: string): Promise<void> {
     try {
-      const user = await userRepository.findById(userId, token);
+      const user = await userRepository.findById(userId);
       if (!user) {
         throw new UserNotFoundError();
       }
@@ -150,9 +172,9 @@ class UserService {
       await userRepository.deleteUser(userId);
 
       try {
-        await userRepository.deleteAuthUser(userId);
+        await cognitoService.deleteUser(user.email);
       } catch {
-        // The user row is already deleted; an orphaned auth user is tolerated
+        // The user item is already deleted; an orphaned Cognito user is tolerated
       }
     } catch (error) {
       if (error instanceof UserNotFoundError) {
@@ -162,34 +184,32 @@ class UserService {
     }
   }
 
-  async findUsersByIds(userIds: string[], token: string): Promise<IUser[]> {
+  async findUsersByIds(userIds: string[]): Promise<IUser[]> {
     try {
-      return await userRepository.findByIds(userIds, token);
+      return await userRepository.findByIds(userIds);
     } catch (error) {
       return handleServiceError('UserService.findUsersByIds', error);
     }
   }
 
-  async updateUsersGroupId(userIds: string[], groupId: string | null, token: string): Promise<void> {
+  async updateUsersGroupId(
+    userIds: string[],
+    groupId: string | null,
+  ): Promise<void> {
     try {
-      await userRepository.updateGroupIdForUsers(userIds, groupId, token);
+      await userRepository.updateGroupIdForUsers(userIds, groupId);
     } catch (error) {
       return handleServiceError('UserService.updateUsersGroupId', error);
     }
   }
 
-  async changePassword(userId: string, newPassword: string): Promise<void> {
+  /** Deactivating also disables the Cognito user so no new sign-in succeeds. */
+  async setUserStatus(
+    userId: string,
+    status: 'active' | 'inactive',
+  ): Promise<IUser> {
     try {
-      await userRepository.updateAuthUserPassword(userId, newPassword);
-    } catch (error) {
-      return handleServiceError('UserService.changePassword', error);
-    }
-  }
-
-  async setUserStatus(userId: string, status: 'active' | 'inactive', token: string): Promise<IUser> {
-    try {
-
-      const existingUser = await userRepository.findById(userId, token);
+      const existingUser = await userRepository.findById(userId);
       if (!existingUser) {
         throw new UserNotFoundError();
       }
@@ -198,7 +218,12 @@ class UserService {
         return existingUser;
       }
 
-      const updatedUser = await userRepository.updateUser(userId, { status }, token);
+      const updatedUser = await userRepository.updateUser(userId, { status });
+      if (status === 'inactive') {
+        await cognitoService.disableUser(existingUser.email);
+      } else {
+        await cognitoService.enableUser(existingUser.email);
+      }
       return updatedUser;
     } catch (error) {
       if (error instanceof UserNotFoundError) {
@@ -210,75 +235,52 @@ class UserService {
 
   async createUser(params: ICreateUserParams): Promise<IUser> {
     try {
-      // Step 1 — Validate agent code if role is agent
-      let agentCodeRecord = null;
+      const email = params.email.toLowerCase();
+
       if (params.role === 'agent') {
-        agentCodeRecord = await userRepository.findAgentCode(
-          params.agentCode!,
-          params.tenantId,
-          params.token,
+        const agentCode = await agentCodeRepository.findByCode(
+          params.agentCode ?? '',
+          { consistent: true },
         );
-        if (!agentCodeRecord) {
+        if (!agentCode || agentCode.is_used) {
           throw new AgentCodeInvalidError();
         }
       }
 
-      // Step 2 — Create Supabase Auth user
-      const authUser = await userRepository.createAuthUser(
-        params.email,
-        params.password,
-      );
+      const authUser = await cognitoService.createUser(email);
 
-      // Step 3 — Insert into users table (with rollback on failure)
-      let user: IUser;
       try {
-        user = await userRepository.insertUser(
-          {
-            id: authUser.id,
-            email: params.email,
-            name: params.name,
-            role: params.role,
-            tenant_id: params.tenantId,
-            agent_code: params.role === 'agent' ? params.agentCode : null,
-          },
-          params.token,
-        );
-      } catch (insertError) {
-        try {
-          await userRepository.deleteAuthUser(authUser.id);
-        } catch {
-          // Best-effort rollback; the original error is rethrown
+        if (params.role === 'agent') {
+          await agentCodeRepository.claim(params.agentCode!, authUser.id);
         }
+      } catch (claimError) {
+        await cognitoService.deleteUser(email).catch(() => undefined);
+        throw claimError;
+      }
+
+      try {
+        return await userRepository.insertUser({
+          id: authUser.id,
+          email,
+          name: params.name,
+          role: params.role,
+          agent_code: params.role === 'agent' ? params.agentCode : null,
+        });
+      } catch (insertError) {
+        if (params.role === 'agent') {
+          await agentCodeRepository
+            .release(params.agentCode!)
+            .catch(() => undefined);
+        }
+        await cognitoService.deleteUser(email).catch(() => undefined);
         throw insertError;
       }
-
-      // Step 4 — Mark agent code as used if role is agent (with rollback on failure)
-      if (params.role === 'agent' && agentCodeRecord) {
-        try {
-          await userRepository.updateAgentCode(
-            agentCodeRecord.id,
-            authUser.id,
-            params.token,
-          );
-        } catch (updateError) {
-          try {
-            await userRepository.deleteUser(authUser.id);
-          } catch {
-            // Best-effort rollback; the original error is rethrown
-          }
-          try {
-            await userRepository.deleteAuthUser(authUser.id);
-          } catch {
-            // Best-effort rollback; the original error is rethrown
-          }
-          throw updateError;
-        }
-      }
-
-      return user;
     } catch (error) {
       // Re-throw domain errors directly so the controller can handle them
-      if (error instanceof AgentCodeInvalidError) {
+      if (
+        error instanceof AgentCodeInvalidError ||
+        error instanceof UserAlreadyExistsError
+      ) {
         throw error;
       }
       return handleServiceError('UserService.createUser', error);

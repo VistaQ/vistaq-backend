@@ -1,483 +1,189 @@
-// Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
-process.env.FRONTEND_RESET_PASSWORD_URL = 'https://test.example.com/reset-password';
-process.env.ALLOWED_ORIGINS = 'https://app.example.com, http://localhost:5173';
+const mockRegister = jest.fn();
+const mockLogin = jest.fn();
+const mockVerifyLogin = jest.fn();
+const mockLogout = jest.fn();
+const mockMe = jest.fn();
 
-// ---------------------------------------------------------------------------
-// LoggingService mock — must be registered before any imports that trigger side effects
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// SupabaseService mock — prevent real client instantiation
-// ---------------------------------------------------------------------------
-
-jest.mock('@src/services/supabase.service', () => ({
+jest.mock('@src/services/auth.service', () => ({
   __esModule: true,
   default: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    adminCreateAuthUser: jest.fn(),
-    adminDeleteAuthUser: jest.fn(),
-    signInWithPassword: jest.fn(),
-    signOut: jest.fn(),
-  },
-  supabaseService: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    adminCreateAuthUser: jest.fn(),
-    adminDeleteAuthUser: jest.fn(),
-    signInWithPassword: jest.fn(),
-    signOut: jest.fn(),
+    register: mockRegister,
+    login: mockLogin,
+    verifyLogin: mockVerifyLogin,
+    logout: mockLogout,
+    me: mockMe,
   },
 }));
 
-import type { Response, NextFunction } from 'express';
+import type { Response } from 'express';
 
-import { authController } from '@src/controllers/auth.controller';
-import type { IRegisterReq, ILoginReq, ILogoutReq, IForgotPasswordReq } from '@src/controllers/auth.controller';
-import { authService } from '@src/services/auth.service';
-import { RouteError } from '@src/models/errors/route.error';
+import authController, {
+  type ILoginReq,
+  type ILogoutReq,
+  type IMeReq,
+  type IRegisterReq,
+  type IVerifyLoginReq,
+} from '@src/controllers/auth.controller';
+import {
+  AgentCodeInvalidError,
+  InvalidCredentialsError,
+  UserAlreadyExistsError,
+  UserInactiveError,
+} from '@src/models/errors/auth.errors';
+import { CognitoRateLimitedError } from '@src/models/errors/cognito.error';
 import { ControllerError } from '@src/models/errors/layer.errors';
-import { TenantNotFoundError, AgentCodeInvalidError, InvalidCredentialsError } from '@src/models/errors/auth.errors';
-import type { IUser } from '@src/types/auth.types';
+import type { RouteError } from '@src/models/errors/route.error';
 
-/******************************************************************************
-  Fixtures
-******************************************************************************/
-
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const USER_ID = 'ffffffff-0000-1111-2222-333333333333';
-const GROUP_ID = '99999999-aaaa-bbbb-cccc-dddddddddddd';
-
-const mockUser: IUser = {
-  id: USER_ID,
-  tenant_id: TENANT_ID,
-  email: 'jane.doe@example.com',
-  name: 'Jane Doe',
-  role: 'agent',
-  agent_code: 'AGT-001',
-  location: 'Sydney',
-  group_id: GROUP_ID,
-  phone: null,
-  agency: null,
-  sales_target: null,
-  fyct_target: null,
-  fyc_target: null,
-  status: 'active',
-  created_at: '2024-01-01T00:00:00.000Z',
-  updated_at: '2024-01-01T00:00:00.000Z',
+const makeRes = () => {
+  const res = { status: jest.fn(), json: jest.fn() };
+  res.status.mockReturnValue(res);
+  return res;
 };
 
-const VALID_BODY = {
-  fullName: 'Jane Doe',
-  agentCode: 'AGT-001',
-  email: 'jane.doe@example.com',
-  password: 'Secret1!',
-  groupId: GROUP_ID,
-  location: 'Sydney',
-};
+const request = <T>(overrides: Record<string, unknown>): T =>
+  ({ headers: {}, body: {}, ...overrides }) as unknown as T;
 
-/******************************************************************************
-  Helpers
-******************************************************************************/
+const statusOf = (next: jest.Mock): number =>
+  (next.mock.calls[0][0] as RouteError).status;
 
-function makeReq(overrides: Partial<IRegisterReq> = {}): IRegisterReq {
-  return {
-    headers: { 'x-tenant-slug': 'acme' },
-    body: { ...VALID_BODY },
-    ...overrides,
-  } as unknown as IRegisterReq;
-}
-
-function makeRes(): Response {
-  return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
-  } as unknown as Response;
-}
-
-function makeNext(): jest.Mock {
-  return jest.fn();
-}
-
-/******************************************************************************
-  Test suite — AuthController.register
-******************************************************************************/
+beforeEach(() => jest.resetAllMocks());
 
 describe('AuthController.register', () => {
-  afterEach(() => jest.restoreAllMocks());
+  const body = {
+    fullName: 'Ann',
+    agentCode: 'A1',
+    email: 'a@b.co',
+    groupId: 'g',
+    location: 'KL',
+  };
 
-  it('calls next() with a RouteError (status 400) when X-Tenant-Slug header is missing', async () => {
-    const req = makeReq({ headers: {} } as Partial<IRegisterReq>);
+  it('returns 201 with the user and no token', async () => {
+    mockRegister.mockResolvedValue({ user: { id: 'u1' } });
     const res = makeRes();
-    const next = makeNext();
 
-    await authController.register(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(400);
-
-    // Response must not be sent
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('calls next() with a RouteError (status 404) when service throws TenantNotFoundError', async () => {
-    jest.spyOn(authService, 'register').mockRejectedValue(new TenantNotFoundError());
-
-    const req = makeReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.register(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(404);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('calls next() with a RouteError (status 400) when service throws AgentCodeInvalidError', async () => {
-    jest.spyOn(authService, 'register').mockRejectedValue(new AgentCodeInvalidError());
-
-    const req = makeReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.register(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(400);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('calls next() with a ControllerError when service throws an unexpected error', async () => {
-    jest.spyOn(authService, 'register').mockRejectedValue(new Error('unexpected db failure'));
-
-    const req = makeReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.register(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(ControllerError);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('responds HTTP 201 with { success: true, data: { user, token } } on happy path', async () => {
-    const token = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
-    jest.spyOn(authService, 'register').mockResolvedValue({ user: mockUser, token });
-
-    const req = makeReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.register(req, res, next as NextFunction);
+    await authController.register(request<IRegisterReq>({ body }), res as unknown as Response, jest.fn());
 
     expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: { user: mockUser, token },
-    });
-    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { user: { id: 'u1' } } });
   });
 
-  it('responds HTTP 201 with token: null when service returns token: null', async () => {
-    jest.spyOn(authService, 'register').mockResolvedValue({ user: mockUser, token: null });
+  it.each([
+    [new AgentCodeInvalidError(), 400],
+    [new UserAlreadyExistsError(), 409],
+  ])('maps %p to %i', async (error, status) => {
+    mockRegister.mockRejectedValue(error);
+    const next = jest.fn();
 
-    const req = makeReq();
-    const res = makeRes();
-    const next = makeNext();
+    await authController.register(request<IRegisterReq>({ body }), makeRes() as unknown as Response, next);
 
-    await authController.register(req, res, next as NextFunction);
+    expect(statusOf(next)).toBe(status);
+  });
 
-    expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: { user: mockUser, token: null },
-    });
-    expect(next).not.toHaveBeenCalled();
+  it('forwards an unexpected failure as a ControllerError', async () => {
+    mockRegister.mockRejectedValue(new Error('boom'));
+    const next = jest.fn();
+
+    await authController.register(request<IRegisterReq>({ body }), makeRes() as unknown as Response, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ControllerError);
   });
 });
-
-/******************************************************************************
-  Helpers — login
-******************************************************************************/
-
-const LOGIN_BODY = {
-  email: 'jane.doe@example.com',
-  password: 'Secret1!',
-};
-
-function makeLoginReq(overrides: Partial<ILoginReq> = {}): ILoginReq {
-  return {
-    headers: { 'x-tenant-slug': 'acme' },
-    body: { ...LOGIN_BODY },
-    ...overrides,
-  } as unknown as ILoginReq;
-}
-
-/******************************************************************************
-  Test suite — AuthController.login
-******************************************************************************/
 
 describe('AuthController.login', () => {
-  afterEach(() => jest.restoreAllMocks());
-
-  it('calls next() with a RouteError (status 400) when X-Tenant-Slug header is missing', async () => {
-    const req = makeLoginReq({ headers: {} } as Partial<ILoginReq>);
+  it('returns the session', async () => {
+    mockLogin.mockResolvedValue({ session: 's' });
     const res = makeRes();
-    const next = makeNext();
 
-    await authController.login(req, res, next as NextFunction);
+    await authController.login(request<ILoginReq>({ body: { email: 'a@b.co' } }), res as unknown as Response, jest.fn());
 
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(400);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
+    expect(mockLogin).toHaveBeenCalledWith('a@b.co');
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { session: 's' } });
   });
 
-  it('calls next() with a RouteError (status 404) when service throws TenantNotFoundError', async () => {
-    jest.spyOn(authService, 'login').mockRejectedValue(new TenantNotFoundError());
+  it.each([
+    [new InvalidCredentialsError(), 400],
+    [new CognitoRateLimitedError(), 429],
+  ])('maps %p to %i', async (error, status) => {
+    mockLogin.mockRejectedValue(error);
+    const next = jest.fn();
 
-    const req = makeLoginReq();
-    const res = makeRes();
-    const next = makeNext();
+    await authController.login(request<ILoginReq>({ body: { email: 'a@b.co' } }), makeRes() as unknown as Response, next);
 
-    await authController.login(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(404);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
+    expect(statusOf(next)).toBe(status);
   });
+});
 
-  it('calls next() with a RouteError (status 400, message "Invalid credentials") when service throws InvalidCredentialsError', async () => {
-    jest.spyOn(authService, 'login').mockRejectedValue(new InvalidCredentialsError());
+describe('AuthController.verifyLogin', () => {
+  const body = { email: 'a@b.co', session: 's', code: '123456' };
 
-    const req = makeLoginReq();
+  it('returns the user and tokens', async () => {
+    mockVerifyLogin.mockResolvedValue({ user: { id: 'u1' }, tokens: { accessToken: 't' } });
     const res = makeRes();
-    const next = makeNext();
 
-    await authController.login(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(400);
-    expect((err as RouteError).message).toBe('Invalid credentials');
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('calls next() with a ControllerError when service throws an unexpected error', async () => {
-    jest.spyOn(authService, 'login').mockRejectedValue(new Error('unexpected db failure'));
-
-    const req = makeLoginReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.login(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(ControllerError);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('responds HTTP 200 with { success: true, data: { user, token } } on happy path', async () => {
-    const token = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
-    jest.spyOn(authService, 'login').mockResolvedValue({ user: mockUser, token });
-
-    const req = makeLoginReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.login(req, res, next as NextFunction);
+    await authController.verifyLogin(request<IVerifyLoginReq>({ body }), res as unknown as Response, jest.fn());
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
-      data: { user: mockUser, token },
+      data: { user: { id: 'u1' }, tokens: { accessToken: 't' } },
     });
-    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new InvalidCredentialsError(), 400],
+    [new UserInactiveError(), 403],
+    [new CognitoRateLimitedError(), 429],
+  ])('maps %p to %i', async (error, status) => {
+    mockVerifyLogin.mockRejectedValue(error);
+    const next = jest.fn();
+
+    await authController.verifyLogin(request<IVerifyLoginReq>({ body }), makeRes() as unknown as Response, next);
+
+    expect(statusOf(next)).toBe(status);
   });
 });
-
-/******************************************************************************
-  Helpers — logout
-******************************************************************************/
-
-const MOCK_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.mock-token';
-
-function makeLogoutReq(overrides: Partial<ILogoutReq> = {}): ILogoutReq {
-  return {
-    headers: { authorization: `Bearer ${MOCK_TOKEN}` },
-    body: {},
-    ...overrides,
-  } as unknown as ILogoutReq;
-}
-
-/******************************************************************************
-  Test suite — AuthController.logout
-******************************************************************************/
 
 describe('AuthController.logout', () => {
-  afterEach(() => jest.restoreAllMocks());
+  it('rejects a request without a bearer token', async () => {
+    const next = jest.fn();
 
-  it('calls authService.logout with the extracted token and returns 200 { success: true }', async () => {
-    jest.spyOn(authService, 'logout').mockResolvedValue(undefined);
+    await authController.logout(request<ILogoutReq>({}), makeRes() as unknown as Response, next);
 
-    const req = makeLogoutReq();
+    expect(statusOf(next)).toBe(401);
+    expect(mockLogout).not.toHaveBeenCalled();
+  });
+
+  it('signs the bearer token out', async () => {
+    mockLogout.mockResolvedValue(undefined);
     const res = makeRes();
-    const next = makeNext();
 
-    await authController.logout(req, res, next as NextFunction);
+    await authController.logout(
+      request<ILogoutReq>({ headers: { authorization: 'Bearer abc' } }),
+      res as unknown as Response,
+      jest.fn(),
+    );
 
-    expect(authService.logout).toHaveBeenCalledTimes(1);
-    expect(authService.logout).toHaveBeenCalledWith(MOCK_TOKEN);
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockLogout).toHaveBeenCalledWith('abc');
     expect(res.json).toHaveBeenCalledWith({ success: true });
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('returns 401 when Authorization header is missing', async () => {
-    const req = makeLogoutReq({ headers: {} } as Partial<ILogoutReq>);
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.logout(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(401);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('returns 401 when Authorization header does not start with "Bearer "', async () => {
-    const req = makeLogoutReq({
-      headers: { authorization: 'Basic dXNlcjpwYXNz' },
-    } as Partial<ILogoutReq>);
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.logout(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(401);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('returns 401 when token is empty (Authorization: Bearer )', async () => {
-    const req = makeLogoutReq({
-      headers: { authorization: 'Bearer ' },
-    } as Partial<ILogoutReq>);
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.logout(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    const err = next.mock.calls[0][0];
-    expect(err).toBeInstanceOf(RouteError);
-    expect((err as RouteError).status).toBe(401);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-  });
-
-  it('calls next with error when authService.logout throws', async () => {
-    jest.spyOn(authService, 'logout').mockRejectedValue(new Error('signout failed'));
-
-    const req = makeLogoutReq();
-    const res = makeRes();
-    const next = makeNext();
-
-    await authController.logout(req, res, next as NextFunction);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
   });
 });
 
-/******************************************************************************
-  Test suite — AuthController.forgotPassword (origin forwarding)
-******************************************************************************/
-
-describe('AuthController.forgotPassword origin forwarding', () => {
-  afterEach(() => jest.restoreAllMocks());
-
-  it('passes req.headers.origin to authService.forgotPassword', async () => {
-    const spy = jest.spyOn(authService, 'forgotPassword').mockResolvedValue(undefined);
-    const req = {
-      headers: { 'x-tenant-slug': 'acme', origin: 'https://app.example.com' },
-      body: { email: 'user@example.com' },
-    } as unknown as IForgotPasswordReq;
+describe('AuthController.me', () => {
+  it('returns the caller', async () => {
+    mockMe.mockResolvedValue({ id: 'u1' });
     const res = makeRes();
 
-    await authController.forgotPassword(req, res, jest.fn() as NextFunction);
+    await authController.me(request<IMeReq>({ user: { id: 'u1' } }), res as unknown as Response, jest.fn());
 
-    expect(spy).toHaveBeenCalledWith({
-      tenantSlug: 'acme',
-      email: 'user@example.com',
-      origin: 'https://app.example.com',
-    });
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: 'u1' } });
   });
 
-  it('passes undefined origin when header is absent', async () => {
-    const spy = jest.spyOn(authService, 'forgotPassword').mockResolvedValue(undefined);
-    const req = {
-      headers: { 'x-tenant-slug': 'acme' },
-      body: { email: 'user@example.com' },
-    } as unknown as IForgotPasswordReq;
+  it('returns 404 when the user item is missing', async () => {
+    mockMe.mockResolvedValue(null);
+    const next = jest.fn();
 
-    await authController.forgotPassword(req, makeRes(), jest.fn() as NextFunction);
+    await authController.me(request<IMeReq>({ user: { id: 'u1' } }), makeRes() as unknown as Response, next);
 
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ origin: undefined }));
+    expect(statusOf(next)).toBe(404);
   });
 });

@@ -1,268 +1,165 @@
+import jwt from 'jsonwebtoken';
+
 import {
   AgentCodeInvalidError,
   InvalidCredentialsError,
-  TenantNotFoundError,
+  UserAlreadyExistsError,
   UserInactiveError,
 } from '@src/models/errors/auth.errors';
-import authRepository from '@src/repositories/auth.repository';
-import type { IUser } from '@src/types/auth.types';
-import EnvVars from '@src/utils/env';
+import { CognitoRateLimitedError } from '@src/models/errors/cognito.error';
+import agentCodeRepository from '@src/repositories/agentCode.repository';
+import userRepository from '@src/repositories/user.repository';
+import cognitoService, { type ITokens } from '@src/services/cognito.service';
+import type { IUser, IUserContext } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
+
+/******************************************************************************
+                            Interfaces
+******************************************************************************/
+
+interface IRegisterParams {
+  fullName: string;
+  agentCode: string;
+  email: string;
+  groupId: string;
+  location: string;
+}
+
+interface IVerifyLoginParams {
+  email: string;
+  session: string;
+  code: string;
+}
+
+interface IVerifyLoginResult {
+  user: IUser;
+  tokens: ITokens;
+}
+
+const DOMAIN_ERRORS = [
+  AgentCodeInvalidError,
+  InvalidCredentialsError,
+  UserAlreadyExistsError,
+  UserInactiveError,
+  CognitoRateLimitedError,
+];
+
+function isDomainError(error: unknown): boolean {
+  return DOMAIN_ERRORS.some((type) => error instanceof type);
+}
 
 /******************************************************************************
                             AuthService
 ******************************************************************************/
 
-interface IRegisterParams {
-  tenantSlug: string;
-  fullName: string;
-  agentCode: string;
-  email: string;
-  password: string;
-  groupId: string;
-  location: string;
-}
-
-interface IRegisterResult {
-  user: IUser;
-  token: string | null;
-}
-
-interface ILoginParams {
-  tenantSlug: string;
-  email: string;
-  password: string;
-}
-
-interface ILoginResult {
-  user: IUser;
-  token: string;
-}
-
-interface IForgotPasswordParams {
-  tenantSlug: string;
-  email: string;
-  origin?: string;
-}
-
-interface IResetPasswordParams {
-  token: string;
-  newPassword: string;
-}
-
 class AuthService {
-  async register(params: IRegisterParams): Promise<IRegisterResult> {
+  async register(params: IRegisterParams): Promise<{ user: IUser }> {
     try {
-      // Step 1 — Resolve tenant
-      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
+      const email = params.email.toLowerCase();
 
-      // Step 2 — Validate agent code
-      const agentCodeRecord = await authRepository.findAgentCode(
-        params.agentCode,
-        tenant.id,
-      );
-      if (!agentCodeRecord) {
+      const agentCode = await agentCodeRepository.findByCode(params.agentCode, {
+        consistent: true,
+      });
+      if (!agentCode || agentCode.is_used) {
         throw new AgentCodeInvalidError();
       }
 
-      // Step 4a — Create Supabase Auth user
-      const authUser = await authRepository.createAuthUser(
-        params.email,
-        params.password,
-      );
+      const authUser = await cognitoService.createUser(email);
 
-      // Step 4b — Insert into users table (with rollback on failure)
-      let user: IUser;
       try {
-        user = await authRepository.insertUser({
+        await agentCodeRepository.claim(params.agentCode, authUser.id);
+      } catch (claimError) {
+        await cognitoService.deleteUser(email).catch(() => undefined);
+        throw claimError;
+      }
+
+      try {
+        const user = await userRepository.insertUser({
           id: authUser.id,
-          tenant_id: tenant.id,
-          email: params.email,
+          email,
           name: params.fullName,
           role: 'agent',
           agent_code: params.agentCode,
           location: params.location,
           group_id: params.groupId,
         });
+        return { user };
       } catch (insertError) {
-        try {
-          await authRepository.deleteAuthUser(authUser.id);
-        } catch {
-          // Best-effort rollback; the original error is rethrown
-        }
+        await agentCodeRepository.release(params.agentCode).catch(() => undefined);
+        await cognitoService.deleteUser(email).catch(() => undefined);
         throw insertError;
       }
-
-      // Step 4c — Mark agent code as used
-      await authRepository.updateAgentCode(agentCodeRecord.id, authUser.id);
-
-      // Step 4d — Sign in to obtain session token
-      let token: string | null;
-      try {
-        const signInResult = await authRepository.signInWithPassword(
-          params.email,
-          params.password,
-        );
-        token = signInResult ? signInResult.token : null;
-      } catch {
-        // The user is registered; the client can sign in separately
-        token = null;
-      }
-
-      return { user, token };
     } catch (error) {
-      // Re-throw domain errors directly so the controller can handle them
-      if (
-        error instanceof TenantNotFoundError ||
-        error instanceof AgentCodeInvalidError
-      ) {
+      if (isDomainError(error)) {
         throw error;
       }
       return handleServiceError('AuthService.register', error);
     }
   }
 
-  async me(userId: string): Promise<IUser | null> {
+  /** Emails a sign-in code and returns the session that must accompany it. */
+  async login(email: string): Promise<{ session: string }> {
     try {
-      const user = await authRepository.findUserById(userId);
-      return user;
+      return await cognitoService.startLogin(email.toLowerCase());
     } catch (error) {
-      return handleServiceError('AuthService.me', error);
-    }
-  }
-
-  async logout(token: string): Promise<void> {
-    try {
-      await authRepository.signOut(token);
-    } catch (error) {
-      return handleServiceError('AuthService.logout', error);
-    }
-  }
-
-  async login(params: ILoginParams): Promise<ILoginResult> {
-    try {
-      // Step 1 — Resolve tenant
-      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
-
-      // Step 2 — Sign in with Supabase Auth
-      const signInResult = await authRepository.signInWithPassword(
-        params.email,
-        params.password,
-      );
-      if (!signInResult) {
-        throw new InvalidCredentialsError();
-      }
-
-      // Step 3 — Fetch user profile
-      const user = await authRepository.findUserById(signInResult.userId);
-      if (!user) {
-        throw new InvalidCredentialsError();
-      }
-
-      // Step 4 — Verify tenant membership
-      if (user.tenant_id !== tenant.id) {
-        throw new InvalidCredentialsError();
-      }
-
-      // Step 5 — Check user is active
-      if (user.status !== 'active') {
-        throw new UserInactiveError();
-      }
-
-      return { user, token: signInResult.token };
-    } catch (error) {
-      // Re-throw domain errors directly so the controller can handle them
-      if (
-        error instanceof TenantNotFoundError ||
-        error instanceof InvalidCredentialsError ||
-        error instanceof UserInactiveError
-      ) {
+      if (isDomainError(error)) {
         throw error;
       }
       return handleServiceError('AuthService.login', error);
     }
   }
 
-  async forgotPassword(params: IForgotPasswordParams): Promise<void> {
+  async verifyLogin(params: IVerifyLoginParams): Promise<IVerifyLoginResult> {
     try {
-      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
-
-      const user = await authRepository.findUserByEmail(
-        params.email,
-        tenant.id,
+      const tokens = await cognitoService.verifyLogin(
+        params.email.toLowerCase(),
+        params.session,
+        params.code,
       );
-      if (!user) {
-        // Silently return — do not reveal whether the email exists
-        return;
+
+      const subject = (jwt.decode(tokens.accessToken) as { sub?: string } | null)
+        ?.sub;
+      const user = subject
+        ? await userRepository.findById(subject, { consistent: true })
+        : null;
+
+      if (!user || user.status !== 'active') {
+        await cognitoService.signOut(tokens.accessToken).catch(() => undefined);
+        throw user ? new UserInactiveError() : new InvalidCredentialsError();
       }
 
-      // Prevents probing reset behaviour to distinguish inactive from non-existent accounts
-      if (user.status !== 'active') {
-        return;
-      }
-
-      const redirectTo = this.resolveResetPasswordUrl(params.origin);
-
-      await authRepository.resetPasswordForEmail(params.email, redirectTo);
+      return { user, tokens };
     } catch (error) {
-      if (error instanceof TenantNotFoundError) {
+      if (isDomainError(error)) {
         throw error;
       }
-      return handleServiceError('AuthService.forgotPassword', error);
+      return handleServiceError('AuthService.verifyLogin', error);
     }
   }
 
-  /**
-   * Builds the Supabase redirectTo URL from the request Origin when it is
-   * allowlisted; otherwise falls back to the configured env URL.
-   */
-  private resolveResetPasswordUrl(origin?: string): string {
+  async logout(accessToken: string): Promise<void> {
     try {
-      let normalisedOrigin: string | null = null;
-      if (origin) {
-        try {
-          normalisedOrigin = new URL(origin).origin;
-        } catch {
-          normalisedOrigin = null;
-        }
+      const subject = (jwt.decode(accessToken) as { sub?: string } | null)?.sub;
+      if (subject) {
+        await userRepository.markSignedOut(subject);
       }
-
-      if (
-        normalisedOrigin &&
-        EnvVars.AllowedOrigins.includes(normalisedOrigin)
-      ) {
-        const url = `${normalisedOrigin}/reset-password`;
-        return url;
-      }
-
-      return EnvVars.FrontendResetPasswordUrl;
+      await cognitoService.signOut(accessToken);
     } catch (error) {
-      return handleServiceError('AuthService.resolveResetPasswordUrl', error);
+      return handleServiceError('AuthService.logout', error);
     }
   }
 
-  async resetPassword(params: IResetPasswordParams): Promise<void> {
+  async me(userId: string): Promise<IUser | null> {
     try {
-      const { userId } = await authRepository.getUserIdFromToken(params.token);
-
-      await authRepository.updateAuthUserPassword(userId, params.newPassword);
+      return await userRepository.findById(userId);
     } catch (error) {
-      return handleServiceError('AuthService.resetPassword', error);
+      return handleServiceError('AuthService.me', error);
     }
   }
 
-  async getUserContext(userId: string): Promise<IUser | null> {
+  async getUserContext(userId: string): Promise<IUserContext | null> {
     try {
-      return await authRepository.findUserById(userId);
+      return await userRepository.findContextById(userId);
     } catch (error) {
       return handleServiceError('AuthService.getUserContext', error);
     }

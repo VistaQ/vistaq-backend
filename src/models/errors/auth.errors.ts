@@ -23,6 +23,13 @@ export class UserNotFoundError extends Error {
   }
 }
 
+export class UserAlreadyExistsError extends Error {
+  public constructor(message = 'User already exists') {
+    super(message);
+    this.name = 'UserAlreadyExistsError';
+  }
+}
+
 export class InvalidCredentialsError extends Error {
   public constructor(message = 'Invalid credentials') {
     super(message);

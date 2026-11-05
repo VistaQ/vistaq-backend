@@ -20,12 +20,19 @@ function createVerifier() {
   });
 }
 
+interface ITokenIdentity {
+  subject: string;
+  issuedAt: number;
+}
+
 // Behind the gateway the authorizer has already verified the token; anywhere
 // else (local development) it is verified here with the same pool and client.
-async function subjectOf(req: Request): Promise<string | null> {
+async function identityOf(req: Request): Promise<ITokenIdentity | null> {
   const claims = req.apiGateway?.event.requestContext.authorizer?.jwt?.claims;
   if (claims) {
-    return typeof claims.sub === 'string' ? claims.sub : null;
+    return typeof claims.sub === 'string'
+      ? { subject: claims.sub, issuedAt: Number(claims.iat) }
+      : null;
   }
 
   const authHeader = req.headers['authorization'];
@@ -35,7 +42,7 @@ async function subjectOf(req: Request): Promise<string | null> {
 
   verifier ??= createVerifier();
   const payload = await verifier.verify(authHeader.slice(7));
-  return payload.sub;
+  return { subject: payload.sub, issuedAt: payload.iat };
 }
 
 export async function authenticate(
@@ -44,16 +51,25 @@ export async function authenticate(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const subject = await subjectOf(req);
-    if (!subject) {
+    const identity = await identityOf(req);
+    if (!identity) {
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
     }
 
-    const user = await authService.getUserContext(subject);
+    const user = await authService.getUserContext(identity.subject);
     if (!user) {
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
+    }
+
+    // The gateway authorizer cannot see revocation, so logout stamps the user and tokens issued before it die here.
+    if (user.signed_out_at) {
+      const signedOutSeconds = Math.floor(Date.parse(user.signed_out_at) / 1000);
+      if (!(identity.issuedAt > signedOutSeconds)) {
+        next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
+        return;
+      }
     }
 
     if (user.status !== 'active') {
@@ -61,7 +77,7 @@ export async function authenticate(
       return;
     }
 
-    if (!user.role || !user.tenant_id) {
+    if (!user.role) {
       next(new RouteError(HttpStatusCodes.UNAUTHORIZED, 'Unauthorized'));
       return;
     }

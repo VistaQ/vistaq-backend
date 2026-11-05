@@ -2,7 +2,6 @@ import express from 'express';
 import { z } from 'zod';
 
 import type {
-  IChangePasswordReq,
   ICreateUserReq,
   IDeleteUserReq,
   IGetUserByIdReq,
@@ -35,33 +34,10 @@ export const updateUserSchema = z
     message: 'At least one field must be provided',
   });
 
-export const changePasswordSchema = z
-  .object({
-    newPassword: z
-      .string()
-      .min(6, 'Password must be at least 6 characters')
-      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-      .regex(/[0-9]/, 'Password must contain at least one digit')
-      .regex(
-        /[^a-zA-Z0-9]/,
-        'Password must contain at least one special character',
-      ),
-  })
-  .strict();
-
 export const createUserSchema = z
   .object({
     email: z.string().email(),
     name: z.string().min(1),
-    password: z
-      .string()
-      .min(6, 'Password must be at least 6 characters')
-      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-      .regex(/[0-9]/, 'Password must contain at least one digit')
-      .regex(
-        /[^a-zA-Z0-9]/,
-        'Password must contain at least one special character',
-      ),
     role: z.enum(['admin', 'master_trainer', 'trainer', 'agent']),
     agentCode: z.string().min(1).optional(),
   })
@@ -81,14 +57,6 @@ router.get(
   authenticate,
   (req, res, next) =>
     userController.getAll(req as unknown as IBaseReq, res, next),
-);
-
-router.patch(
-  '/me/password',
-  authenticate,
-  validate(changePasswordSchema),
-  (req, res, next) =>
-    userController.changePassword(req as unknown as IChangePasswordReq, res, next),
 );
 
 router.get(

@@ -2,6 +2,7 @@ import type { NextFunction, Response } from 'express';
 
 import {
   AgentCodeInvalidError,
+  UserAlreadyExistsError,
   UserNotFoundError,
 } from '@src/models/errors/auth.errors';
 import { RouteError } from '@src/models/errors/route.error';
@@ -19,7 +20,6 @@ export interface ICreateUserReq extends IBaseReq {
   body: {
     email: string;
     name: string;
-    password: string;
     role: string;
     agentCode?: string;
   };
@@ -84,17 +84,6 @@ export interface IDeleteUserRes extends IBaseRes {
   success: boolean;
 }
 
-export interface IChangePasswordReq extends IBaseReq {
-  body: {
-    newPassword: string;
-  };
-}
-
-export interface IChangePasswordRes extends IBaseRes {
-  success: boolean;
-  message: string;
-}
-
 /******************************************************************************
                             UserController
 ******************************************************************************/
@@ -106,10 +95,9 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
-      const user = await userService.getUserById(userId, token);
+      const user = await userService.getUserById(userId);
 
       if (user === null) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'User not found'));
@@ -133,9 +121,8 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
 
-      const users = await userService.getUsers(token);
+      const users = await userService.getUsers(req.user!);
 
       const responseBody: IGetUsersRes = {
         success: true,
@@ -154,7 +141,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
       // Non-admin users can only update themselves
@@ -166,7 +152,6 @@ class UserController {
       const user = await userService.updateUser({
         userId,
         callerRole: req.user!.role,
-        token,
         data: req.body,
       });
 
@@ -192,10 +177,9 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
-      await userService.deleteUser(userId, token);
+      await userService.deleteUser(userId);
 
       const responseBody: IDeleteUserRes = {
         success: true,
@@ -212,28 +196,6 @@ class UserController {
     }
   }
 
-  async changePassword(
-    req: IChangePasswordReq,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const userId = req.user!.id;
-      const { newPassword } = req.body;
-
-      await userService.changePassword(userId, newPassword);
-
-      const responseBody: IChangePasswordRes = {
-        success: true,
-        message: 'Password changed successfully',
-      };
-
-      res.status(HttpStatusCodes.OK).json(responseBody);
-    } catch (error) {
-      return handleControllerError('UserController.changePassword', error, next);
-    }
-  }
-
   async deactivate(
     req: IUserStatusChangeReq,
     res: Response,
@@ -245,7 +207,6 @@ class UserController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
       if (req.user!.id === userId) {
@@ -253,7 +214,7 @@ class UserController {
         return;
       }
 
-      const user = await userService.setUserStatus(userId, 'inactive', token);
+      const user = await userService.setUserStatus(userId, 'inactive');
 
       const responseBody: IUpdateUserRes = {
         success: true,
@@ -282,10 +243,9 @@ class UserController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { userId } = req.params;
 
-      const user = await userService.setUserStatus(userId, 'active', token);
+      const user = await userService.setUserStatus(userId, 'active');
 
       const responseBody: IUpdateUserRes = {
         success: true,
@@ -314,17 +274,13 @@ class UserController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
-      const { email, name, password, role, agentCode } = req.body;
+      const { email, name, role, agentCode } = req.body;
 
       const user = await userService.createUser({
         email,
         name,
-        password,
         role,
         agentCode,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: ICreateUserRes = {
@@ -336,6 +292,11 @@ class UserController {
     } catch (error) {
       if (error instanceof AgentCodeInvalidError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
+
+      if (error instanceof UserAlreadyExistsError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
         return;
       }
 

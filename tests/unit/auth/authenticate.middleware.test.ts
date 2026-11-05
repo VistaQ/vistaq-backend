@@ -110,7 +110,7 @@ describe('authenticate middleware', () => {
       expect(error.message).toBe('Account is inactive');
     });
 
-    it.each([['role'], ['tenant_id']])(
+    it.each([['role']])(
       'rejects with 401 when the user record has no %s',
       async (field) => {
         mockGetUserContext.mockResolvedValue({ ...activeUser, [field]: null });

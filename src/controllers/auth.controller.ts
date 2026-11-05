@@ -3,12 +3,14 @@ import type { NextFunction, Response } from 'express';
 import {
   AgentCodeInvalidError,
   InvalidCredentialsError,
-  TenantNotFoundError,
+  UserAlreadyExistsError,
   UserInactiveError,
 } from '@src/models/errors/auth.errors';
+import { CognitoRateLimitedError } from '@src/models/errors/cognito.error';
 import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import authService from '@src/services/auth.service';
+import type { ITokens } from '@src/services/cognito.service';
 import type { IUser } from '@src/types/auth.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -22,7 +24,6 @@ export interface IRegisterReq extends IBaseReq {
     fullName: string;
     agentCode: string;
     email: string;
-    password: string;
     groupId: string;
     location: string;
   };
@@ -30,19 +31,25 @@ export interface IRegisterReq extends IBaseReq {
 
 export interface IRegisterRes extends IBaseRes {
   success: boolean;
-  data: {
-    user: IUser;
-    token: string | null;
-  };
+  data: { user: IUser };
 }
 
 export interface ILoginReq extends IBaseReq {
-  body: { email: string; password: string };
+  body: { email: string };
 }
 
 export interface ILoginRes extends IBaseRes {
   success: boolean;
-  data: { user: IUser; token: string };
+  data: { session: string };
+}
+
+export interface IVerifyLoginReq extends IBaseReq {
+  body: { email: string; session: string; code: string };
+}
+
+export interface IVerifyLoginRes extends IBaseRes {
+  success: boolean;
+  data: { user: IUser; tokens: ITokens };
 }
 
 export interface ILogoutReq extends IBaseReq {
@@ -60,24 +67,6 @@ export interface IMeRes extends IBaseRes {
   data?: IUser;
 }
 
-export interface IForgotPasswordReq extends IBaseReq {
-  body: { email: string };
-}
-
-export interface IForgotPasswordRes extends IBaseRes {
-  success: boolean;
-  message: string;
-}
-
-export interface IResetPasswordReq extends IBaseReq {
-  body: { token: string; newPassword: string };
-}
-
-export interface IResetPasswordRes extends IBaseRes {
-  success: boolean;
-  message: string;
-}
-
 /******************************************************************************
                             AuthController
 ******************************************************************************/
@@ -89,52 +78,79 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const tenantSlug = req.headers['x-tenant-slug'];
-
-      if (!tenantSlug || typeof tenantSlug !== 'string') {
-        next(
-          new RouteError(
-            HttpStatusCodes.BAD_REQUEST,
-            'X-Tenant-Slug header is required',
-          ),
-        );
-        return;
-      }
-
-      const { fullName, agentCode, email, password, groupId, location } =
-        req.body;
-
-      const result = await authService.register({
-        tenantSlug,
-        fullName,
-        agentCode,
-        email,
-        password,
-        groupId,
-        location,
-      });
+      const result = await authService.register(req.body);
 
       const responseBody: IRegisterRes = {
         success: true,
-        data: {
-          user: result.user,
-          token: result.token,
-        },
+        data: { user: result.user },
       };
-
       res.status(HttpStatusCodes.CREATED).json(responseBody);
     } catch (error) {
-      if (error instanceof TenantNotFoundError) {
-        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
-        return;
-      }
-
       if (error instanceof AgentCodeInvalidError) {
         next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
         return;
       }
-
+      if (error instanceof UserAlreadyExistsError) {
+        next(new RouteError(HttpStatusCodes.CONFLICT, error.message));
+        return;
+      }
       return handleControllerError('AuthController.register', error, next);
+    }
+  }
+
+  async login(
+    req: ILoginReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const result = await authService.login(req.body.email);
+
+      const responseBody: ILoginRes = {
+        success: true,
+        data: { session: result.session },
+      };
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'Invalid credentials'));
+        return;
+      }
+      if (error instanceof CognitoRateLimitedError) {
+        next(new RouteError(HttpStatusCodes.TOO_MANY_REQUESTS, error.message));
+        return;
+      }
+      return handleControllerError('AuthController.login', error, next);
+    }
+  }
+
+  async verifyLogin(
+    req: IVerifyLoginReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const result = await authService.verifyLogin(req.body);
+
+      const responseBody: IVerifyLoginRes = {
+        success: true,
+        data: { user: result.user, tokens: result.tokens },
+      };
+      res.status(HttpStatusCodes.OK).json(responseBody);
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'Invalid credentials'));
+        return;
+      }
+      if (error instanceof UserInactiveError) {
+        next(new RouteError(HttpStatusCodes.FORBIDDEN, error.message));
+        return;
+      }
+      if (error instanceof CognitoRateLimitedError) {
+        next(new RouteError(HttpStatusCodes.TOO_MANY_REQUESTS, error.message));
+        return;
+      }
+      return handleControllerError('AuthController.verifyLogin', error, next);
     }
   }
 
@@ -157,7 +173,6 @@ class AuthController {
       }
 
       const token = authHeader.slice(7);
-
       if (!token) {
         next(
           new RouteError(
@@ -171,7 +186,6 @@ class AuthController {
       await authService.logout(token);
 
       const responseBody: ILogoutRes = { success: true };
-
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('AuthController.logout', error, next);
@@ -180,8 +194,7 @@ class AuthController {
 
   async me(req: IMeReq, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId: string = req.user!.id;
-      const user = await authService.me(userId);
+      const user = await authService.me(req.user!.id);
 
       if (!user) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'User not found'));
@@ -192,124 +205,6 @@ class AuthController {
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
       return handleControllerError('AuthController.me', error, next);
-    }
-  }
-
-  async login(
-    req: ILoginReq,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const tenantSlug = req.headers['x-tenant-slug'];
-
-      if (!tenantSlug || typeof tenantSlug !== 'string') {
-        next(
-          new RouteError(
-            HttpStatusCodes.BAD_REQUEST,
-            'X-Tenant-Slug header is required',
-          ),
-        );
-        return;
-      }
-
-      const { email, password } = req.body;
-
-      const result = await authService.login({
-        tenantSlug,
-        email,
-        password,
-      });
-
-      const responseBody: ILoginRes = {
-        success: true,
-        data: {
-          user: result.user,
-          token: result.token,
-        },
-      };
-
-      res.status(HttpStatusCodes.OK).json(responseBody);
-    } catch (error) {
-      if (error instanceof TenantNotFoundError) {
-        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
-        return;
-      }
-
-      if (error instanceof InvalidCredentialsError) {
-        next(
-          new RouteError(HttpStatusCodes.BAD_REQUEST, 'Invalid credentials'),
-        );
-        return;
-      }
-
-      if (error instanceof UserInactiveError) {
-        next(new RouteError(HttpStatusCodes.FORBIDDEN, error.message));
-        return;
-      }
-
-      return handleControllerError('AuthController.login', error, next);
-    }
-  }
-
-  async forgotPassword(
-    req: IForgotPasswordReq,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const tenantSlug = req.headers['x-tenant-slug'];
-
-      if (!tenantSlug || typeof tenantSlug !== 'string') {
-        next(
-          new RouteError(
-            HttpStatusCodes.BAD_REQUEST,
-            'X-Tenant-Slug header is required',
-          ),
-        );
-        return;
-      }
-
-      const { email } = req.body;
-
-      const origin = req.headers.origin;
-
-      await authService.forgotPassword({ tenantSlug, email, origin });
-
-      const responseBody: IForgotPasswordRes = {
-        success: true,
-        message: 'Password reset email sent',
-      };
-
-      res.status(HttpStatusCodes.OK).json(responseBody);
-    } catch (error) {
-      if (error instanceof TenantNotFoundError) {
-        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
-        return;
-      }
-
-      return handleControllerError('AuthController.forgotPassword', error, next);
-    }
-  }
-
-  async resetPassword(
-    req: IResetPasswordReq,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    try {
-      const { token, newPassword } = req.body;
-
-      await authService.resetPassword({ token, newPassword });
-
-      const responseBody: IResetPasswordRes = {
-        success: true,
-        message: 'Password reset successful',
-      };
-
-      res.status(HttpStatusCodes.OK).json(responseBody);
-    } catch (error) {
-      return handleControllerError('AuthController.resetPassword', error, next);
     }
   }
 }

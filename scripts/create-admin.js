@@ -1,95 +1,108 @@
 /**
  * Create Admin User Script
  *
- * Creates a user in Supabase Auth and inserts a corresponding row in the
- * public.users table with the admin role.
+ * Creates a passwordless Cognito user (verified email, random unknown
+ * password) and the matching admin item in the Users table. The admin signs
+ * in with the emailed code through POST /auth/login and /auth/login/verify.
  *
  * Usage:
- *   node scripts/create-admin.js
+ *   node scripts/create-admin.js <email> "<full name>"
+ *
+ * Required environment (shell or .env): AWS_REGION, COGNITO_USER_POOL_ID,
+ * USERS_TABLE. AWS credentials come from the default provider chain. The
+ * pool id and table name are the UserPoolId and UsersTableName stack outputs.
  */
 
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
+const { randomBytes } = require('crypto');
 
-// ---------------------------------------------------------------------------
-// Config — edit these before running
-// ---------------------------------------------------------------------------
+const {
+  AdminCreateUserCommand,
+  AdminDeleteUserCommand,
+  AdminSetUserPasswordCommand,
+  CognitoIdentityProviderClient,
+} = require('@aws-sdk/client-cognito-identity-provider');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, PutCommand } = require('@aws-sdk/lib-dynamodb');
 
-const EMAIL = 'jeremy.nathan1@gmail.com';
-const PASSWORD = 'password';
-const NAME = 'Jeremy Admin';
-const TENANT_ID = '00000000-0000-0000-0000-000000000001'; // paste your tenant UUID here
+const [email, name] = process.argv.slice(2);
+const { AWS_REGION, COGNITO_USER_POOL_ID, USERS_TABLE } = process.env;
 
-// ---------------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------------
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !serviceRoleKey) {
-  console.error('❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env');
+if (!email || !name) {
+  console.error('Usage: node scripts/create-admin.js <email> "<full name>"');
   process.exit(1);
 }
 
-if (!TENANT_ID) {
-  console.error('❌ TENANT_ID is empty — paste your tenant UUID into the script before running');
-  process.exit(1);
+for (const [variable, value] of Object.entries({ AWS_REGION, COGNITO_USER_POOL_ID, USERS_TABLE })) {
+  if (!value) {
+    console.error(`Missing ${variable}`);
+    process.exit(1);
+  }
 }
 
-const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
+const cognito = new CognitoIdentityProviderClient({ region: AWS_REGION });
+const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
 
 async function createAdminUser() {
-  // 1. Create auth user
-  console.log(`Creating auth user for ${EMAIL}...`);
-  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-    email: EMAIL,
-    password: PASSWORD,
-    email_confirm: true,
-  });
+  const username = email.toLowerCase();
 
-  if (authError) {
-    console.error('❌ Failed to create auth user:', authError.message);
-    process.exit(1);
+  console.log(`Creating Cognito user for ${username}...`);
+  const created = await cognito.send(
+    new AdminCreateUserCommand({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      Username: username,
+      MessageAction: 'SUPPRESS',
+      UserAttributes: [
+        { Name: 'email', Value: username },
+        { Name: 'email_verified', Value: 'true' },
+      ],
+    }),
+  );
+  const userId = created.User.Attributes.find((a) => a.Name === 'sub').Value;
+
+  try {
+    await cognito.send(
+      new AdminSetUserPasswordCommand({
+        UserPoolId: COGNITO_USER_POOL_ID,
+        Username: username,
+        Password: `${randomBytes(24).toString('base64url')}Aa1!`,
+        Permanent: true,
+      }),
+    );
+
+    console.log('Writing the user item...');
+    const now = new Date().toISOString();
+    await dynamo.send(
+      new PutCommand({
+        TableName: USERS_TABLE,
+        Item: {
+          id: userId,
+          email: username,
+          name,
+          role: 'admin',
+          status: 'active',
+          created_at: now,
+          updated_at: now,
+        },
+        ConditionExpression: 'attribute_not_exists(id)',
+      }),
+    );
+  } catch (error) {
+    await cognito
+      .send(new AdminDeleteUserCommand({ UserPoolId: COGNITO_USER_POOL_ID, Username: username }))
+      .catch(() => undefined);
+    throw error;
   }
 
-  const userId = authData.user.id;
-  console.log(`✅ Auth user created — UID: ${userId}`);
-
-  // 2. Insert row in users table
-  console.log('Inserting user row...');
-  const { error: dbError } = await adminClient.from('users').insert({
-    id: userId,
-    tenant_id: TENANT_ID,
-    email: EMAIL,
-    name: NAME,
-    role: 'admin',
-    status: 'active',
-  });
-
-  if (dbError) {
-    console.error('❌ Failed to insert user row:', dbError.message);
-    console.log('⚠️  Auth user was created but DB insert failed. Clean up manually if needed.');
-    console.log(`   Auth UID to delete: ${userId}`);
-    process.exit(1);
-  }
-
-  console.log('✅ User row inserted');
   console.log('');
-  console.log('--- Admin user created successfully ---');
-  console.log(`UID:       ${userId}`);
-  console.log(`Email:     ${EMAIL}`);
-  console.log(`Role:      admin`);
-  console.log(`Tenant ID: ${TENANT_ID}`);
+  console.log('--- Admin user created ---');
+  console.log(`ID:    ${userId}`);
+  console.log(`Email: ${username}`);
+  console.log('Role:  admin');
+  console.log('Sign in with POST /auth/login, then POST /auth/login/verify with the emailed code.');
 }
 
-createAdminUser().catch((err) => {
-  console.error('❌ Unexpected error:', err);
+createAdminUser().catch((error) => {
+  console.error('Failed to create the admin user:', error.message);
   process.exit(1);
 });
