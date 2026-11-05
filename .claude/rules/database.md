@@ -1,32 +1,25 @@
 # Database
 
-## Supabase Client
-* All database interactions go through the `SupabaseService` class. Repositories MUST NOT instantiate the Supabase client directly.
-* `SupabaseService` exposes wrapper methods for standard CRUD operations. Repositories call these methods by specifying the table, columns, filters, and any other parameters needed.
+## DynamoDB Client
+* All DynamoDB access goes through the `DynamoService` class (`src/services/dynamo.service.ts`). Repositories MUST NOT create AWS SDK clients or send commands directly.
+* `DynamoService` wraps the document client and exposes `get`, `put`, `update`, `delete`, `query`, `batchGet` and `transactWrite`. Repositories pass the table, key, index and expressions.
+* The wrapper aliases attribute names automatically, because `name` and `status` are DynamoDB reserved words and appear in index keys.
+* Table names come from environment variables defined in `serverless.yml` and read through `src/utils/env.ts`.
+* Supabase is being removed entirely (see `docs/` notes and the `migrate-to-serverless-lambda` change). Do NOT add Supabase code, `SupabaseService` calls or Supabase types.
+
+## Tables and Indexes
+* The design is `docs/dynamodb-access-patterns.html` (gitignored, so only on the owner's machine): one table per aggregate and multi-attribute GSIs on typed fields. Tables and indexes are declared in `serverless.yml`.
+* There is no tenant. Never put `tenant_id` in an item, key or index.
+* Index key attributes must be absent, never `null` and never an empty string. Repository mappers omit them when empty.
+* Every index is eventually consistent. Reads that decide authorization or uniqueness use `ConsistentRead` on the base table.
+* Changing a GSI key schema needs the index replaced, so index keys are decided before real data is written.
+
+## Item Types
+* There are no generated types. Item interfaces are written by hand in `src/types/` and used only in the Repository layer. Service and Controller layers use derived interfaces (`IUser`, `IGroup`, ...) built with `Pick` or `Omit`.
+* Services never return raw items; they map to the derived interface.
+
+## Timestamps
+* Every timestamp is stored in UTC as `YYYY-MM-DDTHH:mm:ss.sssZ`, written through one helper. Date-only and time-only fields are stored as given. Month and year boundaries are UTC (`src/utils/period.ts`).
 
 ## Relationships
-* The base Repository class exposes a `findWithRelations` method that accepts a table name, record ID, and an array of related table names.
-* The method dynamically builds the Supabase select string and leverages Supabase's native relationship querying — a single network call handles the join.
-* Concrete Repository classes (e.g. `UserRepository`) call `findWithRelations` and specify only which relations to include. They never write raw Supabase select strings directly.
-* Supabase's native relationship querying requires that foreign key constraints are properly defined in the Postgres schema. Ensure relationships are defined at the database level before using this pattern.
-
-## Edge Functions
-* Edge Functions are invoked from the **Service layer**, not the Repository layer.
-
-## Type Generation
-* The Supabase CLI is used to generate TypeScript types directly from the database schema.
-* Run the following command to generate types: `supabase gen types typescript --project-id your-project-id > src/types/database.types.ts`
-* Database model interfaces MUST be derived from these generated types. Do NOT manually define database model interfaces — the database schema is the single source of truth.
-* Anytime a schema change is made, the types MUST be regenerated immediately before continuing with implementation.
-* `IModel` as a manually defined parent interface is obsolete. Shared metadata fields like `created_at` and `updated_at` are already present in every Supabase-generated `Row` type.
-* Do NOT manually define model interfaces. Instead, derive domain model interfaces from the generated types using TypeScript utility types:
-```typescript
-import { Database } from '../types/database.types'
-
-// Raw generated type — use only in Repository layer
-type UserRow = Database['public']['Tables']['users']['Row']
-
-// Derived interface — use across Service and Controller layers
-type IUser = Pick<UserRow, 'id' | 'email' | 'created_at' | 'updated_at'>
-```
-* Derived interfaces live in `src/types/` alongside the generated types file.
+* DynamoDB has no joins. A read that needs related items is a query on an index, a batch get, or a field copied onto the item at write time; the access-pattern document says which.

@@ -55,7 +55,7 @@ The system SHALL NOT offer password login, password reset or password change, an
 - **THEN** the system returns 404
 
 ### Requirement: Logout revokes the session
-The system SHALL invalidate the caller's tokens through `POST /auth/logout`.
+The system SHALL invalidate the caller's tokens through `POST /auth/logout`: it signs the user out of Cognito and records the sign-out time on the user record, and the application SHALL reject any access token issued at or before that time, because the gateway authorizer checks only signature and expiry.
 
 #### Scenario: Revoked tokens
 - **WHEN** a client logs out and then calls a protected route with the old access token

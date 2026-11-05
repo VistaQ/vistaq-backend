@@ -1,5 +1,5 @@
 # Project Overview
-This repository is the backend API for a React/Vite frontend, moving from Express on Vercel with Supabase to AWS. The Express app runs as one Lambda behind an API Gateway HTTP API, data lives in DynamoDB (with Streams), and Cognito handles passwordless sign-in. Everything is defined in `serverless.yml` on Serverless Framework v4. The stack is AWS-only until the owner says otherwise. Supabase code stays until the DynamoDB layer replaces it.
+This repository is the backend API for a React/Vite frontend, moving from Express on Vercel with Supabase to AWS. The Express app runs as one Lambda behind an API Gateway HTTP API, data lives in DynamoDB (with Streams), and Cognito handles passwordless sign-in. Everything is defined in `serverless.yml` on Serverless Framework v4. The stack is AWS-only until the owner says otherwise. Supabase is being removed entirely: do not add Supabase code. Repositories not yet migrated still call it and fail on Lambda until they are rewritten (see the tasks in the OpenSpec change).
 
 # Workflow
 - Planned work lives in OpenSpec changes under `openspec/changes/`. The active change is `migrate-to-serverless-lambda`.

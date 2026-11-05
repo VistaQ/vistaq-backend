@@ -18,6 +18,7 @@ The backend runs as a long-lived Express server on Vercel, backed by Supabase (P
 - **BREAKING**: the tenant claim and `X-Tenant-Slug` lookup disappear (single-tenant, already decided); login becomes two steps (`POST /auth/login` then `POST /auth/login/verify`); `/auth/forgot-password`, `/auth/reset-password` and change-password are removed; register no longer takes a password.
 - **BREAKING**: `GET /prospects` for admins and master trainers is cursor-paginated (`limit`, `nextToken`); the coaching-session list returns attendance counts instead of embedded attendance rows; timestamps come back with a `Z` suffix instead of an offset.
 - Behaviour fix: trainers see the events they created.
+- Supabase is dropped entirely, with no hybrid period: a route that still calls an unmigrated Supabase repository fails on Lambda until that repository is rewritten.
 
 ## Capabilities
 
