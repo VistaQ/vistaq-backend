@@ -29,20 +29,26 @@ type AdminSelectResponse = {
  * database calls go through the wrapper methods exposed here.
  */
 class SupabaseService {
-  private readonly client: SupabaseClient<Database>;
-  private readonly adminClient: SupabaseClient<Database>;
+  private clientInstance?: SupabaseClient<Database>;
+  private adminClientInstance?: SupabaseClient<Database>;
 
-  public constructor() {
-    this.client = createClient<Database>(
+  // Created on first use: createClient throws on an invalid URL, and creating
+  // it at import crashed every Lambda cold start, not just the storage calls.
+  private get client(): SupabaseClient<Database> {
+    this.clientInstance ??= createClient<Database>(
       EnvVars.SupabaseUrl,
       EnvVars.SupabaseAnonKey,
     );
+    return this.clientInstance;
+  }
 
-    this.adminClient = createClient<Database>(
+  private get adminClient(): SupabaseClient<Database> {
+    this.adminClientInstance ??= createClient<Database>(
       EnvVars.SupabaseUrl,
       EnvVars.SupabaseServiceRoleKey,
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
+    return this.adminClientInstance;
   }
 
   // ---------------------------------------------------------------------------

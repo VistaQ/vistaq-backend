@@ -39,20 +39,6 @@ const EnvVars = {
   BackendBaseUrl: process.env.BACKEND_BASE_URL || '',
 };
 
-if (!EnvVars.SupabaseUrl.trim()) {
-  throw new Error('Missing required environment variable: SUPABASE_URL');
-}
-
-if (!EnvVars.SupabaseAnonKey.trim()) {
-  throw new Error('Missing required environment variable: SUPABASE_ANON_KEY');
-}
-
-if (!EnvVars.SupabaseServiceRoleKey.trim()) {
-  throw new Error(
-    'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY',
-  );
-}
-
 if (!EnvVars.TablePrefix.trim()) {
   throw new Error('Missing required environment variable: TABLE_PREFIX');
 }
