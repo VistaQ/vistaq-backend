@@ -50,6 +50,26 @@ const uploadBatches = new DynamoTable<{
   month: number;
 }>('UploadBatches');
 
+interface IAwardGuardItem {
+  subject_id: string;
+  activity: string;
+  user_id: string;
+  points: number;
+  subject_type: string;
+}
+
+export interface IAward {
+  user_id: string;
+  activity: string;
+  category: PointCategory;
+  points: number;
+  subject_type: string;
+  subject_id: string;
+  subject_label?: string;
+}
+
+const awardGuards = new DynamoTable<IAwardGuardItem>('AwardGuards');
+
 const MAX_AWARD_ATTEMPTS = 3;
 
 /******************************************************************************
@@ -81,10 +101,55 @@ class PointTransactionRepository {
     }
   }
 
+  /** Everything already awarded for a subject, read strongly consistent (PT5). */
+  async findGuards(subjectId: string): Promise<IAwardGuardItem[]> {
+    try {
+      return await awardGuards.queryAll({
+        keyCondition: 'subject_id = :subject',
+        values: { ':subject': subjectId },
+        consistent: true,
+      });
+    } catch (error) {
+      return handleRepositoryError(
+        'PointTransactionRepository.findGuards',
+        error,
+      );
+    }
+  }
+
+  // The guard, ledger row and totals go in one transaction, so a redelivered or
+  // concurrent stream record fails the guard and awards nothing (design K10).
+  async awardOnce(award: IAward): Promise<boolean> {
+    try {
+      await dynamoService.transactWrite([
+        awardGuards.putItem(
+          {
+            subject_id: award.subject_id,
+            activity: award.activity,
+            user_id: award.user_id,
+            points: award.points,
+            subject_type: award.subject_type,
+          },
+          { condition: 'attribute_not_exists(subject_id)' },
+        ),
+        ...this.ledgerItems(award),
+      ]);
+      return true;
+    } catch (error) {
+      if (error instanceof DynamoConditionFailedError) return false;
+      return handleRepositoryError(
+        'PointTransactionRepository.awardOnce',
+        error,
+      );
+    }
+  }
+
   // Totals are bucketed by the month the ledger row is written, as the old
   // leaderboard summed point_transactions by created_at.
   private ledgerItems(
-    entry: Omit<IPointTransaction, 'id' | 'created_at' | 'subject_label'>,
+    entry: Omit<IPointTransaction, 'id' | 'created_at' | 'subject_label'> & {
+      subject_label?: string;
+    },
   ): ITransactItem[] {
     const id = randomUUID();
     const createdAt = nowUtc();

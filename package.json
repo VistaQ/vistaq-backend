@@ -28,7 +28,9 @@
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1161.0",
     "@aws-sdk/client-dynamodb": "^3.1161.0",
+    "@aws-sdk/client-sqs": "^3.1162.0",
     "@aws-sdk/lib-dynamodb": "^3.1161.0",
+    "@aws-sdk/util-dynamodb": "^3.996.9",
     "@supabase/supabase-js": "^2.98.0",
     "@types/cors": "^2.8.19",
     "@types/multer": "^2.1.0",

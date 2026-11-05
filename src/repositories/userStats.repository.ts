@@ -50,6 +50,22 @@ class UserStatsRepository {
     }
   }
 
+  /** Writes the agent's buckets and deletes the listed months that no longer have contributors. */
+  async replaceForUser(
+    userId: string,
+    rows: IUserStats[],
+    staleYms: number[],
+  ): Promise<void> {
+    try {
+      await Promise.all([
+        ...rows.map((row) => userStats.put({ ...row, user_id: userId })),
+        ...staleYms.map((ym) => userStats.delete({ user_id: userId, ym })),
+      ]);
+    } catch (error) {
+      return handleRepositoryError('UserStatsRepository.replaceForUser', error);
+    }
+  }
+
   async findByMonths(yms: number[]): Promise<IUserStats[]> {
     try {
       const pages = await Promise.all(

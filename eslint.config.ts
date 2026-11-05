@@ -65,6 +65,7 @@ export default defineConfig([
       'src/controllers/**/*.ts',
       'src/routes/**/*.ts',
       'src/middleware/**/*.ts',
+      'src/handlers/**/*.ts',
     ],
     rules: { 'no-restricted-imports': ['error', noRepositoryImports] },
   },

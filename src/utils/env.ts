@@ -21,6 +21,7 @@ const EnvVars = {
   SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   TablePrefix: process.env.TABLE_PREFIX || '',
+  StatsQueueUrl: process.env.STATS_QUEUE_URL || '',
   CognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || '',
   CognitoClientId: process.env.COGNITO_CLIENT_ID || '',
   Stage: process.env.STAGE || '',

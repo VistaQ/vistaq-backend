@@ -64,12 +64,37 @@ provider:
             - dynamodb:UpdateItem
           Resource:
             - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${param:tablePrefix}*
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeStream
+            - dynamodb:GetRecords
+            - dynamodb:GetShardIterator
+            - dynamodb:ListStreams
+          Resource:
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${param:tablePrefix}*/stream/*
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+          Resource:
+            - Fn::GetAtt: [StatsQueue, Arn]
+            - Fn::GetAtt: [AwardPointsFailureQueue, Arn]
+            - Fn::GetAtt: [StatsStreamFailureQueue, Arn]
+        - Effect: Allow
+          Action:
+            - sqs:ChangeMessageVisibility
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+            - sqs:ReceiveMessage
+          Resource:
+            - Fn::GetAtt: [StatsQueue, Arn]
   environment:
     COGNITO_USER_POOL_ID:
       Ref: UserPool
     COGNITO_CLIENT_ID:
       Ref: UserPoolClient
     TABLE_PREFIX: ${param:tablePrefix}
+    STATS_QUEUE_URL:
+      Ref: StatsQueue
     NODE_ENV: production
     STAGE: ${sls:stage}
     ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS}
@@ -117,6 +142,65 @@ functions:
           path: /{proxy+}
           authorizer:
             name: cognito
+  awardPoints:
+    handler: src/handlers/awardPoints.handler
+    timeout: 60
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [ProspectsTable, StreamArn]
+          startingPosition: LATEST
+          batchSize: 25
+          maximumRetryAttempts: 5
+          bisectBatchOnFunctionError: true
+          functionResponseType: ReportBatchItemFailures
+          destinations:
+            onFailure:
+              type: sqs
+              arn:
+                Fn::GetAtt: [AwardPointsFailureQueue, Arn]
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [CoachingAttendanceTable, StreamArn]
+          startingPosition: LATEST
+          batchSize: 25
+          maximumRetryAttempts: 5
+          bisectBatchOnFunctionError: true
+          functionResponseType: ReportBatchItemFailures
+          destinations:
+            onFailure:
+              type: sqs
+              arn:
+                Fn::GetAtt: [AwardPointsFailureQueue, Arn]
+  statsStream:
+    handler: src/handlers/statsStream.handler
+    timeout: 30
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [ProspectsTable, StreamArn]
+          startingPosition: LATEST
+          batchSize: 100
+          maximumRetryAttempts: 5
+          bisectBatchOnFunctionError: true
+          functionResponseType: ReportBatchItemFailures
+          destinations:
+            onFailure:
+              type: sqs
+              arn:
+                Fn::GetAtt: [StatsStreamFailureQueue, Arn]
+  statsRecompute:
+    handler: src/handlers/statsRecompute.handler
+    timeout: 60
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [StatsQueue, Arn]
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
 
 resources:
   Conditions:
@@ -894,6 +978,32 @@ resources:
         KeySchema:
           - AttributeName: key
             KeyType: HASH
+    AwardPointsFailureQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-award-points-failures
+        MessageRetentionPeriod: 1209600
+    StatsStreamFailureQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-stats-stream-failures
+        MessageRetentionPeriod: 1209600
+    StatsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-stats.fifo
+        FifoQueue: true
+        VisibilityTimeout: 360
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt: [StatsDeadLetterQueue, Arn]
+          maxReceiveCount: 5
+    StatsDeadLetterQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-stats-dlq.fifo
+        FifoQueue: true
+        MessageRetentionPeriod: 1209600
   Outputs:
     UsersTableName:
       Value:
