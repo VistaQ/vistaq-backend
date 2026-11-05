@@ -1,5 +1,4 @@
 import { DynamoTable } from '@src/services/dynamo.service';
-import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 import { nowUtc } from '@src/utils/period';
 
@@ -13,7 +12,7 @@ interface IGroupTrainerItem {
   created_at: string;
 }
 
-const groupTrainers = new DynamoTable<IGroupTrainerItem>(EnvVars.GroupTrainersTable);
+const groupTrainers = new DynamoTable<IGroupTrainerItem>('GroupTrainers');
 
 export interface IGroupTrainerRow {
   group_id: string;

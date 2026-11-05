@@ -10,10 +10,12 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 
+import type { TableName } from '@src/constants/tables';
 import {
   DynamoConditionFailedError,
   DynamoServiceError,
 } from '@src/models/errors/dynamo.error';
+import EnvVars from '@src/utils/env';
 import { nowUtc } from '@src/utils/period';
 
 /******************************************************************************
@@ -405,7 +407,11 @@ export type ITableQuery = Omit<IQueryParams, 'table'>;
 
 /** One table and its item type, bound once per repository. */
 export class DynamoTable<TItem extends object> {
-  constructor(readonly name: string) {}
+  readonly name: string;
+
+  constructor(table: TableName) {
+    this.name = `${EnvVars.TablePrefix}${table}`;
+  }
 
   get(
     key: IKey,

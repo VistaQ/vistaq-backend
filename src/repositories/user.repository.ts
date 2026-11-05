@@ -6,7 +6,6 @@ import {
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import { DynamoTable } from '@src/services/dynamo.service';
 import type { IUser, IUserContext } from '@src/types/auth.types';
-import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 import { nowUtc } from '@src/utils/period';
 
@@ -61,7 +60,7 @@ export interface IUserUpdate {
   fyc_target?: number | null;
 }
 
-const users = new DynamoTable<IUserItem>(EnvVars.UsersTable);
+const users = new DynamoTable<IUserItem>('Users');
 
 const OPTIONAL_FIELDS = [
   'agent_code',

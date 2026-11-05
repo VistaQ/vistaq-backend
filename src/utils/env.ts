@@ -20,9 +20,7 @@ const EnvVars = {
   SupabaseUrl: process.env.SUPABASE_URL || '',
   SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-  UsersTable: process.env.USERS_TABLE || '',
-  AgentCodesTable: process.env.AGENT_CODES_TABLE || '',
-  GroupTrainersTable: process.env.GROUP_TRAINERS_TABLE || '',
+  TablePrefix: process.env.TABLE_PREFIX || '',
   CognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || '',
   CognitoClientId: process.env.COGNITO_CLIENT_ID || '',
   Stage: process.env.STAGE || '',
@@ -54,18 +52,8 @@ if (!EnvVars.SupabaseServiceRoleKey.trim()) {
   );
 }
 
-if (!EnvVars.UsersTable.trim()) {
-  throw new Error('Missing required environment variable: USERS_TABLE');
-}
-
-if (!EnvVars.AgentCodesTable.trim()) {
-  throw new Error('Missing required environment variable: AGENT_CODES_TABLE');
-}
-
-if (!EnvVars.GroupTrainersTable.trim()) {
-  throw new Error(
-    'Missing required environment variable: GROUP_TRAINERS_TABLE',
-  );
+if (!EnvVars.TablePrefix.trim()) {
+  throw new Error('Missing required environment variable: TABLE_PREFIX');
 }
 
 if (!EnvVars.CognitoUserPoolId.trim()) {

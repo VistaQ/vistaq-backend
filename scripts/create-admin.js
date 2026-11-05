@@ -8,9 +8,11 @@
  * Usage:
  *   node scripts/create-admin.js <email> "<full name>"
  *
- * Required environment (shell or .env): AWS_REGION, COGNITO_USER_POOL_ID,
- * USERS_TABLE. AWS credentials come from the default provider chain. The
- * pool id and table name are the UserPoolId and UsersTableName stack outputs.
+ * Required environment (shell or .env): COGNITO_USER_POOL_ID and TABLE_PREFIX
+ * (for example dev_vistaq_). AWS_REGION is optional: a pool id starts with its
+ * region (ap-southeast-5_x4t7o3QfG). AWS credentials come from the default
+ * provider chain. The pool id is the UserPoolId stack output. When the Cognito
+ * user already exists (a stage whose tables were recreated), its sub is reused.
  */
 
 require('dotenv').config();
@@ -19,6 +21,7 @@ const { randomBytes } = require('crypto');
 const {
   AdminCreateUserCommand,
   AdminDeleteUserCommand,
+  AdminGetUserCommand,
   AdminSetUserPasswordCommand,
   CognitoIdentityProviderClient,
 } = require('@aws-sdk/client-cognito-identity-provider');
@@ -26,14 +29,16 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand } = require('@aws-sdk/lib-dynamodb');
 
 const [email, name] = process.argv.slice(2);
-const { AWS_REGION, COGNITO_USER_POOL_ID, USERS_TABLE } = process.env;
+const { COGNITO_USER_POOL_ID, TABLE_PREFIX } = process.env;
+const AWS_REGION = process.env.AWS_REGION || COGNITO_USER_POOL_ID?.split('_')[0];
+const USERS_TABLE = `${TABLE_PREFIX}Users`;
 
 if (!email || !name) {
   console.error('Usage: node scripts/create-admin.js <email> "<full name>"');
   process.exit(1);
 }
 
-for (const [variable, value] of Object.entries({ AWS_REGION, COGNITO_USER_POOL_ID, USERS_TABLE })) {
+for (const [variable, value] of Object.entries({ AWS_REGION, COGNITO_USER_POOL_ID, TABLE_PREFIX })) {
   if (!value) {
     console.error(`Missing ${variable}`);
     process.exit(1);
@@ -47,18 +52,30 @@ async function createAdminUser() {
   const username = email.toLowerCase();
 
   console.log(`Creating Cognito user for ${username}...`);
-  const created = await cognito.send(
-    new AdminCreateUserCommand({
-      UserPoolId: COGNITO_USER_POOL_ID,
-      Username: username,
-      MessageAction: 'SUPPRESS',
-      UserAttributes: [
-        { Name: 'email', Value: username },
-        { Name: 'email_verified', Value: 'true' },
-      ],
-    }),
-  );
-  const userId = created.User.Attributes.find((a) => a.Name === 'sub').Value;
+  let userId;
+  let createdNow = true;
+  try {
+    const created = await cognito.send(
+      new AdminCreateUserCommand({
+        UserPoolId: COGNITO_USER_POOL_ID,
+        Username: username,
+        MessageAction: 'SUPPRESS',
+        UserAttributes: [
+          { Name: 'email', Value: username },
+          { Name: 'email_verified', Value: 'true' },
+        ],
+      }),
+    );
+    userId = created.User.Attributes.find((a) => a.Name === 'sub').Value;
+  } catch (error) {
+    if (error.name !== 'UsernameExistsException') throw error;
+    console.log('The Cognito user already exists; reusing it.');
+    const existing = await cognito.send(
+      new AdminGetUserCommand({ UserPoolId: COGNITO_USER_POOL_ID, Username: username }),
+    );
+    userId = existing.UserAttributes.find((a) => a.Name === 'sub').Value;
+    createdNow = false;
+  }
 
   try {
     await cognito.send(
@@ -88,9 +105,11 @@ async function createAdminUser() {
       }),
     );
   } catch (error) {
-    await cognito
-      .send(new AdminDeleteUserCommand({ UserPoolId: COGNITO_USER_POOL_ID, Username: username }))
-      .catch(() => undefined);
+    if (createdNow) {
+      await cognito
+        .send(new AdminDeleteUserCommand({ UserPoolId: COGNITO_USER_POOL_ID, Username: username }))
+        .catch(() => undefined);
+    }
     throw error;
   }
 

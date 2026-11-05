@@ -2,9 +2,11 @@
 
 ## DynamoDB Client
 * All DynamoDB access goes through the `DynamoService` class (`src/services/dynamo.service.ts`). Repositories MUST NOT create AWS SDK clients or send commands directly.
-* `DynamoService` wraps the document client and exposes `get`, `put`, `update`, `delete`, `query`, `batchGet` and `transactWrite`. Repositories pass the table, key, index and expressions.
-* The wrapper aliases attribute names automatically, because `name` and `status` are DynamoDB reserved words and appear in index keys.
-* Table names come from environment variables defined in `serverless.yml` and read through `src/utils/env.ts`.
+* Each repository binds its tables once at module level by base name: `const users = new DynamoTable<IUserItem>('Users');`. Base names are the typed list in `src/constants/tables.ts`. Methods call `users.get`, `users.put`, `users.update`, `users.updateFields`, `users.delete`, `users.query`, `users.queryAll` and `users.batchGet`, passing only the key, index and expressions. Never pass a table name per call.
+* `updateFields(key, fields, options)` is the partial update: it sets each defined field, removes each `null` one and stamps `updated_at`. Use it instead of building SET/REMOVE expressions by hand.
+* Writes that span items or tables go through `dynamoService.transactWrite([...])` with items built by the tables (`users.putItem`, `users.updateItem`, `users.deleteItem`).
+* `DynamoService` underneath wraps the document client, maps condition failures to `DynamoConditionFailedError`, and aliases attribute names automatically, because `name` and `status` are DynamoDB reserved words and appear in index keys.
+* Deployed table names are `<prefix><BaseName>`, for example `stg_vistaq_Users`. The prefix is the `tablePrefix` param in `serverless.yml` (`dev_vistaq_`, `stg_vistaq_`, `prod_vistaq_`) and reaches the function as the one `TABLE_PREFIX` variable, read through `src/utils/env.ts`. A new table is added to `TABLE_NAMES` and to `serverless.yml` with `TableName: ${param:tablePrefix}<BaseName>`.
 * Supabase is being removed entirely (see `docs/` notes and the `migrate-to-serverless-lambda` change). Do NOT add Supabase code, `SupabaseService` calls or Supabase types.
 
 ## Tables and Indexes

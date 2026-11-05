@@ -6,7 +6,6 @@ import { AgentCodeInvalidError } from '@src/models/errors/auth.errors';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import dynamoService, { DynamoTable } from '@src/services/dynamo.service';
 import type { IAgentCode } from '@src/types/agentCode';
-import EnvVars from '@src/utils/env';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
 import { nowUtc } from '@src/utils/period';
 
@@ -22,7 +21,7 @@ interface IAgentCodeItem {
   updated_at: string;
 }
 
-const agentCodes = new DynamoTable<IAgentCodeItem>(EnvVars.AgentCodesTable);
+const agentCodes = new DynamoTable<IAgentCodeItem>('AgentCodes');
 
 function toAgentCode(item: IAgentCodeItem): IAgentCode {
   return {

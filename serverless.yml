@@ -1,4 +1,4 @@
-service: vistaq-backend
+service: vistaq
 
 frameworkVersion: '4'
 
@@ -6,9 +6,14 @@ params:
   default:
     deletionProtection: ACTIVE
     tableDeletionPolicy: Retain
+    tablePrefix: ${sls:stage}_vistaq_
   dev:
     deletionProtection: INACTIVE
     tableDeletionPolicy: Delete
+  staging:
+    tablePrefix: stg_vistaq_
+  production:
+    tablePrefix: prod_vistaq_
 
 provider:
   name: aws
@@ -56,32 +61,13 @@ provider:
             - dynamodb:Query
             - dynamodb:UpdateItem
           Resource:
-            - Fn::GetAtt: [UsersTable, Arn]
-            - Fn::Join:
-                - ''
-                - - Fn::GetAtt: [UsersTable, Arn]
-                  - /index/*
-            - Fn::GetAtt: [AgentCodesTable, Arn]
-            - Fn::Join:
-                - ''
-                - - Fn::GetAtt: [AgentCodesTable, Arn]
-                  - /index/*
-            - Fn::GetAtt: [GroupTrainersTable, Arn]
-            - Fn::Join:
-                - ''
-                - - Fn::GetAtt: [GroupTrainersTable, Arn]
-                  - /index/*
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${param:tablePrefix}*
   environment:
     COGNITO_USER_POOL_ID:
       Ref: UserPool
     COGNITO_CLIENT_ID:
       Ref: UserPoolClient
-    USERS_TABLE:
-      Ref: UsersTable
-    AGENT_CODES_TABLE:
-      Ref: AgentCodesTable
-    GROUP_TRAINERS_TABLE:
-      Ref: GroupTrainersTable
+    TABLE_PREFIX: ${param:tablePrefix}
     NODE_ENV: production
     STAGE: ${sls:stage}
     ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS}
@@ -188,7 +174,7 @@ resources:
       DeletionPolicy: ${param:tableDeletionPolicy}
       UpdateReplacePolicy: ${param:tableDeletionPolicy}
       Properties:
-        TableName: ${self:service}-${sls:stage}-users
+        TableName: ${param:tablePrefix}Users
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
           - AttributeName: id
@@ -240,7 +226,7 @@ resources:
       DeletionPolicy: ${param:tableDeletionPolicy}
       UpdateReplacePolicy: ${param:tableDeletionPolicy}
       Properties:
-        TableName: ${self:service}-${sls:stage}-agent-codes
+        TableName: ${param:tablePrefix}AgentCodes
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
           - AttributeName: agent_code
@@ -264,7 +250,7 @@ resources:
       DeletionPolicy: ${param:tableDeletionPolicy}
       UpdateReplacePolicy: ${param:tableDeletionPolicy}
       Properties:
-        TableName: ${self:service}-${sls:stage}-group-trainers
+        TableName: ${param:tablePrefix}GroupTrainers
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
           - AttributeName: group_id
@@ -290,7 +276,7 @@ resources:
       DeletionPolicy: ${param:tableDeletionPolicy}
       UpdateReplacePolicy: ${param:tableDeletionPolicy}
       Properties:
-        TableName: ${self:service}-${sls:stage}-point-transactions
+        TableName: ${param:tablePrefix}PointTransactions
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
           - AttributeName: user_id
