@@ -153,6 +153,9 @@ functions:
           method: ANY
           path: /api/internal/{proxy+}
       - httpApi:
+          method: OPTIONS
+          path: /{proxy+}
+      - httpApi:
           method: ANY
           path: /{proxy+}
           authorizer:
