@@ -241,7 +241,7 @@ describe('ProspectController.getAll', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospects } when service returns a non-empty array', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockResolvedValue([mockProspect]);
+    jest.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [mockProspect] });
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -258,7 +258,7 @@ describe('ProspectController.getAll', () => {
   });
 
   it('returns 200 with { success: true, data: [] } when service returns an empty array', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockResolvedValue([]);
+    jest.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [] });
 
     const req = makeBaseReq();
     const res = makeRes();

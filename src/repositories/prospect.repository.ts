@@ -68,7 +68,14 @@ export interface IProspectUpdate {
 
 const prospects = new DynamoTable<IProspectItem>('Prospects');
 
-const STAGES = ['prospect', 'appointment', 'sales'] as const;
+export const PROSPECT_STAGES = ['prospect', 'appointment', 'sales'] as const;
+
+export interface IStageCursor {
+  lastKey?: { id: string; current_stage: string; updated_at: string };
+  done?: boolean;
+}
+
+export type IProspectCursor = Partial<Record<string, IStageCursor>>;
 
 function toProspect(item: IProspectItem): IProspect {
   return {
@@ -164,24 +171,62 @@ class ProspectRepository {
     }
   }
 
-  async findAll(): Promise<IProspect[]> {
+  // P5: each stage is read newest-first from byStage and the pages are merged,
+  // so the cursor records, per stage, the last item handed out (or that the
+  // stage is exhausted) rather than DynamoDB's own LastEvaluatedKey.
+  async findPage(
+    stages: readonly string[],
+    limit: number,
+    cursor: IProspectCursor,
+  ): Promise<{ items: IProspect[]; cursor: IProspectCursor | null }> {
     try {
+      const open = stages.filter((stage) => !cursor[stage]?.done);
       const pages = await Promise.all(
-        STAGES.map((stage) =>
-          prospects.queryAll({
+        open.map((stage) =>
+          prospects.query({
             index: 'byStage',
             keyCondition: 'current_stage = :stage',
             values: { ':stage': stage },
             descending: true,
+            limit,
+            startKey: cursor[stage]?.lastKey,
           }),
         ),
       );
-      return pages
-        .flat()
-        .map(toProspect)
-        .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+
+      const taken = pages
+        .flatMap((page, i) =>
+          page.items.map((item) => ({ stage: open[i], item })),
+        )
+        // Stable sort on updated_at only: ties keep each stage's query order, so
+        // the per-stage cursor never passes an item it has not handed out.
+        .sort((a, b) => b.item.updated_at.localeCompare(a.item.updated_at))
+        .slice(0, limit);
+
+      const next: IProspectCursor = { ...cursor };
+      open.forEach((stage, i) => {
+        const consumed = taken.filter((entry) => entry.stage === stage);
+        const last = consumed[consumed.length - 1]?.item;
+        if (last) {
+          next[stage] = {
+            lastKey: {
+              id: last.id,
+              current_stage: last.current_stage,
+              updated_at: last.updated_at,
+            },
+          };
+        }
+        if (consumed.length === pages[i].items.length && !pages[i].lastKey) {
+          next[stage] = { done: true };
+        }
+      });
+
+      return {
+        items: taken.map((entry) => toProspect(entry.item)),
+        cursor: stages.some((stage) => !next[stage]?.done) ? next : null,
+      };
     } catch (error) {
-      return handleRepositoryError('ProspectRepository.findAll', error);
+      return handleRepositoryError('ProspectRepository.findPage', error);
     }
   }
 

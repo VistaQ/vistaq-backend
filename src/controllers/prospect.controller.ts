@@ -1,6 +1,10 @@
 import type { NextFunction, Response } from 'express';
+import { z } from 'zod';
 
-import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
+import {
+  InvalidPageTokenError,
+  ProspectNotFoundError,
+} from '@src/models/errors/prospect.errors';
 import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import prospectService from '@src/services/prospect.service';
@@ -29,7 +33,14 @@ export interface ICreateProspectRes extends IBaseRes {
 export interface IGetProspectsRes extends IBaseRes {
   success: boolean;
   data: IProspect[];
+  nextToken?: string;
 }
+
+export const listProspectsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  nextToken: z.string().min(1).optional(),
+  stage: z.enum(['prospect', 'appointment', 'sales']).optional(),
+});
 
 export interface IGetProspectByIdReq extends IBaseReq {
   params: { prospectId: string };
@@ -114,15 +125,32 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const prospects = await prospectService.getProspects(callerOf(req));
+      const parsed = listProspectsQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          message: 'Validation failed',
+          errors: parsed.error.issues,
+        });
+        return;
+      }
+
+      const page = await prospectService.getProspects(
+        callerOf(req),
+        parsed.data,
+      );
 
       const responseBody: IGetProspectsRes = {
         success: true,
-        data: prospects,
+        data: page.prospects,
+        ...(page.nextToken && { nextToken: page.nextToken }),
       };
 
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
+      if (error instanceof InvalidPageTokenError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
       return handleControllerError('ProspectController.getAll', error, next);
     }
   }
