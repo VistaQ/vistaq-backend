@@ -77,11 +77,11 @@ The system SHALL reject requests to protected routes that lack a valid Cognito a
 - **THEN** the request is accepted by the application
 
 ### Requirement: CORS is answered at the gateway
-The HTTP API SHALL answer CORS preflight (`OPTIONS`) requests itself from the stage's allowed origins, without invoking the function, and SHALL add the CORS headers to responses only for those origins.
+The HTTP API SHALL answer CORS preflight (`OPTIONS`) requests with a success status and the stage's CORS headers without requiring a token, and SHALL add the CORS headers to responses only for the stage's allowed origins.
 
 #### Scenario: Preflight request
 - **WHEN** a browser on an allowed origin sends an `OPTIONS` preflight for a protected route without a token
-- **THEN** API Gateway answers it with the CORS headers and the function is not invoked
+- **THEN** the response has a 2xx status and the CORS headers for that origin, and the Cognito authorizer does not run
 
 #### Scenario: Origin not allowed
 - **WHEN** a browser on an origin outside the stage's list calls the API
