@@ -1,9 +1,6 @@
 import '../../helpers/setEnv';
 
 // Set env vars BEFORE importing — EnvVars captures them at module load time
-process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'test-anon';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-srk';
 process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
 process.env.ETL_SERVICE_URL = 'http://etl';
 process.env.ETL_API_KEY = 'test-key';

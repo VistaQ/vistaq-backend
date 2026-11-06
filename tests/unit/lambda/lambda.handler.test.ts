@@ -22,9 +22,6 @@ describe('Lambda handler', () => {
   let handler: IHandler;
 
   beforeAll(async () => {
-    process.env.SUPABASE_URL ??= 'http://supabase.test';
-    process.env.SUPABASE_ANON_KEY ??= 'test-anon-key';
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-key';
     process.env.USERS_TABLE ??= 'users-table';
     process.env.AGENT_CODES_TABLE ??= 'agent-codes-table';
     process.env.GROUP_TRAINERS_TABLE ??= 'group-trainers-table';

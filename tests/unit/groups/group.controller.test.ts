@@ -1,8 +1,6 @@
 import '../../helpers/setEnv';
 
 // Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects
@@ -14,27 +12,7 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// SupabaseService mock — prevent real client instantiation
-// ---------------------------------------------------------------------------
 
-jest.mock('@src/services/supabase.service', () => ({
-  __esModule: true,
-  default: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    userInsert: jest.fn(),
-  },
-  supabaseService: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    userInsert: jest.fn(),
-  },
-}));
 
 import type { Response, NextFunction } from 'express';
 

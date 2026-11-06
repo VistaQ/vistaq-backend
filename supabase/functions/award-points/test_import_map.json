@@ -1,6 +1,0 @@
-{
-  "imports": {
-    "@supabase/supabase-js": "./_test_mock_supabase.ts",
-    "npm:@supabase/supabase-js@^2": "./_test_mock_supabase.ts"
-  }
-}

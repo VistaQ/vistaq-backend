@@ -1,2 +1,0 @@
-ALTER TABLE users
-  ADD COLUMN sales_target NUMERIC(12, 2) NULL DEFAULT NULL;

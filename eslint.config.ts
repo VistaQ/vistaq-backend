@@ -16,7 +16,6 @@ export default defineConfig([
   globalIgnores([
     '**/dist/**',
     '.serverless/**',
-    'supabase/functions/**',
     'src/types/database.types.ts',
   ]),
   {

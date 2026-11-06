@@ -1,13 +1,13 @@
-import etlService from '@src/services/etl.service';
-import reportJobRepository from '@src/repositories/reportJob.repository';
-import salesReportService from '@src/services/salesReport.service';
-import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
-import supabaseService from '@src/services/supabase.service';
 import {
   JobNotRetryableError,
   ReportJobNotFoundError,
 } from '@src/models/errors/reportJob.errors';
 import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
+import reportJobRepository from '@src/repositories/reportJob.repository';
+import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
+import etlService from '@src/services/etl.service';
+import salesReportService from '@src/services/salesReport.service';
+import storageService from '@src/services/storage.service';
 import type {
   ICompleteJobParams,
   ICreateJobParams,
@@ -17,7 +17,6 @@ import type { IEtlResult } from '@src/types/salesReport.types';
 import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
-const REPORTS_BUCKET = 'reports-raw';
 const SIGNED_URL_TTL_SECONDS = 600; // 10 min — covers ETL pull + processing safety margin
 const XLSX_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -42,18 +41,13 @@ class ReportJobService {
         );
       }
 
-      const storagePath = `${params.tenantId}/${params.reportYear}-${String(params.reportMonth).padStart(2, '0')}/${Date.now()}-${params.fileName}`;
+      const storagePath = `${params.reportYear}-${String(params.reportMonth).padStart(2, '0')}/${Date.now()}-${params.fileName}`;
 
-      // 1. Upload file to Storage
-      const upload = await supabaseService.uploadToStorage(
-        REPORTS_BUCKET,
+      await storageService.upload(
         storagePath,
         params.fileBuffer,
         XLSX_CONTENT_TYPE,
       );
-      if (upload.error) {
-        throw new Error(`Storage upload failed: ${upload.error.message}`);
-      }
 
       // 2. Insert job row (status defaults to 'pending'). The repository
       // generates the public-facing `reference` and retries once on a
@@ -81,10 +75,14 @@ class ReportJobService {
   async completeJob(params: ICompleteJobParams): Promise<void> {
     try {
       const job = await reportJobRepository.findByReference(params.reference);
-      if (!job) throw new ReportJobNotFoundError(`Job ${params.reference} not found`);
+      if (!job)
+        throw new ReportJobNotFoundError(`Job ${params.reference} not found`);
 
       if (params.status === 'failed') {
-        await reportJobRepository.markFailed(job.reference, params.error ?? 'Unknown ETL failure');
+        await reportJobRepository.markFailed(
+          job.reference,
+          params.error ?? 'Unknown ETL failure',
+        );
         return;
       }
 
@@ -103,7 +101,11 @@ class ReportJobService {
         reportMonth: job.report_month,
       });
 
-      await reportJobRepository.markCompleted(job.reference, result.batchId, result);
+      await reportJobRepository.markCompleted(
+        job.reference,
+        result.batchId,
+        result,
+      );
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) throw error;
       return handleServiceError('ReportJobService.completeJob', error);
@@ -141,8 +143,7 @@ class ReportJobService {
   }
 
   private async kickoffEtl(job: IReportJob): Promise<void> {
-    const fileUrl = await supabaseService.createSignedDownloadUrl(
-      REPORTS_BUCKET,
+    const fileUrl = await storageService.signedDownloadUrl(
       job.storage_path,
       SIGNED_URL_TTL_SECONDS,
     );

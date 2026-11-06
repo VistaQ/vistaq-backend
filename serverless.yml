@@ -74,6 +74,16 @@ provider:
             - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${param:tablePrefix}*/stream/*
         - Effect: Allow
           Action:
+            - s3:DeleteObject
+            - s3:GetObject
+            - s3:PutObject
+          Resource:
+            - Fn::Join:
+                - ''
+                - - Fn::GetAtt: [ReportsBucket, Arn]
+                  - /*
+        - Effect: Allow
+          Action:
             - sqs:SendMessage
           Resource:
             - Fn::GetAtt: [StatsQueue, Arn]
@@ -95,15 +105,14 @@ provider:
     TABLE_PREFIX: ${param:tablePrefix}
     STATS_QUEUE_URL:
       Ref: StatsQueue
+    REPORTS_BUCKET:
+      Ref: ReportsBucket
     NODE_ENV: production
     STAGE: ${sls:stage}
     ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS}
     BACKEND_BASE_URL: ${env:BACKEND_BASE_URL}
     ETL_SERVICE_URL: ${env:ETL_SERVICE_URL}
     ETL_API_KEY: ${env:ETL_API_KEY}
-    SUPABASE_URL: ${env:SUPABASE_URL, ''}
-    SUPABASE_ANON_KEY: ${env:SUPABASE_ANON_KEY, ''}
-    SUPABASE_SERVICE_ROLE_KEY: ${env:SUPABASE_SERVICE_ROLE_KEY, ''}
 
 package:
   patterns:
@@ -978,6 +987,19 @@ resources:
         KeySchema:
           - AttributeName: key
             KeyType: HASH
+    ReportsBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerEnforced
     AwardPointsFailureQueue:
       Type: AWS::SQS::Queue
       Properties:

@@ -1,12 +1,3 @@
-import type { Database } from '@src/types/database.types';
-
-/******************************************************************************
-                            Raw Row Types (Repository layer only)
-******************************************************************************/
-
-type TenantsRow = Database['public']['Tables']['tenants']['Row'];
-type GroupTrainersRow = Database['public']['Tables']['group_trainers']['Row'];
-
 /******************************************************************************
                             Derived Domain Interfaces
 ******************************************************************************/
@@ -34,11 +25,6 @@ export interface IUserContext extends IUser {
   signed_out_at?: string | null;
 }
 
-export type ITenant = Pick<
-  TenantsRow,
-  'id' | 'slug' | 'name' | 'status' | 'created_at'
->;
-
 export interface ICaller {
   id: string;
   role: string;
@@ -54,10 +40,6 @@ export interface IGroup {
   created_at: string;
   updated_at: string;
 }
-export type IGroupTrainer = Pick<
-  GroupTrainersRow,
-  'group_id' | 'trainer_id' | 'created_at'
->;
 
 export type IUserWithManagedGroups = IUser & {
   managed_group_ids: string[];

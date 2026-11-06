@@ -1,8 +1,5 @@
 // Supply env vars before env.ts runs so the validation guards do not throw
 const env: Record<string, string> = {
-  SUPABASE_URL: 'https://test.supabase.co',
-  SUPABASE_ANON_KEY: 'test-anon-key',
-  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
   USERS_TABLE: 'users',
   AGENT_CODES_TABLE: 'agent-codes',
   GROUP_TRAINERS_TABLE: 'group-trainers',
@@ -16,11 +13,6 @@ for (const [name, value] of Object.entries(env)) {
   process.env[name] ??= value;
 }
 
-jest.mock('@src/services/supabase.service', () => ({
-  __esModule: true,
-  default: { userUpsert: jest.fn() },
-  supabaseService: { userUpsert: jest.fn() },
-}));
 
 import type { Response, NextFunction } from 'express';
 

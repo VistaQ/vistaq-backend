@@ -1,7 +1,4 @@
 const env: Record<string, string> = {
-  SUPABASE_URL: 'http://supabase.test',
-  SUPABASE_ANON_KEY: 'anon',
-  SUPABASE_SERVICE_ROLE_KEY: 'service',
   USERS_TABLE: 'users',
   AGENT_CODES_TABLE: 'agent-codes',
   GROUP_TRAINERS_TABLE: 'group-trainers',

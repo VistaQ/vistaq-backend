@@ -1,7 +1,4 @@
 const required: Record<string, string> = {
-  SUPABASE_URL: 'http://supabase.test',
-  SUPABASE_ANON_KEY: 'anon',
-  SUPABASE_SERVICE_ROLE_KEY: 'service',
   USERS_TABLE: 'users-table',
   AGENT_CODES_TABLE: 'agent-codes-table',
   GROUP_TRAINERS_TABLE: 'group-trainers-table',

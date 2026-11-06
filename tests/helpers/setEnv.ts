@@ -1,7 +1,4 @@
 const env: Record<string, string> = {
-  SUPABASE_URL: 'http://supabase.test',
-  SUPABASE_ANON_KEY: 'anon',
-  SUPABASE_SERVICE_ROLE_KEY: 'service',
   TABLE_PREFIX: 'test_vistaq_',
   COGNITO_USER_POOL_ID: 'pool-id',
   COGNITO_CLIENT_ID: 'client-id',

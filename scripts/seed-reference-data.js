@@ -28,8 +28,6 @@ if (!TABLE_PREFIX || !AWS_REGION) {
   process.exit(1);
 }
 
-// Ported from supabase/snippets/insert_points_config.sql and the sales
-// completion migration.
 const ACTIVITY_TYPES = [
   ['prospect_created', 'prospect', 'Added Prospect', 'prospect'],
   ['appointment_set', 'prospect', 'Appointment Set', 'prospect'],
