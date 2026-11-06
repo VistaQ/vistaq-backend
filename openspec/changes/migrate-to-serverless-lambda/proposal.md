@@ -39,6 +39,6 @@ The backend runs as a long-lived Express server on Vercel, backed by Supabase (P
 
 - Code: `src/lambda.ts` is the Lambda entry point (`src/main.ts` stays for local development); `src/middleware/auth.ts` reads the verified token subject and loads the user record; all repositories and `supabase.service.ts` replaced by DynamoDB access (task group 4); `src/services/auth.service.ts` calls Cognito instead of Supabase Auth.
 - Removed: `supabase/` (101 migrations, edge function), Vercel config and build scripts, the Supabase client and `SUPABASE_*` env vars, the logging service and its call sites, `scripts/seed-test-data.js`, Sentry and its seed script, and the `pino`, `pino-pretty`, `morgan` and `@sentry/node` dependencies.
-- Added: `scripts/seed.ts` with an `npm run seed` script, `serverless.yml`, an AWS SDK v3 dependency set, a Lambda adapter for Express, esbuild bundling via Serverless v4.
+- Added: `scripts/seed.ts` with an `npm run seed` script, an S3 bucket for uploaded report files (replacing Supabase Storage), `serverless.yml`, an AWS SDK v3 dependency set, a Lambda adapter for Express, esbuild bundling via Serverless v4.
 - Open API contract: unchanged except for the breaking items above; `openapi.yaml` must be updated.
 - Out of scope: report ingestion (a separate change replaces the multipart upload with a file upload or an API taking per-agent and per-group-leader payloads), so the sales-report, upload-batch, report-job and sales-award tables are provisional. The cleanup scheduler for old report files is dropped.
