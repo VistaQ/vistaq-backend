@@ -3,24 +3,13 @@
 ## Middleware
 
 * The `authenticate` middleware lives at `src/middleware/auth.ts` and is exported as a named export.
-* It verifies the Bearer JWT via `supabaseService.verifyToken()` (which calls `adminClient.auth.getUser(token)`). This handles both HS256 and ES256 token algorithms automatically — do NOT use `jwt.verify()` with `SUPABASE_JWT_SECRET` for token verification.
-* After verification it decodes the token with `jwt.decode()` to extract custom claims.
-
-## Custom JWT Claims
-
-Supabase's custom access token hook embeds the following claims in the JWT payload:
-
-| Claim | Maps to | Description |
-|---|---|---|
-| `user_id` | `req.user.id` | The user's UUID |
-| `tenant_id` | `req.user.tenant_id` | The tenant UUID |
-| `app_role` | `req.user.role` | The user's application role (e.g. `"agent"`) |
-
-> **Important**: The JWT also contains a `role` field set to `"authenticated"` — this is Supabase's system role, NOT the application role. Always read `app_role` for the user's role.
+* It identifies the caller from a Cognito access token. Behind API Gateway the JWT authorizer has already verified the token, so the middleware reads `sub` and `iat` from the authorizer claims; anywhere else (local development) it verifies the bearer token with `aws-jwt-verify` against the same user pool and client.
+* It then loads the user from the Users table with a consistent read. Role, group and status come from that item, never from token claims.
+* It responds 401 when the token is missing or invalid, the user does not exist or has no role, or the token was issued at or before the user's `signed_out_at` (logout revokes tokens this way, because the gateway authorizer cannot see revocation). It responds 403 `Account is inactive` when the user's status is not `active`.
 
 ## Protecting Routes
 
-Apply `authenticate` as middleware before the controller handler:
+The gateway authorizer guards the catch-all route; the public routes listed in `serverless.yml` skip it. Apply `authenticate` before the controller handler on every protected route:
 
 ```typescript
 import { authenticate } from '@src/middleware/auth';
@@ -34,12 +23,4 @@ router.get(
 
 ## Accessing the Authenticated User
 
-`req.user` is typed as `{ id: string; tenant_id: string; role: string } | undefined` via declaration merging in `src/types/express.d.ts`.
-
-On routes protected by `authenticate`, use the non-null assertion since the middleware guarantees the property is set:
-
-```typescript
-const userId: string = req.user!.id;
-const tenantId: string = req.user!.tenant_id;
-const role: string = req.user!.role;
-```
+`req.user` is `{ id, tenant_id, role, group_id }` via declaration merging in `src/types/express.d.ts`; `tenant_id` is the transitional constant until task 4.8 removes it. On protected routes pass the caller to services with `callerOf(req)` from `src/utils/caller.ts`; services decide visibility through `scopeService` (`resolveGroupScope`, `resolveAgentScope`, `canReadAgent`).

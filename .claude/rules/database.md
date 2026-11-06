@@ -7,7 +7,7 @@
 * Writes that span items or tables go through `dynamoService.transactWrite([...])` with items built by the tables (`users.putItem`, `users.updateItem`, `users.deleteItem`).
 * `DynamoService` underneath wraps the document client, maps condition failures to `DynamoConditionFailedError`, and aliases attribute names automatically, because `name` and `status` are DynamoDB reserved words and appear in index keys.
 * Deployed table names are `<prefix><BaseName>`, for example `stg_vistaq_Users`. The prefix is the `tablePrefix` param in `serverless.yml` (`dev_vistaq_`, `stg_vistaq_`, `prod_vistaq_`) and reaches the function as the one `TABLE_PREFIX` variable, read through `src/utils/env.ts`. A new table is added to `TABLE_NAMES` and to `serverless.yml` with `TableName: ${param:tablePrefix}<BaseName>`.
-* Supabase is being removed entirely (see `docs/` notes and the `migrate-to-serverless-lambda` change). Do NOT add Supabase code, `SupabaseService` calls or Supabase types.
+* Supabase has been removed. Do NOT add Supabase code, clients or types back.
 
 ## Tables and Indexes
 * The design is `docs/dynamodb-access-patterns.html` (gitignored, so only on the owner's machine): one table per aggregate and multi-attribute GSIs on typed fields. Tables and indexes are declared in `serverless.yml`.
@@ -17,7 +17,7 @@
 * Changing a GSI key schema needs the index replaced, so index keys are decided before real data is written.
 
 ## Item Types
-* There are no generated types. Item interfaces are written by hand in `src/types/` and used only in the Repository layer. Service and Controller layers use derived interfaces (`IUser`, `IGroup`, ...) built with `Pick` or `Omit`.
+* There are no generated types. Item interfaces (`IUserItem`) are written by hand in their repository file and used only in the Repository layer (the seeder imports them as types). Service and Controller layers use the domain interfaces in `src/types/` (`IUser`, `IGroup`, ...).
 * Services never return raw items; they map to the derived interface.
 
 ## Timestamps

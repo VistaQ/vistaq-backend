@@ -23,7 +23,5 @@
 
 ## Database Model Interfaces
 
-* Database model interfaces are derived from Supabase-generated types, not manually defined.
-* The raw generated type (e.g. `UserRow`) is used only within the Repository layer.
-* A derived interface (e.g. `IUser`) is created using TypeScript utility types like `Pick` or `Omit` for use across Service and Controller layers.
-* Derived interfaces follow the naming pattern: `IUser`, `IOrder`, `IPayment` etc.
+* Item interfaces describe the stored DynamoDB item and are named `<Entity>Item` (`IUserItem`, `IProspectItem`). They are written by hand in the repository file and used only in the Repository layer.
+* Domain interfaces in `src/types/` are what Service and Controller layers use: `IUser`, `IGroup`, `IProspect` etc. Repositories map items to them before returning.

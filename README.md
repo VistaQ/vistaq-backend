@@ -2,47 +2,20 @@
 
 This project was created with [express-generator-typescript](https://github.com/seanpmaxwell/express-generator-typescript).
 
-**IMPORTANT** for demo purposes I had to disable `helmet` in production. In any real world app you should change these 3 lines of code in `src/server.ts`:
-
-```ts
-// eslint-disable-next-line n/no-process-env
-if (!process.env.DISABLE_HELMET) {
-  app.use(helmet());
-}
-```
-
-To just this:
-
-```ts
-app.use(helmet());
-```
-
 ## Getting Started
 
 ### Environment Variables
 
-Create a `.env` file in the project root with the following required variables:
+Create a `.env` file in the project root. Local runs read:
 
 ```env
-NODE_ENV=development
 PORT=3000
-HOST=localhost
-DISABLE_HELMET=true
-
-# Supabase
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
+TABLE_PREFIX=dev_vistaq_
+COGNITO_USER_POOL_ID=<UserPoolId stack output>
+COGNITO_CLIENT_ID=<UserPoolClientId stack output>
 ```
 
-### Database Type Generation
-
-After setting up your Supabase project, generate TypeScript types from your database schema:
-
-```bash
-supabase gen types typescript --project-id <your-project-id> > src/types/database.types.ts
-```
-
-Run this command whenever you make schema changes in Supabase to keep types in sync with the database.
+A deploy needs nothing from `.env`. `ETL_SERVICE_URL` and `ETL_API_KEY` are optional: without them report jobs cannot reach the ETL and every internal route (key-authenticated) answers 401; set both, with a long random key, to connect a real ETL. Allowed frontend origins are the per-stage `allowedOrigins` param in `serverless.yml`, and `REPORTS_BUCKET` and `STATS_QUEUE_URL` are set on the deployed functions from the stack. The local server sends no CORS headers, so a frontend on another port should use its dev-server proxy.
 
 ## Available Scripts
 
