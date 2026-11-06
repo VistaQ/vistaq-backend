@@ -122,11 +122,6 @@ provider:
       Ref: StatsQueue
     REPORTS_BUCKET:
       Ref: ReportsBucket
-    NODE_ENV: production
-    STAGE: ${sls:stage}
-    BACKEND_BASE_URL: ${env:BACKEND_BASE_URL}
-    ETL_SERVICE_URL: ${env:ETL_SERVICE_URL}
-    ETL_API_KEY: ${env:ETL_API_KEY}
 
 package:
   patterns:

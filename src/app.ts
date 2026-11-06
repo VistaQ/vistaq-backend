@@ -8,7 +8,7 @@ import { RouteError } from '@src/models/errors/route.error';
 import router from '@src/routes/router';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
-import EnvVars, { NodeEnvs } from './utils/env';
+import EnvVars from './utils/env';
 
 /******************************************************************************
                                 Setup
@@ -32,12 +32,7 @@ if (EnvVars.MaintenanceMode) {
   });
 }
 
-// Security headers (production only)
-if (EnvVars.NodeEnv === NodeEnvs.PRODUCTION) {
-  if (!EnvVars.DisableHelmet) {
-    app.use(helmet());
-  }
-}
+app.use(helmet());
 
 /******************************************************************************
                                 Routes

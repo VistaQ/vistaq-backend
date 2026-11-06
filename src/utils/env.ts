@@ -1,36 +1,20 @@
 /******************************************************************************
-                                Constants
-******************************************************************************/
-
-// NOTE: These need to match the names of your ".env" files
-export const NodeEnvs = {
-  DEV: 'development',
-  TEST: 'test',
-  PRODUCTION: 'production',
-} as const;
-
-/******************************************************************************
                                 Setup
 ******************************************************************************/
 
 const EnvVars = {
-  NodeEnv: (process.env.NODE_ENV ||
-    NodeEnvs.DEV) as (typeof NodeEnvs)[keyof typeof NodeEnvs],
   Port: Number(process.env.PORT || 3000),
   TablePrefix: process.env.TABLE_PREFIX || '',
   StatsQueueUrl: process.env.STATS_QUEUE_URL || '',
   ReportsBucket: process.env.REPORTS_BUCKET || '',
   CognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || '',
   CognitoClientId: process.env.COGNITO_CLIENT_ID || '',
-  Stage: process.env.STAGE || '',
-  DisableHelmet: process.env.DISABLE_HELMET === 'true',
   MaintenanceMode: (process.env.MAINTENANCE_MODE || 'false') === 'true',
   EtlServiceUrl: process.env.ETL_SERVICE_URL || '',
   InternalApiKey: process.env.ETL_API_KEY || '',
   ReportFileMaxBytes: Number(
     process.env.REPORT_FILE_MAX_BYTES || 10 * 1024 * 1024,
   ),
-  BackendBaseUrl: process.env.BACKEND_BASE_URL || '',
 };
 
 if (!EnvVars.TablePrefix.trim()) {
@@ -43,18 +27,6 @@ if (!EnvVars.CognitoUserPoolId.trim()) {
 
 if (!EnvVars.CognitoClientId.trim()) {
   throw new Error('Missing required environment variable: COGNITO_CLIENT_ID');
-}
-
-if (!EnvVars.EtlServiceUrl.trim()) {
-  throw new Error('Missing required environment variable: ETL_SERVICE_URL');
-}
-
-if (!EnvVars.InternalApiKey.trim()) {
-  throw new Error('Missing required environment variable: ETL_API_KEY');
-}
-
-if (!EnvVars.BackendBaseUrl.trim()) {
-  throw new Error('Missing required environment variable: BACKEND_BASE_URL');
 }
 
 /******************************************************************************

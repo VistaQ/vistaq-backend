@@ -6,6 +6,11 @@ class EtlService {
   async kickoff(params: IEtlKickoffParams): Promise<void> {
     const url = `${EnvVars.EtlServiceUrl}/process`;
     try {
+      if (!EnvVars.EtlServiceUrl.trim() || !EnvVars.InternalApiKey.trim()) {
+        throw new EtlServiceError(
+          'ETL_SERVICE_URL and ETL_API_KEY are not set',
+        );
+      }
 
       const response = await fetch(url, {
         method: 'POST',

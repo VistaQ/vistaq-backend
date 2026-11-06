@@ -14,7 +14,6 @@ import type {
   IReportJob,
 } from '@src/types/reportJob.types';
 import type { IEtlResult } from '@src/types/salesReport.types';
-import EnvVars from '@src/utils/env';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 const SIGNED_URL_TTL_SECONDS = 600; // 10 min — covers ETL pull + processing safety margin
@@ -63,7 +62,7 @@ class ReportJobService {
       });
 
       // 3. Kick off ETL (fire-and-forget — don't fail the user upload if ETL is unavailable)
-      void this.kickoffEtl(job).catch(() => undefined);
+      void this.kickoffEtl(job, params.callbackBaseUrl).catch(() => undefined);
 
       return job;
     } catch (error) {
@@ -112,7 +111,7 @@ class ReportJobService {
     }
   }
 
-  async retryJob(reference: string): Promise<void> {
+  async retryJob(reference: string, callbackBaseUrl: string): Promise<void> {
     try {
       const job = await reportJobRepository.findByReference(reference);
       if (!job) throw new ReportJobNotFoundError(`Job ${reference} not found`);
@@ -123,7 +122,7 @@ class ReportJobService {
       }
 
       await reportJobRepository.markProcessing(job.reference, job.attempts + 1);
-      await this.kickoffEtl(job);
+      await this.kickoffEtl(job, callbackBaseUrl);
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) throw error;
       if (error instanceof JobNotRetryableError) throw error;
@@ -142,7 +141,10 @@ class ReportJobService {
     }
   }
 
-  private async kickoffEtl(job: IReportJob): Promise<void> {
+  private async kickoffEtl(
+    job: IReportJob,
+    callbackBaseUrl: string,
+  ): Promise<void> {
     const fileUrl = await storageService.signedDownloadUrl(
       job.storage_path,
       SIGNED_URL_TTL_SECONDS,
@@ -150,7 +152,7 @@ class ReportJobService {
     await etlService.kickoff({
       reference: job.reference,
       fileUrl,
-      callbackUrl: `${EnvVars.BackendBaseUrl}/api/reports/jobs/${job.reference}/complete`,
+      callbackUrl: `${callbackBaseUrl}/api/reports/jobs/${job.reference}/complete`,
     });
   }
 }

@@ -29,7 +29,6 @@ describe('Lambda handler', () => {
     process.env.COGNITO_CLIENT_ID ??= 'test-client';
     process.env.ETL_SERVICE_URL ??= 'http://etl.test';
     process.env.ETL_API_KEY ??= 'test-key';
-    process.env.BACKEND_BASE_URL ??= 'http://backend.test';
     const loaded = await import('@src/lambda');
     handler = loaded.handler as unknown as IHandler;
   });

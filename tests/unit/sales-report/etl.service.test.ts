@@ -4,7 +4,6 @@ import '../../helpers/setEnv';
 process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
 process.env.ETL_SERVICE_URL = 'http://etl';
 process.env.ETL_API_KEY = 'test-key';
-process.env.BACKEND_BASE_URL = 'http://api';
 
 import etlService from '@src/services/etl.service';
 import { EtlServiceError } from '@src/models/errors/reportJob.errors';

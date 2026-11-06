@@ -1,17 +1,18 @@
+import type { NextFunction, Request, Response } from 'express';
 import 'multer';
-import type { NextFunction, Response } from 'express';
 
 import {
   JobNotRetryableError,
   ReportJobNotFoundError,
 } from '@src/models/errors/reportJob.errors';
-import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 import { RouteError } from '@src/models/errors/route.error';
+import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import reportJobService from '@src/services/reportJob.service';
 import type { IReportJob } from '@src/types/reportJob.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import { baseUrlOf } from '@src/utils/requestUrl';
 
 /******************************************************************************
                             Interfaces
@@ -52,14 +53,23 @@ export interface IRetryJobReq extends IBaseReq {
 const ALLOWED_ROLES = ['admin', 'master_trainer', 'group_leader'];
 
 class ReportJobController {
-  async create(req: ICreateJobReq, res: Response, next: NextFunction): Promise<void> {
+  async create(
+    req: ICreateJobReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       if (!ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
       if (!req.file) {
-        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'file is required (multipart field name "file")'));
+        next(
+          new RouteError(
+            HttpStatusCodes.BAD_REQUEST,
+            'file is required (multipart field name "file")',
+          ),
+        );
         return;
       }
 
@@ -70,9 +80,13 @@ class ReportJobController {
         fileName: req.file.originalname,
         reportYear: req.body.reportYear,
         reportMonth: req.body.reportMonth,
+        callbackBaseUrl: baseUrlOf(req as unknown as Request),
       });
 
-      const body: ICreateJobRes = { success: true, data: { reference: job.reference } };
+      const body: ICreateJobRes = {
+        success: true,
+        data: { reference: job.reference },
+      };
       res.status(HttpStatusCodes.ACCEPTED).json(body);
     } catch (error) {
       if (error instanceof NonConsecutiveUploadError) {
@@ -83,7 +97,11 @@ class ReportJobController {
     }
   }
 
-  async complete(req: ICompleteJobReq, res: Response, next: NextFunction): Promise<void> {
+  async complete(
+    req: ICompleteJobReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { reference } = req.params;
       const { status, etl_result, error } = req.body;
@@ -105,7 +123,11 @@ class ReportJobController {
     }
   }
 
-  async getById(req: IGetJobReq, res: Response, next: NextFunction): Promise<void> {
+  async getById(
+    req: IGetJobReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       if (!ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
@@ -132,7 +154,11 @@ class ReportJobController {
     }
   }
 
-  async retry(req: IRetryJobReq, res: Response, next: NextFunction): Promise<void> {
+  async retry(
+    req: IRetryJobReq,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       if (!ALLOWED_ROLES.includes(req.user!.role)) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
@@ -146,9 +172,14 @@ class ReportJobController {
         return;
       }
 
-      await reportJobService.retryJob(req.params.reference);
+      await reportJobService.retryJob(
+        req.params.reference,
+        baseUrlOf(req as unknown as Request),
+      );
 
-      res.status(HttpStatusCodes.ACCEPTED).json({ success: true, data: { reference: req.params.reference } });
+      res
+        .status(HttpStatusCodes.ACCEPTED)
+        .json({ success: true, data: { reference: req.params.reference } });
     } catch (error) {
       if (error instanceof ReportJobNotFoundError) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));

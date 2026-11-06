@@ -35,6 +35,7 @@ export interface ICreateJobParams {
   fileName: string;
   reportYear: number;
   reportMonth: number;
+  callbackBaseUrl: string;
 }
 
 export interface ICompleteJobParams {

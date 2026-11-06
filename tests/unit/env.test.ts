@@ -6,7 +6,6 @@ const required: Record<string, string> = {
   COGNITO_CLIENT_ID: 'test-client',
   ETL_SERVICE_URL: 'http://etl.test',
   ETL_API_KEY: 'key',
-  BACKEND_BASE_URL: 'http://backend.test',
 };
 
 describe('env module', () => {

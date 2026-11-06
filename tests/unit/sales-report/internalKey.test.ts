@@ -4,7 +4,6 @@ import '../../helpers/setEnv';
 process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
 process.env.ETL_SERVICE_URL = process.env.ETL_SERVICE_URL || 'http://etl';
 process.env.ETL_API_KEY = 'expected-key';
-process.env.BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || 'http://api';
 
 import { internalKey } from '@src/middleware/internalKey';
 

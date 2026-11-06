@@ -8,7 +8,8 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
   Authenticates internal service-to-service requests (e.g. the ETL service
   calling back into the backend). Verifies the Authorization header is
-  `Bearer <ETL_API_KEY>`. Returns 401 on any mismatch.
+  `Bearer <ETL_API_KEY>`. Returns 401 on any mismatch, and for every request
+  while ETL_API_KEY is unset, so an empty key never matches `Bearer `.
 ******************************************************************************/
 
 export function internalKey(
@@ -17,9 +18,9 @@ export function internalKey(
   next: NextFunction,
 ): void {
   const header = req.headers['authorization'];
-  const expected = `Bearer ${EnvVars.InternalApiKey}`;
+  const key = EnvVars.InternalApiKey.trim();
 
-  if (!header || header !== expected) {
+  if (!key || !header || header !== `Bearer ${key}`) {
     res.status(HttpStatusCodes.UNAUTHORIZED).json({ message: 'Unauthorized' });
     return;
   }
