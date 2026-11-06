@@ -1,5 +1,3 @@
-import type { CorsOptions } from 'cors';
-import cors from 'cors';
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 import helmet from 'helmet';
@@ -21,14 +19,6 @@ const app = express();
 /******************************************************************************
                                 Middleware
 ******************************************************************************/
-
-// CORS — restrict to allowed origins in production, permissive elsewhere
-const corsOptions: CorsOptions = {
-  origin:
-    EnvVars.NodeEnv === NodeEnvs.PRODUCTION ? EnvVars.AllowedOrigins : true,
-  credentials: true,
-};
-app.use(cors(corsOptions));
 
 // Parse JSON bodies
 app.use(express.json());

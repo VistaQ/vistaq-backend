@@ -10,6 +10,8 @@ params:
   dev:
     deletionProtection: INACTIVE
     tableDeletionPolicy: Delete
+    allowedOrigins:
+      - http://localhost:5173
   staging:
     tablePrefix: stg_vistaq_
   production:
@@ -25,6 +27,19 @@ provider:
   timeout: 29
   httpApi:
     payload: '2.0'
+    cors:
+      allowedOrigins: ${param:allowedOrigins}
+      allowedHeaders:
+        - Authorization
+        - Content-Type
+      allowedMethods:
+        - DELETE
+        - GET
+        - PATCH
+        - POST
+        - PUT
+      allowCredentials: true
+      maxAge: 3600
     authorizers:
       cognito:
         type: jwt
@@ -109,7 +124,6 @@ provider:
       Ref: ReportsBucket
     NODE_ENV: production
     STAGE: ${sls:stage}
-    ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS}
     BACKEND_BASE_URL: ${env:BACKEND_BASE_URL}
     ETL_SERVICE_URL: ${env:ETL_SERVICE_URL}
     ETL_API_KEY: ${env:ETL_API_KEY}
@@ -143,9 +157,6 @@ functions:
       - httpApi:
           method: ANY
           path: /api/internal/{proxy+}
-      - httpApi:
-          method: OPTIONS
-          path: /{proxy+}
       - httpApi:
           method: ANY
           path: /{proxy+}

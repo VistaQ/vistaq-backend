@@ -25,10 +25,6 @@ const EnvVars = {
   Stage: process.env.STAGE || '',
   DisableHelmet: process.env.DISABLE_HELMET === 'true',
   MaintenanceMode: (process.env.MAINTENANCE_MODE || 'false') === 'true',
-  AllowedOrigins: (process.env.ALLOWED_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
   EtlServiceUrl: process.env.ETL_SERVICE_URL || '',
   InternalApiKey: process.env.ETL_API_KEY || '',
   ReportFileMaxBytes: Number(
@@ -59,13 +55,6 @@ if (!EnvVars.InternalApiKey.trim()) {
 
 if (!EnvVars.BackendBaseUrl.trim()) {
   throw new Error('Missing required environment variable: BACKEND_BASE_URL');
-}
-
-if (
-  EnvVars.NodeEnv === NodeEnvs.PRODUCTION &&
-  EnvVars.AllowedOrigins.length === 0
-) {
-  throw new Error('Missing required environment variable: ALLOWED_ORIGINS');
 }
 
 /******************************************************************************
