@@ -62,6 +62,8 @@ npx sls remove --stage dev
 
 `npm run package`, `npm run deploy` and `npm run remove` wrap the same commands; pass the stage with `npm run deploy -- --stage dev`. Resources are declared in `serverless.yml`. The first run downloads the framework binary and needs a Serverless login or license key (`SERVERLESS_ACCESS_KEY` in CI).
 
+Pushing to `staging` deploys the staging stage through `.github/workflows/staging.yml`. The workflow's `staging` environment needs the `AWS_DEPLOY_ROLE_ARN` variable (an IAM role that trusts GitHub's OIDC provider for this repository's `staging` environment) and the `SERVERLESS_ACCESS_KEY` secret.
+
 ## Additional Notes
 
 - If `npm run dev` gives you issues with bcrypt on MacOS you may need to run: `npm rebuild bcrypt --build-from-source`.
