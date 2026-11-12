@@ -1,6 +1,5 @@
 import type { NextFunction, Response } from 'express';
 
-import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import groupService from '@src/services/group.service';
 import { handleControllerError } from '@src/utils/errorHandlers';
