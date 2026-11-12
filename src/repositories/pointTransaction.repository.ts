@@ -231,16 +231,18 @@ class PointTransactionRepository {
       );
 
       await Promise.all(
-        keys.map(({ user_id, ym_activity }) => {
-          const activity = ym_activity.split('#')[1];
-          const key = `${user_id}|${activity}`;
-          return this.moveAward(
-            { user_id, ym_activity },
-            activity,
-            params.batchId,
-            target.get(key) ?? 0,
-            current.get(key) ?? null,
-          );
+        [...users].map(async (user_id) => {
+          // Sequential: concurrent transactions on PointTotals rows conflict.
+          for (const activity of params.activities) {
+            const key = `${user_id}|${activity}`;
+            await this.moveAward(
+              { user_id, ym_activity: `${ym}#${activity}` },
+              activity,
+              params.batchId,
+              target.get(key) ?? 0,
+              current.get(key) ?? null,
+            );
+          }
         }),
       );
     } catch (error) {
