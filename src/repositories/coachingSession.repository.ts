@@ -9,7 +9,7 @@ import type {
   ICoachingSessionAttendance,
 } from '@src/types/coachingSession.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
-import { nowUtc } from '@src/utils/period';
+import { nowUtc, toUtc } from '@src/utils/period';
 
 /******************************************************************************
                             Item and input types
@@ -233,8 +233,8 @@ class CoachingSessionRepository {
         coaching_type: session.coaching_type,
         title: session.title,
         ...(session.description && { description: session.description }),
-        start_date: session.start_date,
-        end_date: session.end_date,
+        start_date: toUtc(session.start_date),
+        end_date: toUtc(session.end_date),
         training_mode: session.training_mode,
         ...(session.link && { link: session.link }),
         status: session.status ?? 'upcoming',
@@ -358,6 +358,8 @@ class CoachingSessionRepository {
         { id: previous.id },
         {
           ...data,
+          ...(data.start_date && { start_date: toUtc(data.start_date) }),
+          ...(data.end_date && { end_date: toUtc(data.end_date) }),
           group_ids: groupIds,
           agent_ids: agentIds,
           audience_all:

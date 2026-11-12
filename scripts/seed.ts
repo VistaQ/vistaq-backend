@@ -47,6 +47,7 @@ import type { IGroupTrainerItem } from '@src/repositories/groupTrainer.repositor
 import type { IPointConfigItem } from '@src/repositories/pointConfig.repository';
 import type { IProspectItem } from '@src/repositories/prospect.repository';
 import type { IUserItem } from '@src/repositories/user.repository';
+import { toUtc } from '@src/utils/period';
 
 /******************************************************************************
                                 Settings
@@ -164,8 +165,7 @@ async function pool<T>(items: T[], run: (item: T) => Promise<void>): Promise<voi
   );
 }
 
-const iso = (date: Date) => date.toISOString();
-const dayOf = (date: Date) => iso(date).slice(0, 10);
+const dayOf = (date: Date) => toUtc(date).slice(0, 10);
 const addDays = (date: Date, days: number) =>
   new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 const addHours = (date: Date, hours: number) =>
@@ -191,7 +191,7 @@ function person(
 ): ISeedUser {
   const firstName = faker.person.firstName();
   const lastName = faker.person.lastName();
-  const joined = iso(faker.date.past({ years: 1, refDate: now }));
+  const joined = toUtc(faker.date.past({ years: 1, refDate: now }));
   const sells = role === 'agent' || role === 'group_leader';
   return {
     id: faker.string.uuid(),
@@ -233,7 +233,7 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
     to: now,
   });
   const id = faker.string.uuid();
-  const history = [{ stage: 'prospect', enteredAt: iso(createdAt) }];
+  const history = [{ stage: 'prospect', enteredAt: toUtc(createdAt) }];
   const item: IProspectItem = {
     id,
     agent_id: agentId,
@@ -241,12 +241,12 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
     prospect_email: faker.internet.email().toLowerCase(),
     prospect_phone: faker.phone.number({ style: 'international' }),
     current_stage: 'prospect',
-    prospect_entered_at: iso(createdAt),
+    prospect_entered_at: toUtc(createdAt),
     stage_history: [...history],
     sales_parts_completed: [],
     products_sold: [],
-    created_at: iso(createdAt),
-    updated_at: iso(createdAt),
+    created_at: toUtc(createdAt),
+    updated_at: toUtc(createdAt),
   };
 
   const path = faker.helpers.weightedArrayElement([
@@ -259,7 +259,7 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
 
   const bookedAt = earlier(addDays(createdAt, faker.number.int({ min: 1, max: 7 })), now);
   const appointmentDay = addDays(bookedAt, faker.number.int({ min: 1, max: 21 }));
-  history.push({ stage: 'appointment', enteredAt: iso(bookedAt) });
+  history.push({ stage: 'appointment', enteredAt: toUtc(bookedAt) });
   steps.push({
     current_stage: 'appointment',
     stage_history: [...history],
@@ -268,7 +268,7 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
     appointment_end_time: '11:00',
     appointment_location: faker.location.streetAddress(),
     appointment_status: 'scheduled',
-    updated_at: iso(bookedAt),
+    updated_at: toUtc(bookedAt),
   });
 
   const meetingHappened = appointmentDay < now;
@@ -277,20 +277,20 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
       const status = faker.helpers.arrayElement(['done', 'rescheduled', 'declined', 'kiv']);
       steps.push({
         appointment_status: status,
-        ...(status === 'done' && { appointment_completed_at: iso(appointmentDay) }),
-        updated_at: iso(appointmentDay),
+        ...(status === 'done' && { appointment_completed_at: toUtc(appointmentDay) }),
+        updated_at: toUtc(appointmentDay),
       });
     }
     return { item, steps };
   }
 
-  history.push({ stage: 'sales', enteredAt: iso(appointmentDay) });
+  history.push({ stage: 'sales', enteredAt: toUtc(appointmentDay) });
   steps.push({
     current_stage: 'sales',
     stage_history: [...history],
     appointment_status: 'done',
-    appointment_completed_at: iso(appointmentDay),
-    updated_at: iso(appointmentDay),
+    appointment_completed_at: toUtc(appointmentDay),
+    updated_at: toUtc(appointmentDay),
   });
 
   const outcome = faker.helpers.weightedArrayElement([
@@ -313,7 +313,7 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
           amount: faker.number.int({ min: 1, max: 50 }) * 1000,
         }),
       ),
-      sales_completed_at: iso(decidedAt),
+      sales_completed_at: toUtc(decidedAt),
     }),
     ...(outcome === 'unsuccessful' && {
       unsuccessful_reason: faker.helpers.arrayElement([
@@ -322,7 +322,7 @@ function planProspect(agentId: string, now: Date): IProspectPlan {
         'Not interested',
       ]),
     }),
-    updated_at: iso(decidedAt),
+    updated_at: toUtc(decidedAt),
   });
   return { item, steps };
 }
@@ -353,8 +353,8 @@ async function main(): Promise<void> {
       activity,
       category,
       points,
-      created_at: iso(now),
-      updated_at: iso(now),
+      created_at: toUtc(now),
+      updated_at: toUtc(now),
     };
     await putNew('PointConfigs', item, 'activity');
   }
@@ -372,7 +372,7 @@ async function main(): Promise<void> {
       person('agent', g * AGENTS_PER_GROUP + i, now, groupId),
     );
     members.push(leader, ...agents);
-    const since = iso(faker.date.past({ years: 1, refDate: now }));
+    const since = toUtc(faker.date.past({ years: 1, refDate: now }));
     groups.push({
       id: groupId,
       name: `${faker.location.city()} ${faker.helpers.arrayElement(['Stars', 'Achievers', 'Legends', 'Champions', 'Power'])}`,
@@ -412,8 +412,8 @@ async function main(): Promise<void> {
     ...Array.from({ length: UNUSED_AGENT_CODES }, () => ({
       agent_code: nextAgentCode(),
       used_flag: 0 as const,
-      created_at: iso(now),
-      updated_at: iso(now),
+      created_at: toUtc(now),
+      updated_at: toUtc(now),
     })),
   ];
   await pool(codes, async (code) => {
@@ -442,8 +442,8 @@ async function main(): Promise<void> {
     const event: IEventItem = {
       id: faker.string.uuid(),
       event_title: `${faker.company.buzzNoun()} ${faker.helpers.arrayElement(['Workshop', 'Bootcamp', 'Townhall', 'Briefing'])}`,
-      start_date: iso(start),
-      end_date: iso(addHours(start, faker.number.int({ min: 1, max: 4 }))),
+      start_date: toUtc(start),
+      end_date: toUtc(addHours(start, faker.number.int({ min: 1, max: 4 }))),
       description: faker.lorem.sentence(),
       ...(online
         ? { meeting_link: `https://meet.example.com/${faker.string.alphanumeric(10)}` }
@@ -455,8 +455,8 @@ async function main(): Promise<void> {
       visibility: faker.helpers.arrayElement(['private', 'public']),
       group_ids: targets,
       agent_ids: [],
-      created_at: iso(addDays(start, -14)),
-      updated_at: iso(addDays(start, -14)),
+      created_at: toUtc(addDays(start, -14)),
+      updated_at: toUtc(addDays(start, -14)),
     };
     return event;
   });
@@ -482,7 +482,7 @@ async function main(): Promise<void> {
     const past = start < now;
     const attendance: IAttendanceItem[] = attendees.map((member) => {
       const joined = past && faker.number.int({ min: 1, max: 10 }) <= 7;
-      const at = iso(past ? start : now);
+      const at = toUtc(past ? start : now);
       return {
         id: faker.string.uuid(),
         session_id: '',
@@ -503,8 +503,8 @@ async function main(): Promise<void> {
       coaching_type: faker.helpers.arrayElement(COACHING_TYPES),
       title: `${faker.word.adjective()} ${faker.helpers.arrayElement(['Coaching', 'Circle', 'Clinic', 'Seminar'])}`,
       description: faker.lorem.sentence(),
-      start_date: iso(start),
-      end_date: iso(addHours(start, faker.number.float({ min: 1, max: 3, fractionDigits: 1 }))),
+      start_date: toUtc(start),
+      end_date: toUtc(addHours(start, faker.number.float({ min: 1, max: 3, fractionDigits: 1 }))),
       training_mode: faker.helpers.arrayElement(['online', 'face_to_face']),
       status: past ? 'completed' : 'upcoming',
       created_by: host.id,
@@ -514,8 +514,8 @@ async function main(): Promise<void> {
       agent_ids: [],
       attendance_total: attendance.length,
       attendance_joined: attendance.filter((row) => row.status === 'joined').length,
-      created_at: iso(addDays(start, -10)),
-      updated_at: iso(addDays(start, -10)),
+      created_at: toUtc(addDays(start, -10)),
+      updated_at: toUtc(addDays(start, -10)),
     };
     attendance.forEach((row) => (row.session_id = session.id));
     return { session, attendance };

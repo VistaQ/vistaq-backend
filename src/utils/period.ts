@@ -23,7 +23,11 @@ export function monthBucketUtc(instant: Date | string): number {
   return date.getUTCFullYear() * 100 + date.getUTCMonth() + 1;
 }
 
-/** The current instant as `YYYY-MM-DDTHH:mm:ss.sssZ`, the stored timestamp format. */
+/** An instant as `YYYY-MM-DDTHH:mm:ss.sssZ`, the stored timestamp format. */
+export function toUtc(instant: Date | string): string {
+  return new Date(instant).toISOString();
+}
+
 export function nowUtc(): string {
-  return new Date().toISOString();
+  return toUtc(new Date());
 }

@@ -6,7 +6,7 @@ import { EventNotFoundError } from '@src/models/errors/event.errors';
 import { DynamoTable } from '@src/services/dynamo.service';
 import type { IEvent } from '@src/types/event.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
-import { nowUtc } from '@src/utils/period';
+import { nowUtc, toUtc } from '@src/utils/period';
 
 /******************************************************************************
                             Item and input types
@@ -154,8 +154,8 @@ class EventRepository {
       const item: IEventItem = {
         id: randomUUID(),
         event_title: event.event_title,
-        start_date: event.start_date,
-        ...(event.end_date && { end_date: event.end_date }),
+        start_date: toUtc(event.start_date),
+        ...(event.end_date && { end_date: toUtc(event.end_date) }),
         ...(event.description && { description: event.description }),
         ...(event.meeting_link && { meeting_link: event.meeting_link }),
         ...(event.venue && { venue: event.venue }),
@@ -255,6 +255,8 @@ class EventRepository {
         { id: previous.id },
         {
           ...data,
+          ...(data.start_date && { start_date: toUtc(data.start_date) }),
+          ...(data.end_date && { end_date: toUtc(data.end_date) }),
           ...(data.group_ids && { group_ids: unique(data.group_ids) }),
           ...(data.agent_ids && { agent_ids: unique(data.agent_ids) }),
         },
