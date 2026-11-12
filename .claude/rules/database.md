@@ -21,7 +21,7 @@
 * Services never return raw items; they map to the derived interface.
 
 ## Timestamps
-* Every timestamp is stored in UTC as `YYYY-MM-DDTHH:mm:ss.sssZ`, written through one helper. Date-only and time-only fields are stored as given. Month and year boundaries are UTC (`src/utils/period.ts`).
+* Every timestamp is stored in UTC as `YYYY-MM-DDTHH:mm:ss.sssZ`, written through `toUtc` (`nowUtc` for the current instant) in `src/utils/period.ts`. That includes instants a client sends with an offset, such as event and coaching `start_date`/`end_date`, so they sort as strings. Date-only and time-only fields are stored as given. Month and year boundaries are UTC (`src/utils/period.ts`).
 
 ## Relationships
 * DynamoDB has no joins. A read that needs related items is a query on an index, a batch get, or a field copied onto the item at write time; the access-pattern document says which.

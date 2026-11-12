@@ -2037,14 +2037,14 @@ paths:
                   type: string
                   format: date-time
                   description: >
-                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Start datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                     Cannot be in the past.
                   example: '2026-04-15T01:00:00.000Z'
                 endDate:
                   type: string
                   format: date-time
                   description: >
-                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    End datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                     Must be after startDate.
                   example: '2026-04-15T03:00:00.000Z'
                 status:
@@ -2332,13 +2332,13 @@ paths:
                   type: string
                   format: date-time
                   description: >
-                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Start datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                   example: '2026-04-20T02:00:00.000Z'
                 endDate:
                   type: string
                   format: date-time
                   description: >
-                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    End datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                     Must be after startDate.
                   example: '2026-04-20T04:00:00.000Z'
                 status:
@@ -4124,14 +4124,14 @@ paths:
                   type: string
                   format: date-time
                   description: >
-                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Start datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                     Cannot be in the past.
                   example: '2026-04-15T02:00:00.000Z'
                 endDate:
                   type: string
                   format: date-time
                   description: >
-                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    End datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                     Must be after startDate.
                   example: '2026-04-15T04:00:00.000Z'
                 trainingMode:
@@ -4344,13 +4344,13 @@ paths:
                   type: string
                   format: date-time
                   description: >
-                    Start datetime as an ISO 8601 timestamp with timezone offset.
+                    Start datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                   example: '2026-04-20T06:00:00.000Z'
                 endDate:
                   type: string
                   format: date-time
                   description: >
-                    End datetime as an ISO 8601 timestamp with timezone offset.
+                    End datetime as an ISO 8601 timestamp with a timezone offset or Z, stored and returned in UTC.
                     Must be after startDate.
                   example: '2026-04-20T08:00:00.000Z'
                 trainingMode:
