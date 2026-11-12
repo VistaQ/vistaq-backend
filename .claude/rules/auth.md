@@ -23,4 +23,4 @@ router.get(
 
 ## Accessing the Authenticated User
 
-`req.user` is `{ id, tenant_id, role, group_id }` via declaration merging in `src/types/express.d.ts`; `tenant_id` is the transitional constant until task 4.8 removes it. On protected routes pass the caller to services with `callerOf(req)` from `src/utils/caller.ts`; services decide visibility through `scopeService` (`resolveGroupScope`, `resolveAgentScope`, `canReadAgent`).
+`req.user` is `{ id, role, group_id }` via declaration merging in `src/types/express.d.ts`. On protected routes pass the caller to services with `callerOf(req)` from `src/utils/caller.ts`; services decide visibility through `scopeService` (`resolveGroupScope`, `resolveAgentScope`, `canReadAgent`).

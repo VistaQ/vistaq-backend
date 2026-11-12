@@ -3502,7 +3502,7 @@ paths:
         '404':
           description: >
             Not found. Returned when no agent code matching the path parameter
-            exists in the caller's tenant.
+            exists.
           content:
             application/json:
               schema:
@@ -3586,7 +3586,7 @@ paths:
         '404':
           description: >
             Not found. Returned when no agent code matching the path parameter
-            exists in the caller's tenant.
+            exists.
           content:
             application/json:
               schema:
@@ -3660,14 +3660,12 @@ paths:
                 success: true
                 data:
                   - id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-                    tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                     type: lead_source
                     value: Referral
                     sort_order: 0
                     created_at: '2026-06-01T08:00:00.000Z'
                     updated_at: '2026-06-01T08:00:00.000Z'
                   - id: b2c3d4e5-f6a7-8901-bcde-f12345678901
-                    tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                     type: lead_source
                     value: Walk-in
                     sort_order: 1
@@ -3775,7 +3773,6 @@ paths:
                 success: true
                 data:
                   id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-                  tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                   type: lead_source
                   value: Referral
                   sort_order: 0
@@ -3897,7 +3894,6 @@ paths:
                 success: true
                 data:
                   id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-                  tenant_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
                   type: lead_source
                   value: Referral (updated)
                   sort_order: 5
@@ -3939,7 +3935,7 @@ paths:
         '404':
           description: >
             Not found. Returned when no taxonomy value matching the `id` path
-            parameter exists in the caller's tenant.
+            parameter exists.
           content:
             application/json:
               schema:
@@ -4009,7 +4005,7 @@ paths:
         '404':
           description: >
             Not found. Returned when no taxonomy value matching the `id` path
-            parameter exists in the caller's tenant.
+            parameter exists.
           content:
             application/json:
               schema:
@@ -4749,10 +4745,10 @@ paths:
         Authenticated with `Authorization: Bearer <ETL_API_KEY>` (the same
         shared secret the ETL uses for `/reports/jobs/{reference}/complete`).
         While no ETL key is configured every request gets 401. Because there
-        is no JWT, `uploaded_by` is recorded as null. The body's `tenant_id`
-        is still required by validation but is no longer used. The
-        consecutive-month guard (409) is inherited from the shared service
-        layer.
+        is no JWT, `uploaded_by` is recorded as null. The body takes no
+        `tenant_id`; a body that still sends one is rejected with 400 as an
+        unknown field. The consecutive-month guard (409) is inherited from the
+        shared service layer.
       security:
         - bearerAuth: []
       requestBody:
@@ -5215,7 +5211,6 @@ components:
       type: object
       required:
         - id
-        - tenant_id
         - email
         - name
         - role
@@ -5230,10 +5225,6 @@ components:
           type: string
           format: uuid
           example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
-        tenant_id:
-          type: string
-          format: uuid
-          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
         email:
           type: string
           format: email
@@ -5370,7 +5361,6 @@ components:
       type: object
       required:
         - id
-        - tenant_id
         - type
         - value
         - sort_order
@@ -5381,10 +5371,6 @@ components:
           type: string
           format: uuid
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-        tenant_id:
-          type: string
-          format: uuid
-          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
         type:
           type: string
           description: The taxonomy category this value belongs to.
@@ -5410,7 +5396,6 @@ components:
       type: object
       required:
         - id
-        - tenant_id
         - name
         - status
         - leader_id
@@ -5421,10 +5406,6 @@ components:
           type: string
           format: uuid
           example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
-        tenant_id:
-          type: string
-          format: uuid
-          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
         name:
           type: string
           example: Alpha Team
@@ -5629,7 +5610,6 @@ components:
       type: object
       required:
         - id
-        - tenant_id
         - agent_id
         - prospect_name
         - prospect_email
@@ -5643,10 +5623,6 @@ components:
           type: string
           format: uuid
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-        tenant_id:
-          type: string
-          format: uuid
-          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
         agent_id:
           type: string
           format: uuid
@@ -5756,7 +5732,6 @@ components:
       type: object
       required:
         - id
-        - tenant_id
         - event_title
         - start_date
         - status
@@ -5770,10 +5745,6 @@ components:
           type: string
           format: uuid
           example: b2c3d4e5-f6a7-8901-bcde-f12345678901
-        tenant_id:
-          type: string
-          format: uuid
-          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
         event_title:
           type: string
           example: Q2 Training Kickoff
@@ -5988,7 +5959,6 @@ components:
         - activity
         - category
         - points
-        - tenant_id
         - created_at
         - updated_at
       properties:
@@ -6006,10 +5976,6 @@ components:
         points:
           type: integer
           example: 10
-        tenant_id:
-          type: string
-          format: uuid
-          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
         created_at:
           type: string
           format: date-time
@@ -6389,7 +6355,6 @@ components:
       type: object
       required:
         - id
-        - tenant_id
         - coaching_type
         - title
         - start_date
@@ -6407,10 +6372,6 @@ components:
           type: string
           format: uuid
           example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-        tenant_id:
-          type: string
-          format: uuid
-          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
         coaching_type:
           $ref: '#/components/schemas/CoachingTypeEnum'
         title:
@@ -6706,7 +6667,7 @@ components:
 
     IngestReportRequest:
       type: object
-      required: [tenant_id, report_year, report_month, etl_result]
+      required: [report_year, report_month, etl_result]
       additionalProperties: false
       description: >
         Manual-mode ingest body. Field names use snake_case to mirror the
@@ -6715,13 +6676,6 @@ components:
         siblings of `etl_result` — admin tells the ETL author what month
         the file covers out-of-band; the ETL itself is unaware of them.
       properties:
-        tenant_id:
-          type: string
-          format: uuid
-          description: >
-            No longer used. Still required by validation until the tenant field
-            is removed from the API.
-          example: 00000000-0000-0000-0000-000000000001
         report_year:
           type: integer
           minimum: 2000
@@ -6999,7 +6953,6 @@ components:
           type: string
           pattern: '^SALES-REPORT-\d{17}$'
           example: SALES-REPORT-20260502143022873
-        tenant_id: { type: string, format: uuid }
         uploaded_by: { type: string, format: uuid }
         storage_path: { type: string }
         file_name: { type: string }
