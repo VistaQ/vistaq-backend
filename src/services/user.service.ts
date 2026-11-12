@@ -92,9 +92,7 @@ class UserService {
       } else if (caller.role === 'trainer') {
         const groupIds = await scopeService.managedGroupIds(caller.id);
         const pages = await Promise.all(
-          groupIds.map((groupId) =>
-            userRepository.findByGroupId(groupId),
-          ),
+          groupIds.map((groupId) => userRepository.findByGroupId(groupId)),
         );
         users = pages.flat();
       } else if (caller.role === 'group_leader' && caller.group_id) {
@@ -117,6 +115,34 @@ class UserService {
       return enriched;
     } catch (error) {
       return handleServiceError('UserService.getUserById', error);
+    }
+  }
+
+  // Applies the same visibility rules as getUsers; anyone may read their own
+  // record. A user the caller may not see is reported as missing.
+  async getVisibleUserById(
+    userId: string,
+    caller: ICaller,
+  ): Promise<IUserWithManagedGroups | null> {
+    try {
+      const user = await this.getUserById(userId);
+      if (!user) return null;
+      if (user.id === caller.id || caller.role === 'admin') return user;
+
+      const active = user.status === 'active';
+      let visible = false;
+      if (caller.role === 'master_trainer') {
+        visible = active && user.role !== 'admin';
+      } else if (caller.role === 'trainer') {
+        const managed = await scopeService.managedGroupIds(caller.id);
+        visible = active && !!user.group_id && managed.includes(user.group_id);
+      } else if (caller.role === 'group_leader') {
+        visible =
+          active && !!caller.group_id && user.group_id === caller.group_id;
+      }
+      return visible ? user : null;
+    } catch (error) {
+      return handleServiceError('UserService.getVisibleUserById', error);
     }
   }
 

@@ -9,6 +9,7 @@ import { RouteError } from '@src/models/errors/route.error';
 import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import userService from '@src/services/user.service';
 import type { IUser, IUserWithManagedGroups } from '@src/types/auth.types';
+import { callerOf } from '@src/utils/caller';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -97,7 +98,7 @@ class UserController {
     try {
       const { userId } = req.params;
 
-      const user = await userService.getUserById(userId);
+      const user = await userService.getVisibleUserById(userId, callerOf(req));
 
       if (user === null) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'User not found'));
@@ -121,7 +122,6 @@ class UserController {
     next: NextFunction,
   ): Promise<void> {
     try {
-
       const users = await userService.getUsers(req.user!);
 
       const responseBody: IGetUsersRes = {
@@ -210,7 +210,12 @@ class UserController {
       const { userId } = req.params;
 
       if (req.user!.id === userId) {
-        next(new RouteError(HttpStatusCodes.BAD_REQUEST, 'Admins cannot deactivate themselves'));
+        next(
+          new RouteError(
+            HttpStatusCodes.BAD_REQUEST,
+            'Admins cannot deactivate themselves',
+          ),
+        );
         return;
       }
 
