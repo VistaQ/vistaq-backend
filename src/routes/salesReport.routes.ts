@@ -61,22 +61,9 @@ export const uploadReportSchema = z
   .strict();
 
 // Manual-mode wrapper for POST /reports/ingest. Body fields use snake_case to
-// mirror the ETL JSON style; `tenant_id` is supplied in the body because this
-// endpoint is authenticated via ETL_API_KEY (no JWT to derive it from).
+// mirror the ETL JSON style.
 export const ingestReportSchema = z
   .object({
-    // Accept any UUID-shaped string (8-4-4-4-12 hex). Zod's strict `.uuid()`
-    // rejects the seeded fixture tenant id `00000000-0000-0000-0000-000000000001`
-    // because its version nibble is 0; this regex accepts the canonical shape
-    // and lets Postgres' uuid type do the final validation.
-    tenant_id: z
-      .string()
-      .regex(
-        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
-        {
-          message: 'Invalid UUID',
-        },
-      ),
     report_year: z.number().int().min(2000).max(2100),
     report_month: z.number().int().min(1).max(12),
     etl_result: etlResultSchema,

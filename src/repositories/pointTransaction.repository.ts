@@ -184,7 +184,6 @@ class PointTransactionRepository {
   // in one transaction conditioned on the value read, so re-uploads and
   // retries never double-count. Users dropped from the report go to 0.
   async awardWithReversal(params: {
-    tenantId: string;
     year: number;
     month: number;
     batchId: string;

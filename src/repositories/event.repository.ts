@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import { EventNotFoundError } from '@src/models/errors/event.errors';
 import { DynamoTable } from '@src/services/dynamo.service';
@@ -81,7 +80,6 @@ const EVENT_STATUSES = ['upcoming', 'completed', 'cancelled'] as const;
 function toEvent(item: IEventItem): IEvent {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     event_title: item.event_title,
     start_date: item.start_date,
     end_date: item.end_date ?? null,

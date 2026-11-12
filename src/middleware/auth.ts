@@ -84,7 +84,6 @@ export async function authenticate(
 
     req.user = {
       id: user.id,
-      tenant_id: user.tenant_id,
       role: user.role,
       group_id: user.group_id,
     };

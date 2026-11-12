@@ -23,7 +23,6 @@ import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
 const activeUser = {
   id: 'sub-1',
-  tenant_id: 'tenant-1',
   role: 'trainer',
   group_id: null,
   status: 'active',
@@ -67,7 +66,6 @@ describe('authenticate middleware', () => {
       expect(next).toHaveBeenCalledWith();
       expect(req.user).toEqual({
         id: 'sub-1',
-        tenant_id: 'tenant-1',
         role: 'trainer',
         group_id: null,
       });

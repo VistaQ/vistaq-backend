@@ -1,6 +1,5 @@
 export interface IEvent {
   id: string;
-  tenant_id: string;
   event_title: string;
   start_date: string;
   end_date: string | null;

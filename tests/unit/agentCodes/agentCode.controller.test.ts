@@ -28,7 +28,6 @@ import type { IBaseReq } from '@src/models/interfaces/base.interface';
   Fixtures
 ******************************************************************************/
 
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ADMIN_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 const USER_TOKEN = 'mock-token';
 
@@ -72,17 +71,17 @@ function makeReq(overrides: Partial<ICreateAgentCodesReq> = {}): ICreateAgentCod
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     body: { agentCodes: ['ABC123'] },
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: ADMIN_ID, role: 'admin' },
     ...overrides,
   } as unknown as ICreateAgentCodesReq;
 }
 
-function makeListReq(queryOverrides: Record<string, string> = {}, userOverrides: Partial<{ id: string; tenant_id: string; role: string }> = {}): IBaseReq {
+function makeListReq(queryOverrides: Record<string, string> = {}, userOverrides: Partial<{ id: string; role: string }> = {}): IBaseReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     query: queryOverrides,
     body: {},
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin', ...userOverrides },
+    user: { id: ADMIN_ID, role: 'admin', ...userOverrides },
   } as unknown as IBaseReq;
 }
 
@@ -138,7 +137,7 @@ describe('AgentCodeController.createMany', () => {
 
   it('calls next(RouteError) with status 403 when role is not admin', async () => {
     const req = makeReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+      user: { id: ADMIN_ID, role: 'agent' },
     } as Partial<ICreateAgentCodesReq>);
     const res = makeRes();
     const next = makeNext();
@@ -155,7 +154,7 @@ describe('AgentCodeController.createMany', () => {
 
   it('calls next(RouteError) with status 403 when role is group_leader', async () => {
     const req = makeReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'group_leader' },
+      user: { id: ADMIN_ID, role: 'group_leader' },
     } as Partial<ICreateAgentCodesReq>);
     const res = makeRes();
     const next = makeNext();
@@ -359,7 +358,7 @@ function makeUpdateReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { agentCode: 'OLD001' },
     body: { agentCode: 'NEW001' },
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: ADMIN_ID, role: 'admin' },
     ...overrides,
   } as unknown as IBaseReq;
 }
@@ -369,7 +368,7 @@ describe('AgentCodeController.update', () => {
 
   it('returns 403 when role is not admin', async () => {
     const req = makeUpdateReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+      user: { id: ADMIN_ID, role: 'agent' },
     } as Partial<IBaseReq>);
     const res = makeRes();
     const next = makeNext();
@@ -492,7 +491,7 @@ function makeRemoveReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { agentCode: 'DEL001' },
     body: {},
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: ADMIN_ID, role: 'admin' },
     ...overrides,
   } as unknown as IBaseReq;
 }
@@ -516,7 +515,7 @@ describe('AgentCodeController.remove', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls agentCodeService.remove with agentCode from params, tenantId from JWT, and bearer token', async () => {
+  it('calls agentCodeService.remove with agentCode from params and bearer token', async () => {
     const spy = jest
       .spyOn(agentCodeService, 'remove')
       .mockResolvedValue(undefined);
@@ -534,7 +533,7 @@ describe('AgentCodeController.remove', () => {
 
   it('calls next(RouteError) with status 403 when role is not admin', async () => {
     const req = makeRemoveReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+      user: { id: ADMIN_ID, role: 'agent' },
     } as Partial<IBaseReq>);
     const res = makeRes();
     const next = makeNext();
@@ -551,7 +550,7 @@ describe('AgentCodeController.remove', () => {
 
   it('calls next(RouteError) with status 403 when role is group_leader', async () => {
     const req = makeRemoveReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'group_leader' },
+      user: { id: ADMIN_ID, role: 'group_leader' },
     } as Partial<IBaseReq>);
     const res = makeRes();
     const next = makeNext();

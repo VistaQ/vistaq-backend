@@ -64,7 +64,7 @@ describe('SalesReportService.uploadReport — happy path', () => {
   it('resolves agents, bulk upserts, updates rows_loaded, returns processed count', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
-      id: 'batch-1', tenant_id: 't1', uploaded_by: 'u-mgr',
+      id: 'batch-1', uploaded_by: 'u-mgr',
       year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
       created_at: 'now',
     });
@@ -75,7 +75,6 @@ describe('SalesReportService.uploadReport — happy path', () => {
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 5,
@@ -90,7 +89,7 @@ describe('SalesReportService.uploadReport — happy path', () => {
     const ytdRows = (salesReportYtdRepository.bulkUpsert as jest.Mock).mock.calls[0][0];
     expect(ytdRows).toHaveLength(2);
     expect(ytdRows[0]).toMatchObject({
-      tenant_id: 't1', user_id: 'u1', year: 2026, month: 5, ace: 100, fyc: 70, acs: 20,
+      user_id: 'u1', year: 2026, month: 5, ace: 100, fyc: 70, acs: 20,
     });
     // YTD acs is read from the 'ACS (YTD)' column, not derived from ace/noc.
     expect(ytdRows[0].acs).toBe(20);
@@ -116,7 +115,7 @@ describe('SalesReportService.uploadReport — manual mode (null uploadedBy)', ()
   it('passes uploadedBy: null straight through to insertBatch', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
-      id: 'batch-manual', tenant_id: 't1', uploaded_by: null,
+      id: 'batch-manual', uploaded_by: null,
       year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
       created_at: 'now',
     });
@@ -127,7 +126,6 @@ describe('SalesReportService.uploadReport — manual mode (null uploadedBy)', ()
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: null,
       reportYear: 2026,
       reportMonth: 5,
@@ -150,7 +148,7 @@ describe('SalesReportService.uploadReport — unmatched agent', () => {
     ]);
 
     const result = await salesReportService.uploadReport({
-      etlResult: baseEtl, tenantId: 't1', uploadedBy: 'u-mgr',
+      etlResult: baseEtl, uploadedBy: 'u-mgr',
       reportYear: 2026, reportMonth: 5,
     });
 
@@ -173,7 +171,7 @@ describe('SalesReportService.uploadReport — failed (no rows match any user)', 
     (userRepository.findByAgentCodes as jest.Mock).mockResolvedValue([]);
 
     const result = await salesReportService.uploadReport({
-      etlResult: baseEtl, tenantId: 't1', uploadedBy: 'u-mgr',
+      etlResult: baseEtl, uploadedBy: 'u-mgr',
       reportYear: 2026, reportMonth: 5,
     });
 
@@ -191,7 +189,6 @@ describe('SalesReportService.uploadReport — input errors', () => {
   it('throws InvalidEtlResultError when records is empty', async () => {
     await expect(salesReportService.uploadReport({
       etlResult: { ...baseEtl, records: [] },
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 5,
@@ -229,7 +226,7 @@ describe('SalesReportService.uploadReport — coercion of mixed rowData values',
     };
 
     await salesReportService.uploadReport({
-      etlResult: etl, tenantId: 't1', uploadedBy: 'u-mgr',
+      etlResult: etl, uploadedBy: 'u-mgr',
       reportYear: 2026, reportMonth: 5,
     });
 
@@ -251,7 +248,7 @@ describe('SalesReportService.uploadReport — points awarding hand-off', () => {
   it('invokes salesPointsService.awardForBatch with the batch + resolved agents after persistence', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
-      id: 'batch-pts', tenant_id: 't1', uploaded_by: 'u-mgr',
+      id: 'batch-pts', uploaded_by: 'u-mgr',
       year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
       rows_skipped: 0, status: 'success', created_at: 'now',
     });
@@ -262,7 +259,6 @@ describe('SalesReportService.uploadReport — points awarding hand-off', () => {
 
     await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 5,
@@ -275,7 +271,6 @@ describe('SalesReportService.uploadReport — points awarding hand-off', () => {
 
     expect(batchArg).toMatchObject({
       id: 'batch-pts',
-      tenant_id: 't1',
       year: 2026,
       month: 5,
       rows_loaded: 2,
@@ -291,7 +286,7 @@ describe('SalesReportService.uploadReport — points awarding hand-off', () => {
   it('does not propagate errors thrown by the points service (upload still succeeds)', async () => {
     (salesReportYtdRepository.findLatestUploadedMonth as jest.Mock).mockResolvedValue(null);
     (uploadBatchRepository.insertBatch as jest.Mock).mockResolvedValue({
-      id: 'batch-pts2', tenant_id: 't1', uploaded_by: 'u-mgr',
+      id: 'batch-pts2', uploaded_by: 'u-mgr',
       year: 2026, month: 5, file_name: 'May2026.xlsx', rows_loaded: 0,
       rows_skipped: 0, status: 'success', created_at: 'now',
     });
@@ -307,7 +302,6 @@ describe('SalesReportService.uploadReport — points awarding hand-off', () => {
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 5,
@@ -324,7 +318,6 @@ describe('SalesReportService.uploadReport — skip-ahead guard', () => {
 
     await expect(salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 4,
@@ -338,7 +331,6 @@ describe('SalesReportService.uploadReport — skip-ahead guard', () => {
 
     await expect(salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 4,
@@ -357,7 +349,6 @@ describe('SalesReportService.uploadReport — skip-ahead guard', () => {
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 5,
@@ -377,7 +368,6 @@ describe('SalesReportService.uploadReport — skip-ahead guard', () => {
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 2,
@@ -397,7 +387,6 @@ describe('SalesReportService.uploadReport — skip-ahead guard', () => {
 
     const result = await salesReportService.uploadReport({
       etlResult: baseEtl,
-      tenantId: 't1',
       uploadedBy: 'u-mgr',
       reportYear: 2026,
       reportMonth: 8,

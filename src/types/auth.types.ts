@@ -4,7 +4,6 @@
 
 export interface IUser {
   id: string;
-  tenant_id: string;
   email: string;
   name: string;
   role: string;
@@ -33,7 +32,6 @@ export interface ICaller {
 
 export interface IGroup {
   id: string;
-  tenant_id: string;
   name: string;
   status: string;
   leader_id: string | null;
@@ -57,7 +55,6 @@ export interface IProductSold {
 
 export interface IProspect {
   id: string;
-  tenant_id: string;
   agent_id: string;
   prospect_name: string;
   prospect_email: string | null;

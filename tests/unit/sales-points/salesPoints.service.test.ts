@@ -15,11 +15,11 @@ jest.mock('@src/repositories/pointTransaction.repository', () => ({
 }));
 jest.mock('@src/repositories/salesReportMtd.repository', () => ({
   __esModule: true,
-  default: { findAceNocByTenantYearMonth: jest.fn() },
+  default: { findAceNocByYearMonth: jest.fn() },
 }));
 jest.mock('@src/repositories/salesReportYtd.repository', () => ({
   __esModule: true,
-  default: { findFyctByTenantYearMonths: jest.fn() },
+  default: { findFyctByYearMonths: jest.fn() },
 }));
 
 beforeEach(() => jest.resetAllMocks());
@@ -27,7 +27,6 @@ beforeEach(() => jest.resetAllMocks());
 function makeBatch(overrides: Partial<IUploadBatch> = {}): IUploadBatch {
   return {
     id: 'batch-new',
-    tenant_id: 't1',
     uploaded_by: 'u-mgr',
     year: 2026,
     month: 5,
@@ -51,10 +50,10 @@ describe('SalesPointsService.awardForBatch — happy path (first upload of month
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(
       RATES_30,
     );
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyct: 14500 },
       { user_id: 'u1', month: 4, fyct: 12000 },
     ]);
@@ -66,7 +65,6 @@ describe('SalesPointsService.awardForBatch — happy path (first upload of month
     expect(pointTransactionRepository.awardWithReversal).toHaveBeenCalledTimes(1);
     const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
 
-    expect(call.tenantId).toBe('t1');
     expect(call.year).toBe(2026);
     expect(call.month).toBe(5);
     expect(call.batchId).toBe('batch-new');
@@ -84,10 +82,10 @@ describe('SalesPointsService.awardForBatch — happy path (first upload of month
 
   it('treats first month of year (no previous YTD) as MTD FYCT = current YTD', async () => {
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 1, ace: 0, noc: 0 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 1, fyct: 4000 },
     ]);
 
@@ -110,10 +108,10 @@ describe('SalesPointsService.awardForBatch — concurrency (advisory lock)', () 
     // both reach the RPC layer without dropping awards or recomputing
     // priors in JS — the database is the single arbiter for ordering.
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 0, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
 
     // Simulate the RPC being called twice concurrently. Each invocation
     // resolves independently; the RPC body (in Postgres) serialises by
@@ -149,10 +147,10 @@ describe('SalesPointsService.awardForBatch — concurrency (advisory lock)', () 
 describe('SalesPointsService.awardForBatch — zero-points skipped', () => {
   it('forwards an empty award list when computed points all equal 0', async () => {
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 0, noc: 0 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyct: 100 },
       { user_id: 'u1', month: 4, fyct: 100 }, // delta = 0
     ]);
@@ -171,10 +169,10 @@ describe('SalesPointsService.awardForBatch — zero-points skipped', () => {
 
   it('omits a sub-1000 ACE bucket (floor(999/1000) = 0)', async () => {
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 999, noc: 1 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
 
     await salesPointsService.awardForBatch(makeBatch(), [
       { user_id: 'u1', agent_code: 'AG006' },
@@ -194,10 +192,10 @@ describe('SalesPointsService.awardForBatch — missing config defaults to 0', ()
       { activity: 'sales_fyct', points: 30, category: 'sales' },
       { activity: 'sales_ace', points: 30, category: 'sales' },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
 
     await salesPointsService.awardForBatch(makeBatch(), [
       { user_id: 'u1', agent_code: 'AG006' },
@@ -212,10 +210,10 @@ describe('SalesPointsService.awardForBatch — missing config defaults to 0', ()
 
   it('forwards an empty award list when no rates are configured at all', async () => {
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyct: 14500 },
       { user_id: 'u1', month: 4, fyct: 12000 },
     ]);
@@ -232,10 +230,10 @@ describe('SalesPointsService.awardForBatch — missing config defaults to 0', ()
 describe('SalesPointsService.awardForBatch — non-throwing contract', () => {
   it('swallows errors raised by the awarding RPC (upload must not fail)', async () => {
     (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByTenantYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByTenantYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
     (pointTransactionRepository.awardWithReversal as jest.Mock).mockRejectedValue(
       new Error('db on fire'),
     );

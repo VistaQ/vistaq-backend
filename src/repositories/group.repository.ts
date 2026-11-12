@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import { GroupNotFoundError } from '@src/models/errors/group.errors';
 import { DynamoTable } from '@src/services/dynamo.service';
@@ -40,7 +39,6 @@ const GROUP_STATUSES = ['active', 'inactive'] as const;
 function toGroup(item: IGroupItem): IGroup {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     name: item.name,
     status: item.status,
     leader_id: item.leader_id ?? null,

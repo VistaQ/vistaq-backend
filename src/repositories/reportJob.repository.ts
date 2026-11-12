@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import { DynamoTable } from '@src/services/dynamo.service';
 import type { IReportJob, ReportJobIns } from '@src/types/reportJob.types';
@@ -10,7 +9,7 @@ import { nowUtc } from '@src/utils/period';
 
 type IReportJobItem = Omit<
   IReportJob,
-  'tenant_id' | 'batch_id' | 'result' | 'error_message'
+  'batch_id' | 'result' | 'error_message'
 > & {
   batch_id?: string;
   result?: unknown;
@@ -24,7 +23,6 @@ const MAX_REFERENCE_ATTEMPTS = 2;
 function toJob(item: IReportJobItem): IReportJob {
   return {
     ...item,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     batch_id: item.batch_id ?? null,
     result: item.result ?? null,
     error_message: item.error_message ?? null,

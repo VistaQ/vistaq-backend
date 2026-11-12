@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import { DynamoTable } from '@src/services/dynamo.service';
 import type { IPointConfig } from '@src/types/pointConfig.types';
@@ -24,7 +23,6 @@ function toPointConfig(item: IPointConfigItem): IPointConfig {
     activity: item.activity,
     category: item.category,
     points: item.points,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     created_at: item.created_at,
     updated_at: item.updated_at,
   };

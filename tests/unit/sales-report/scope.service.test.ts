@@ -17,7 +17,6 @@ beforeEach(() => jest.resetAllMocks());
 describe('ScopeService.resolveSalesReportScope', () => {
   const baseParams = {
     userId: 'u1',
-    tenantId: 't1',
   };
 
   it('returns { type: "all" } for admin without any DB call', async () => {

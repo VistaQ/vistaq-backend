@@ -1,4 +1,3 @@
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import {
   UserAlreadyExistsError,
   UserNotFoundError,
@@ -76,7 +75,6 @@ const OPTIONAL_FIELDS = [
 function toUser(item: IUserItem): IUser {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     email: item.email,
     name: item.name,
     role: item.role,

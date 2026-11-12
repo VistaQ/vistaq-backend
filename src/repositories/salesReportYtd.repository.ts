@@ -120,10 +120,7 @@ class SalesReportYtdRepository {
     }
   }
 
-  async findLatestUploadedMonth(
-    _tenantId: string,
-    year: number,
-  ): Promise<number | null> {
+  async findLatestUploadedMonth(year: number): Promise<number | null> {
     try {
       const page = await ytd.query({
         index: 'byPeriod',
@@ -141,22 +138,18 @@ class SalesReportYtdRepository {
     }
   }
 
-  async findLatestYtdPerUserByTenantYear(
-    _tenantId: string,
-    year: number,
-  ): Promise<YtdRollupRow[]> {
+  async findLatestYtdPerUserByYear(year: number): Promise<YtdRollupRow[]> {
     try {
       return latestPerUser(await this.findByYear(year));
     } catch (error) {
       return handleRepositoryError(
-        'SalesReportYtdRepository.findLatestYtdPerUserByTenantYear',
+        'SalesReportYtdRepository.findLatestYtdPerUserByYear',
         error,
       );
     }
   }
 
-  async findFyctByTenantYearMonths(
-    _tenantId: string,
+  async findFyctByYearMonths(
     year: number,
     months: number[],
     userIds: string[],
@@ -173,14 +166,13 @@ class SalesReportYtdRepository {
       }));
     } catch (error) {
       return handleRepositoryError(
-        'SalesReportYtdRepository.findFyctByTenantYearMonths',
+        'SalesReportYtdRepository.findFyctByYearMonths',
         error,
       );
     }
   }
 
   async findLatestYtdForUserYear(
-    _tenantId: string,
     userId: string,
     year: number,
   ): Promise<YtdRollupRow | null> {

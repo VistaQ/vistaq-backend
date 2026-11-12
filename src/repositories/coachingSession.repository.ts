@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { CoachingSessionNotFoundError } from '@src/models/errors/coachingSession.errors';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import dynamoService, { DynamoTable } from '@src/services/dynamo.service';
@@ -117,7 +116,6 @@ const unique = (ids: string[]): string[] => Array.from(new Set(ids));
 function toSession(item: ISessionItem): ICoachingSession {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     coaching_type: item.coaching_type,
     title: item.title,
     description: item.description ?? null,

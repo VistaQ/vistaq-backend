@@ -26,7 +26,6 @@ export type Scope =
 
 export interface IResolveScopeParams {
   userId: string;
-  tenantId: string;
   role: string;
 }
 

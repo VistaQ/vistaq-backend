@@ -3,8 +3,8 @@
 ******************************************************************************/
 
 /**
- * The three configured per-tenant rates needed to compute sales-completion
- * points. Values default to 0 when a tenant has no `point_configs` row for a
+ * The three configured rates needed to compute sales-completion points.
+ * Values default to 0 when there is no `point_configs` row for a
  * given activity (defensive: a missing config short-circuits awarding without
  * blocking the upload).
  */

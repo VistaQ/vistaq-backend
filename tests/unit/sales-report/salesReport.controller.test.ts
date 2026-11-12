@@ -33,7 +33,7 @@ jest.mock('@src/services/scope.service', () => ({
 }));
 
 const mkReq = (role: string): IUploadReportReq => ({
-  user: { id: 'u-mgr', tenant_id: 't1', role },
+  user: { id: 'u-mgr', role },
   body: {
     report_year: 2026,
     report_month: 5,
@@ -104,7 +104,6 @@ describe('SalesReportController.upload', () => {
 
 const mkIngestReq = (overrides: Partial<IIngestReportReq['body']> = {}): IIngestReportReq => ({
   body: {
-    tenant_id: 't1',
     report_year: 2026,
     report_month: 5,
     etl_result: {
@@ -130,7 +129,6 @@ describe('SalesReportController.ingest', () => {
 
     expect(salesReportService.uploadReport).toHaveBeenCalledWith(
       expect.objectContaining({
-        tenantId: 't1',
         uploadedBy: null,
         reportYear: 2026,
         reportMonth: 5,
@@ -170,7 +168,7 @@ describe('SalesReportController.ingest', () => {
 });
 
 const mkGetYearReq = (role: string): IGetYearReportsReq => ({
-  user: { id: 'u-mgr', tenant_id: 't1', role },
+  user: { id: 'u-mgr', role },
   query: { year: '2026' },
 } as unknown as IGetYearReportsReq);
 
@@ -188,7 +186,7 @@ describe('SalesReportController.getYearReports', () => {
     await salesReportController.getYearReports(mkGetYearReq('admin'), res, next);
 
     expect(salesReportService.getYearReports).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, scope: { type: 'all' },
+      year: 2026, scope: { type: 'all' },
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({
@@ -210,7 +208,7 @@ describe('SalesReportController.getYearReports', () => {
     await salesReportController.getYearReports(mkGetYearReq('master_trainer'), res, next);
 
     expect(salesReportService.getYearReports).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, scope: { type: 'all' },
+      year: 2026, scope: { type: 'all' },
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
   });
@@ -226,7 +224,7 @@ describe('SalesReportController.getYearReports', () => {
     await salesReportController.getYearReports(mkGetYearReq('trainer'), res, next);
 
     expect(salesReportService.getYearReports).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, scope: { type: 'group_ids', groupIds: [] },
+      year: 2026, scope: { type: 'group_ids', groupIds: [] },
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
@@ -245,7 +243,7 @@ describe('SalesReportController.getYearReports', () => {
     await salesReportController.getYearReports(mkGetYearReq('trainer'), res, next);
 
     expect(salesReportService.getYearReports).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, scope: { type: 'group_ids', groupIds: ['g1', 'g2'] },
+      year: 2026, scope: { type: 'group_ids', groupIds: ['g1', 'g2'] },
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
   });
@@ -263,7 +261,7 @@ describe('SalesReportController.getYearReports', () => {
     await salesReportController.getYearReports(mkGetYearReq('group_leader'), res, next);
 
     expect(salesReportService.getYearReports).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, scope: { type: 'group_ids', groupIds: ['g-leader'] },
+      year: 2026, scope: { type: 'group_ids', groupIds: ['g-leader'] },
     });
   });
 
@@ -297,7 +295,7 @@ describe('SalesReportController.getYearReports', () => {
 });
 
 const mkGetMeReq = (): IGetMyYearReportReq => ({
-  user: { id: 'u1', tenant_id: 't1', role: 'agent' },
+  user: { id: 'u1', role: 'agent' },
   query: { year: '2026' },
 } as unknown as IGetMyYearReportReq);
 
@@ -312,7 +310,7 @@ describe('SalesReportController.getMyYearReport', () => {
     await salesReportController.getMyYearReport(mkGetMeReq(), res, next);
 
     expect(salesReportService.getMyYearReport).toHaveBeenCalledWith({
-      tenantId: 't1', userId: 'u1', year: 2026,
+      userId: 'u1', year: 2026,
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({
@@ -338,7 +336,7 @@ const mkAuditReq = (
   query: { year: string; page?: string; pageSize?: string } = { year: '2026' },
 ): IGetUploadAuditReq =>
   ({
-    user: { id: 'u-mgr', tenant_id: 't1', role },
+    user: { id: 'u-mgr', role },
     query,
   }) as unknown as IGetUploadAuditReq;
 
@@ -354,7 +352,7 @@ describe('SalesReportController.getUploadAudit', () => {
     await salesReportController.getUploadAudit(mkAuditReq('admin'), res, next);
 
     expect(salesReportService.getUploadAudit).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, page: 1, pageSize: 50,
+      year: 2026, page: 1, pageSize: 50,
     });
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.OK);
     expect(res.json).toHaveBeenCalledWith({
@@ -379,7 +377,7 @@ describe('SalesReportController.getUploadAudit', () => {
     );
 
     expect(salesReportService.getUploadAudit).toHaveBeenCalledWith({
-      tenantId: 't1', year: 2026, page: 2, pageSize: 25,
+      year: 2026, page: 2, pageSize: 25,
     });
   });
 
@@ -395,7 +393,7 @@ describe('SalesReportController.getUploadAudit', () => {
   });
 
   it.each(['admin', 'master_trainer', 'trainer', 'group_leader'])(
-    'returns 200 for %s (audit is tenant-wide for all 4 manager-tier roles)',
+    'returns 200 for %s (audit is open to all 4 manager-tier roles)',
     async (role) => {
       (salesReportService.getUploadAudit as jest.Mock).mockResolvedValue({
         data: [],

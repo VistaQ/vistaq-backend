@@ -64,7 +64,6 @@ class SalesPointsService {
       );
 
       await pointTransactionRepository.awardWithReversal({
-        tenantId: batch.tenant_id,
         year: batch.year,
         month: batch.month,
         batchId: batch.id,
@@ -102,7 +101,7 @@ class SalesPointsService {
     if (agentResolutions.length === 0) return [];
 
     const userIds = agentResolutions.map((a) => a.user_id);
-    const { tenant_id: tenantId, year, month, id: batchId } = batch;
+    const { year, month, id: batchId } = batch;
 
     // Months we need YTD rows for: the current report month and (when month
     // > 1) the previous month. The previous-month query is skipped for
@@ -110,18 +109,8 @@ class SalesPointsService {
     const ytdMonths = month > 1 ? [month, month - 1] : [month];
 
     const [mtdRows, ytdRows] = await Promise.all([
-      salesReportMtdRepository.findAceNocByTenantYearMonth(
-        tenantId,
-        year,
-        month,
-        userIds,
-      ),
-      salesReportYtdRepository.findFyctByTenantYearMonths(
-        tenantId,
-        year,
-        ytdMonths,
-        userIds,
-      ),
+      salesReportMtdRepository.findAceNocByYearMonth(year, month, userIds),
+      salesReportYtdRepository.findFyctByYearMonths(year, ytdMonths, userIds),
     ]);
 
     // Index lookups by user_id for O(1) joins.

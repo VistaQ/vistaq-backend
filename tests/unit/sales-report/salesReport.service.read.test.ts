@@ -9,15 +9,15 @@ import userRepository from '@src/repositories/user.repository';
 jest.mock('@src/repositories/salesReportYtd.repository', () => ({
   __esModule: true,
   default: {
-    findLatestYtdPerUserByTenantYear: jest.fn(),
+    findLatestYtdPerUserByYear: jest.fn(),
     findLatestYtdForUserYear: jest.fn(),
   },
 }));
 jest.mock('@src/repositories/salesReportMtd.repository', () => ({
   __esModule: true,
   default: {
-    findAceNocByTenantYear: jest.fn(),
-    findFycByTenantYear: jest.fn(),
+    findAceNocByYear: jest.fn(),
+    findFycByYear: jest.fn(),
   },
 }));
 jest.mock('@src/repositories/user.repository', () => ({
@@ -26,14 +26,14 @@ jest.mock('@src/repositories/user.repository', () => ({
 }));
 jest.mock('@src/repositories/uploadBatch.repository', () => ({
   __esModule: true,
-  default: { findPaginatedAuditByTenant: jest.fn() },
+  default: { findPaginatedAudit: jest.fn() },
 }));
 
 beforeEach(() => jest.resetAllMocks());
 
 describe('SalesReportService.getYearReports', () => {
   it('returns one ISalesReport per agent with monthly arrays populated', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([
       {
         id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
         ace: 620000, noc: 18, fyct: 295000, fyct_pct: 0.0132, mdrt_shortage_fyct: 393112.13,
@@ -42,17 +42,17 @@ describe('SalesReportService.getYearReports', () => {
         updated_at: '2026-04-30T08:15:00.000Z',
       },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 3, ace: 9118.64, noc: 7 },
     ]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 3, fyc_mtd: 1222.11, fyct_mtd: 5287.87 },
     ]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
       { id: 'u1', name: 'MELISSA ADLINA', agent_code: 'T75040K' },
     ]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+    const out = await salesReportService.getYearReports({ year: 2026, scope: { type: 'all' } });
 
     expect(out).toHaveLength(1);
     const r = out[0];
@@ -71,33 +71,32 @@ describe('SalesReportService.getYearReports', () => {
   });
 
   it('returns empty array when no agents have YTD rows for the year', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+    const out = await salesReportService.getYearReports({ year: 2026, scope: { type: 'all' } });
 
     expect(out).toEqual([]);
     // Other repos must not be called when there are no users to decorate.
-    expect(salesReportMtdRepository.findAceNocByTenantYear).not.toHaveBeenCalled();
-    expect(salesReportMtdRepository.findFycByTenantYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findAceNocByYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findFycByYear).not.toHaveBeenCalled();
     expect(userRepository.findIdNameAgentCodeByIds).not.toHaveBeenCalled();
   });
 
   it('short-circuits to [] without DB calls when scope.groupIds is empty', async () => {
     const out = await salesReportService.getYearReports({
-      tenantId: 't1',
       year: 2026,
       scope: { type: 'group_ids', groupIds: [] },
     });
 
     expect(out).toEqual([]);
-    expect(salesReportYtdRepository.findLatestYtdPerUserByTenantYear).not.toHaveBeenCalled();
-    expect(salesReportMtdRepository.findAceNocByTenantYear).not.toHaveBeenCalled();
-    expect(salesReportMtdRepository.findFycByTenantYear).not.toHaveBeenCalled();
+    expect(salesReportYtdRepository.findLatestYtdPerUserByYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findAceNocByYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findFycByYear).not.toHaveBeenCalled();
     expect(userRepository.findIdNameAgentCodeByIds).not.toHaveBeenCalled();
   });
 
   it('passes groupIds through to userRepository and drops out-of-scope YTD rows', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([
       {
         id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
@@ -113,15 +112,14 @@ describe('SalesReportService.getYearReports', () => {
         updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     // Only u1 matches the supplied groupIds — u2 is filtered out at the user query.
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
       { id: 'u1', name: 'Alice', agent_code: 'A1' },
     ]);
 
     const out = await salesReportService.getYearReports({
-      tenantId: 't1',
       year: 2026,
       scope: { type: 'group_ids', groupIds: ['g1', 'g2'] },
     });
@@ -135,7 +133,7 @@ describe('SalesReportService.getYearReports', () => {
   });
 
   it('falls back to empty agent_name/agent_code when the user row is missing', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([
       {
         id: 'ytd-u1', user_id: 'u-orphan', year: 2026, month: 3,
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
@@ -144,18 +142,18 @@ describe('SalesReportService.getYearReports', () => {
         updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+    const out = await salesReportService.getYearReports({ year: 2026, scope: { type: 'all' } });
 
     expect(out[0].agent_name).toBe('');
     expect(out[0].agent_code).toBe('');
   });
 
   it('assembles fyct_target/fyc_target as numbers when the user has set them', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([
       {
         id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
@@ -164,15 +162,15 @@ describe('SalesReportService.getYearReports', () => {
         updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     // NUMERIC columns come back from Postgres as strings — mirrors the existing
     // Number(...) coercion pattern used elsewhere in this file (ace/fyc/etc).
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
       { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: '300000.00', fyc_target: '250000.00' },
     ]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+    const out = await salesReportService.getYearReports({ year: 2026, scope: { type: 'all' } });
 
     expect(out[0].fyct_target).toBe(300000);
     expect(out[0].fyc_target).toBe(250000);
@@ -181,7 +179,7 @@ describe('SalesReportService.getYearReports', () => {
   });
 
   it('assembles fyct_target/fyc_target as null (not 0) when the user has not set them', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([
       {
         id: 'ytd-u1', user_id: 'u1', year: 2026, month: 3,
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
@@ -190,20 +188,20 @@ describe('SalesReportService.getYearReports', () => {
         updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
       { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: null, fyc_target: null },
     ]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+    const out = await salesReportService.getYearReports({ year: 2026, scope: { type: 'all' } });
 
     expect(out[0].fyct_target).toBeNull();
     expect(out[0].fyc_target).toBeNull();
   });
 
   it('assembles fyct_target/fyc_target as null when the user row is missing entirely (orphaned YTD row)', async () => {
-    (salesReportYtdRepository.findLatestYtdPerUserByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findLatestYtdPerUserByYear as jest.Mock).mockResolvedValue([
       {
         id: 'ytd-u1', user_id: 'u-orphan', year: 2026, month: 3,
         ace: 0, noc: 0, fyct: 0, fyct_pct: 0, mdrt_shortage_fyct: 0,
@@ -212,11 +210,11 @@ describe('SalesReportService.getYearReports', () => {
         updated_at: '2026-04-29T16:01:33.000Z',
       },
     ]);
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([]);
 
-    const out = await salesReportService.getYearReports({ tenantId: 't1', year: 2026, scope: { type: 'all' } });
+    const out = await salesReportService.getYearReports({ year: 2026, scope: { type: 'all' } });
 
     expect(out[0].fyct_target).toBeNull();
     expect(out[0].fyc_target).toBeNull();
@@ -228,11 +226,11 @@ describe('SalesReportService.getMyYearReport', () => {
     (salesReportYtdRepository.findLatestYtdForUserYear as jest.Mock).mockResolvedValue(null);
 
     const out = await salesReportService.getMyYearReport({
-      tenantId: 't1', userId: 'u1', year: 2026,
+      userId: 'u1', year: 2026,
     });
 
     expect(out).toBeNull();
-    expect(salesReportMtdRepository.findAceNocByTenantYear).not.toHaveBeenCalled();
+    expect(salesReportMtdRepository.findAceNocByYear).not.toHaveBeenCalled();
   });
 
   it('returns the assembled report when a YTD row exists', async () => {
@@ -243,11 +241,11 @@ describe('SalesReportService.getMyYearReport', () => {
       created_at: '2026-06-01T00:00:00Z',
       updated_at: '2026-06-02T10:00:00Z',
     });
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 1, ace: 10, noc: 1 },
       { user_id: 'u1', month: 5, ace: 30, noc: 2 },
     ]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyc_mtd: 35, fyct_mtd: 40 },
     ]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
@@ -255,7 +253,7 @@ describe('SalesReportService.getMyYearReport', () => {
     ]);
 
     const out = await salesReportService.getMyYearReport({
-      tenantId: 't1', userId: 'u1', year: 2026,
+      userId: 'u1', year: 2026,
     });
 
     expect(out).not.toBeNull();
@@ -264,8 +262,8 @@ describe('SalesReportService.getMyYearReport', () => {
     expect(out!.month_ace[4]).toBe(30);
     expect(out!.month_fyc[4]).toBe(35);
     // Per-user filter must be passed through to the MTD repos.
-    expect(salesReportMtdRepository.findAceNocByTenantYear).toHaveBeenCalledWith('t1', 2026, ['u1']);
-    expect(salesReportMtdRepository.findFycByTenantYear).toHaveBeenCalledWith('t1', 2026, ['u1']);
+    expect(salesReportMtdRepository.findAceNocByYear).toHaveBeenCalledWith(2026, ['u1']);
+    expect(salesReportMtdRepository.findFycByYear).toHaveBeenCalledWith(2026, ['u1']);
   });
 
   it('assembles fyct_target/fyc_target as numbers when the caller has set them', async () => {
@@ -276,14 +274,14 @@ describe('SalesReportService.getMyYearReport', () => {
       created_at: '2026-06-01T00:00:00Z',
       updated_at: '2026-06-02T10:00:00Z',
     });
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
       { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: 300000, fyc_target: 250000 },
     ]);
 
     const out = await salesReportService.getMyYearReport({
-      tenantId: 't1', userId: 'u1', year: 2026,
+      userId: 'u1', year: 2026,
     });
 
     expect(out).not.toBeNull();
@@ -299,14 +297,14 @@ describe('SalesReportService.getMyYearReport', () => {
       created_at: '2026-06-01T00:00:00Z',
       updated_at: '2026-06-02T10:00:00Z',
     });
-    (salesReportMtdRepository.findAceNocByTenantYear as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findFycByTenantYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYear as jest.Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findFycByYear as jest.Mock).mockResolvedValue([]);
     (userRepository.findIdNameAgentCodeByIds as jest.Mock).mockResolvedValue([
       { id: 'u1', name: 'Alice', agent_code: 'A1', fyct_target: null, fyc_target: null },
     ]);
 
     const out = await salesReportService.getMyYearReport({
-      tenantId: 't1', userId: 'u1', year: 2026,
+      userId: 'u1', year: 2026,
     });
 
     expect(out).not.toBeNull();
@@ -317,17 +315,17 @@ describe('SalesReportService.getMyYearReport', () => {
 
 describe('SalesReportService.getUploadAudit', () => {
   it('forwards page/pageSize to the repository and returns its result', async () => {
-    (uploadBatchRepository.findPaginatedAuditByTenant as jest.Mock).mockResolvedValue({
+    (uploadBatchRepository.findPaginatedAudit as jest.Mock).mockResolvedValue({
       data: [{ id: 'b1' }],
       meta: { page: 2, pageSize: 25, total: 30 },
     });
 
     const out = await salesReportService.getUploadAudit({
-      tenantId: 't1', year: 2026, page: 2, pageSize: 25,
+      year: 2026, page: 2, pageSize: 25,
     });
 
-    expect(uploadBatchRepository.findPaginatedAuditByTenant).toHaveBeenCalledWith(
-      't1', 2026, 2, 25,
+    expect(uploadBatchRepository.findPaginatedAudit).toHaveBeenCalledWith(
+      2026, 2, 25,
     );
     expect(out.meta.total).toBe(30);
   });

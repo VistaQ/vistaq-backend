@@ -25,10 +25,9 @@ class ReportJobService {
     try {
       // 0. Guard: block skip-ahead uploads only. Re-uploads of the latest month
       //    (data corrections) and earlier months (historical corrections) are
-      //    allowed — the upsert on (tenant, user, year, month) replaces cleanly
+      //    allowed — the upsert on (user, year, month) replaces cleanly
       //    and the LAG-derived MTD FYC view recomputes automatically.
       const latest = await salesReportYtdRepository.findLatestUploadedMonth(
-        params.tenantId,
         params.reportYear,
       );
       if (latest !== null && params.reportMonth > latest + 1) {
@@ -53,7 +52,6 @@ class ReportJobService {
       // millisecond-level UNIQUE collision (two uploads in the same
       // millisecond from different requests).
       const job = await reportJobRepository.insertJob({
-        tenant_id: params.tenantId,
         uploaded_by: params.uploadedBy,
         storage_path: storagePath,
         file_name: params.fileName,
@@ -89,12 +87,11 @@ class ReportJobService {
         throw new Error('etlResult required when status=success');
       }
 
-      // Reuse the existing persistence layer; idempotent on (tenant, user, year, month).
+      // Reuse the existing persistence layer; idempotent on (user, year, month).
       // Year/month live on the report_jobs row (captured at upload time) and are
       // passed as siblings of etlResult — the ETL itself is unaware of them.
       const result = await salesReportService.uploadReport({
         etlResult: params.etlResult as IEtlResult,
-        tenantId: job.tenant_id,
         uploadedBy: job.uploaded_by,
         reportYear: job.report_year,
         reportMonth: job.report_month,

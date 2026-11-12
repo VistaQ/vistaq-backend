@@ -39,13 +39,11 @@ import type { IGroup } from '@src/types/auth.types';
 ******************************************************************************/
 
 const GROUP_ID = '11111111-2222-3333-4444-555555555555';
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const LEADER_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 const USER_TOKEN = 'mock-user-jwt-token';
 
 const mockGroup: IGroup = {
   id: GROUP_ID,
-  tenant_id: TENANT_ID,
   name: 'Alpha Squad',
   status: 'active',
   leader_id: null,
@@ -60,7 +58,7 @@ const mockGroup: IGroup = {
 function makeGetAllReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: 'user-id', tenant_id: TENANT_ID, role: 'agent' },
+    user: { id: 'user-id', role: 'agent' },
     ...overrides,
   } as unknown as IBaseReq;
 }
@@ -69,7 +67,7 @@ function makeReq(overrides: Partial<ICreateGroupReq> = {}): ICreateGroupReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     body: { name: 'Alpha Squad' },
-    user: { id: 'admin-user-id', tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: 'admin-user-id', role: 'admin' },
     ...overrides,
   } as unknown as ICreateGroupReq;
 }
@@ -153,7 +151,7 @@ describe('GroupController.create', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('returns 403 when user role is not admin', async () => {
-    const req = makeReq({ user: { id: 'agent-id', tenant_id: TENANT_ID, role: 'agent' } } as Partial<ICreateGroupReq>);
+    const req = makeReq({ user: { id: 'agent-id', role: 'agent' } } as Partial<ICreateGroupReq>);
     const res = makeRes();
     const next = makeNext();
 
@@ -285,7 +283,7 @@ function makeGetByIdReq(overrides: Partial<IGetGroupByIdReq> = {}): IGetGroupByI
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { groupId: GROUP_ID },
-    user: { id: 'user-id', tenant_id: TENANT_ID, role: 'agent' },
+    user: { id: 'user-id', role: 'agent' },
     ...overrides,
   } as unknown as IGetGroupByIdReq;
 }
@@ -355,7 +353,7 @@ function makeUpdateReq(overrides: Partial<IUpdateGroupReq> = {}): IUpdateGroupRe
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { groupId: GROUP_ID },
     body: { name: 'Updated Squad' },
-    user: { id: 'admin-user-id', tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: 'admin-user-id', role: 'admin' },
     ...overrides,
   } as unknown as IUpdateGroupReq;
 }
@@ -364,7 +362,7 @@ describe('GroupController.update', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('returns 403 when role is not admin', async () => {
-    const req = makeUpdateReq({ user: { id: 'agent-id', tenant_id: TENANT_ID, role: 'agent' } } as Partial<IUpdateGroupReq>);
+    const req = makeUpdateReq({ user: { id: 'agent-id', role: 'agent' } } as Partial<IUpdateGroupReq>);
     const res = makeRes();
     const next = makeNext();
 

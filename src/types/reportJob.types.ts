@@ -1,6 +1,4 @@
-
 export interface ReportJobIns {
-  tenant_id?: string;
   uploaded_by: string;
   storage_path: string;
   file_name: string;
@@ -13,7 +11,6 @@ export type ReportJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export interface IReportJob {
   id: string;
   reference: string;
-  tenant_id: string;
   uploaded_by: string;
   storage_path: string;
   file_name: string;
@@ -29,7 +26,6 @@ export interface IReportJob {
 }
 
 export interface ICreateJobParams {
-  tenantId: string;
   uploadedBy: string;
   fileBuffer: Buffer;
   fileName: string;

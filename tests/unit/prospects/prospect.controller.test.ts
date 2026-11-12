@@ -22,14 +22,12 @@ import type { IBaseReq } from '@src/models/interfaces/base.interface';
 ******************************************************************************/
 
 const PROSPECT_ID = '11111111-2222-3333-4444-555555555555';
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const AGENT_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 const GROUP_ID = 'cccccccc-dddd-eeee-ffff-000000000000';
 const USER_TOKEN = 'test-token';
 
 const mockProspect: IProspect = {
   id: PROSPECT_ID,
-  tenant_id: TENANT_ID,
   agent_id: AGENT_ID,
   prospect_name: 'John Doe',
   prospect_email: 'john@example.com',
@@ -60,7 +58,7 @@ function makeReq(overrides: Partial<ICreateProspectReq> = {}): ICreateProspectRe
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     body: { fullName: 'John Doe', phoneNum: '+61400000000', email: 'john@example.com' },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     ...overrides,
   } as unknown as ICreateProspectReq;
 }
@@ -68,7 +66,7 @@ function makeReq(overrides: Partial<ICreateProspectReq> = {}): ICreateProspectRe
 function makeBaseReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     ...overrides,
   } as unknown as IBaseReq;
 }
@@ -76,7 +74,7 @@ function makeBaseReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
 function makeGetByIdReq(overrides: Partial<IGetProspectByIdReq> = {}): IGetProspectByIdReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     params: { prospectId: PROSPECT_ID },
     ...overrides,
   } as unknown as IGetProspectByIdReq;
@@ -85,7 +83,7 @@ function makeGetByIdReq(overrides: Partial<IGetProspectByIdReq> = {}): IGetProsp
 function makeUpdateReq(overrides: Partial<IUpdateProspectReq> = {}): IUpdateProspectReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     params: { prospectId: PROSPECT_ID },
     body: { appointmentStatus: 'scheduled' },
     ...overrides,
@@ -95,7 +93,7 @@ function makeUpdateReq(overrides: Partial<IUpdateProspectReq> = {}): IUpdatePros
 function makeDeleteReq(overrides: Partial<IDeleteProspectReq> = {}): IDeleteProspectReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     params: { prospectId: PROSPECT_ID },
     ...overrides,
   } as unknown as IDeleteProspectReq;
@@ -140,7 +138,7 @@ describe('ProspectController.create', () => {
     jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+      user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
     } as Partial<ICreateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -157,7 +155,7 @@ describe('ProspectController.create', () => {
 
   it('returns 403 when role is not agent or group_leader', async () => {
     const req = makeReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'manager', group_id: null },
+      user: { id: AGENT_ID, role: 'manager', group_id: null },
     } as Partial<ICreateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -380,7 +378,7 @@ describe('ProspectController.update', () => {
     jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
 
     const req = makeUpdateReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+      user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
     } as Partial<IUpdateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -397,7 +395,7 @@ describe('ProspectController.update', () => {
 
   it('calls next(RouteError) with status 403 when role is admin', async () => {
     const req = makeUpdateReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'admin', group_id: null },
+      user: { id: AGENT_ID, role: 'admin', group_id: null },
     } as Partial<IUpdateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -474,7 +472,7 @@ describe('ProspectController.delete', () => {
     jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'admin', group_id: null },
+      user: { id: AGENT_ID, role: 'admin', group_id: null },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -490,7 +488,7 @@ describe('ProspectController.delete', () => {
     jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+      user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -504,7 +502,7 @@ describe('ProspectController.delete', () => {
 
   it('calls next(RouteError) with status 403 when role is not agent, admin, or group_leader', async () => {
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'master_trainer', group_id: null },
+      user: { id: AGENT_ID, role: 'master_trainer', group_id: null },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -522,7 +520,7 @@ describe('ProspectController.delete', () => {
 
   it('calls next(RouteError) with status 403 when role is trainer', async () => {
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'trainer', group_id: null },
+      user: { id: AGENT_ID, role: 'trainer', group_id: null },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();

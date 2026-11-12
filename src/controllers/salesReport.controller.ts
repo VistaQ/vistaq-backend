@@ -37,12 +37,10 @@ export interface IUploadReportRes extends IBaseRes {
 /**
  * Manual-mode ingest from the local ETL script. Body fields use snake_case to
  * mirror the ETL JSON style. Authenticated by ETL_API_KEY (no JWT), so
- * `tenant_id` is supplied in the body and `uploaded_by` is intentionally
- * unattributed (null).
+ * `uploaded_by` is intentionally unattributed (null).
  */
 export interface IIngestReportReq extends IBaseReq {
   body: {
-    tenant_id: string;
     report_year: number;
     report_month: number;
     etl_result: IEtlResult;
@@ -91,8 +89,8 @@ export interface IGetUploadAuditRes extends IBaseRes {
 // (audit + scoped per-agent rollup) but are not entitled to publish data.
 const UPLOAD_ALLOWED_ROLES = ['admin', 'master_trainer', 'group_leader'];
 
-// Roles permitted to view the tenant-wide upload-audit list. Uploads are not
-// group-bound (every xlsx covers the whole tenant), so any of the four
+// Roles permitted to view the upload-audit list. Uploads are not
+// group-bound (every xlsx covers every agent), so any of the four
 // manager-tier roles can see the audit. `agent` continues to get 403.
 const AUDIT_ALLOWED_ROLES = [
   'admin',
@@ -115,7 +113,6 @@ class SalesReportController {
 
       const result = await salesReportService.uploadReport({
         etlResult: req.body.etlResult,
-        tenantId: req.user!.tenant_id,
         uploadedBy: req.user!.id,
         reportYear: req.body.report_year,
         reportMonth: req.body.report_month,
@@ -144,7 +141,6 @@ class SalesReportController {
     try {
       const result = await salesReportService.uploadReport({
         etlResult: req.body.etl_result,
-        tenantId: req.body.tenant_id,
         uploadedBy: null,
         reportYear: req.body.report_year,
         reportMonth: req.body.report_month,
@@ -173,7 +169,6 @@ class SalesReportController {
     try {
       const scope = await scopeService.resolveSalesReportScope({
         userId: req.user!.id,
-        tenantId: req.user!.tenant_id,
         role: req.user!.role,
       });
 
@@ -184,7 +179,6 @@ class SalesReportController {
 
       const year = Number(req.query.year);
       const data = await salesReportService.getYearReports({
-        tenantId: req.user!.tenant_id,
         year,
         scope,
       });
@@ -208,7 +202,6 @@ class SalesReportController {
     try {
       const year = Number(req.query.year);
       const data = await salesReportService.getMyYearReport({
-        tenantId: req.user!.tenant_id,
         userId: req.user!.id,
         year,
       });
@@ -248,7 +241,6 @@ class SalesReportController {
         req.query.pageSize !== undefined ? Number(req.query.pageSize) : 50;
 
       const result = await salesReportService.getUploadAudit({
-        tenantId: req.user!.tenant_id,
         year,
         page,
         pageSize,

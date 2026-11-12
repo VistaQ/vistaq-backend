@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import {
   TaxonomyConflictError,
@@ -30,7 +29,6 @@ const taxonomies = new DynamoTable<ITaxonomyItem>('Taxonomies');
 function toTaxonomy(item: ITaxonomyItem): ITaxonomy {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     type: item.type,
     value: item.value,
     sort_order: item.sort_order,

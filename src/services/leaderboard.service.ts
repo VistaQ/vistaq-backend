@@ -130,10 +130,7 @@ class LeaderboardService {
         );
       }
       const rows =
-        await salesReportYtdRepository.findLatestYtdPerUserByTenantYear(
-          '',
-          year,
-        );
+        await salesReportYtdRepository.findLatestYtdPerUserByYear(year);
       return new Map(
         rows.map((row) => [
           row.user_id,

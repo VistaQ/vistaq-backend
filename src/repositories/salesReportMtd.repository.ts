@@ -125,8 +125,7 @@ class SalesReportMtdRepository {
     }
   }
 
-  async findAceNocByTenantYear(
-    _tenantId: string,
+  async findAceNocByYear(
     year: number,
     userIds?: string[],
   ): Promise<MtdMonthlyRow[]> {
@@ -134,14 +133,13 @@ class SalesReportMtdRepository {
       return (await this.findItems(year, userIds)).map(toMonthly);
     } catch (error) {
       return handleRepositoryError(
-        'SalesReportMtdRepository.findAceNocByTenantYear',
+        'SalesReportMtdRepository.findAceNocByYear',
         error,
       );
     }
   }
 
-  async findAceNocByTenantYearMonth(
-    _tenantId: string,
+  async findAceNocByYearMonth(
     year: number,
     month: number,
     userIds: string[],
@@ -151,7 +149,7 @@ class SalesReportMtdRepository {
       return (await this.findItems(year, userIds, month)).map(toMonthly);
     } catch (error) {
       return handleRepositoryError(
-        'SalesReportMtdRepository.findAceNocByTenantYearMonth',
+        'SalesReportMtdRepository.findAceNocByYearMonth',
         error,
       );
     }
@@ -202,8 +200,7 @@ class SalesReportMtdRepository {
     }
   }
 
-  async findFycByTenantYear(
-    _tenantId: string,
+  async findFycByYear(
     year: number,
     userIds?: string[],
   ): Promise<MtdFycMonthlyRow[]> {
@@ -217,7 +214,7 @@ class SalesReportMtdRepository {
       }));
     } catch (error) {
       return handleRepositoryError(
-        'SalesReportMtdRepository.findFycByTenantYear',
+        'SalesReportMtdRepository.findFycByYear',
         error,
       );
     }

@@ -74,7 +74,6 @@ class ReportJobController {
       }
 
       const job = await reportJobService.createJob({
-        tenantId: req.user!.tenant_id,
         uploadedBy: req.user!.id,
         fileBuffer: req.file.buffer,
         fileName: req.file.originalname,
@@ -135,14 +134,6 @@ class ReportJobController {
       }
 
       const job = await reportJobService.getJob(req.params.reference);
-
-      // Tenant isolation: a manager from tenant A must not see tenant B's jobs.
-      // Admin client bypasses RLS, so we enforce it here.
-      if (job.tenant_id !== req.user!.tenant_id) {
-        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
-        return;
-      }
-
       const body: IGetJobRes = { success: true, data: job };
       res.status(HttpStatusCodes.OK).json(body);
     } catch (error) {
@@ -161,13 +152,6 @@ class ReportJobController {
   ): Promise<void> {
     try {
       if (!ALLOWED_ROLES.includes(req.user!.role)) {
-        next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
-        return;
-      }
-
-      // Tenant guard before the retry
-      const existing = await reportJobService.getJob(req.params.reference);
-      if (existing.tenant_id !== req.user!.tenant_id) {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }

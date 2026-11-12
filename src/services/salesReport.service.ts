@@ -25,7 +25,6 @@ import { handleServiceError } from '@src/utils/errorHandlers';
 
 interface IUploadParams {
   etlResult: IEtlResult;
-  tenantId: string;
   /**
    * Nullable for manual ETL ingests (POST /api/reports/ingest) where the
    * caller is authenticated via ETL_API_KEY rather than a user JWT.
@@ -60,8 +59,7 @@ function readRowData(r: IEtlRowData, key: string): number {
 class SalesReportService {
   async uploadReport(params: IUploadParams): Promise<IUploadResult> {
     try {
-      const { etlResult, tenantId, uploadedBy, reportYear, reportMonth } =
-        params;
+      const { etlResult, uploadedBy, reportYear, reportMonth } = params;
 
       // 1. Validate input
       if (!etlResult.records?.length) {
@@ -74,12 +72,10 @@ class SalesReportService {
 
       // 2a. Defense-in-depth guard: block skip-ahead uploads only. Re-uploads of
       //     the latest month (data corrections) and earlier months (historical
-      //     corrections) are allowed — the upsert on (tenant, user, year, month)
+      //     corrections) are allowed — the upsert on (user, year, month)
       //     replaces cleanly and the LAG-derived MTD FYC view recomputes.
-      const latest = await salesReportYtdRepository.findLatestUploadedMonth(
-        tenantId,
-        reportYear,
-      );
+      const latest =
+        await salesReportYtdRepository.findLatestUploadedMonth(reportYear);
       if (latest !== null && reportMonth > latest + 1) {
         const reqMonth = String(reportMonth).padStart(2, '0');
         const latestMonth = String(latest).padStart(2, '0');
@@ -91,7 +87,6 @@ class SalesReportService {
 
       // 3. Insert upload batch
       const batch = await uploadBatchRepository.insertBatch({
-        tenant_id: tenantId,
         uploaded_by: uploadedBy,
         year: reportYear,
         month: reportMonth,
@@ -127,7 +122,6 @@ class SalesReportService {
         const r = record.rowData;
         ytdRows.push({
           batch_id: batch.id,
-          tenant_id: tenantId,
           user_id: userId,
           year: reportYear,
           month: reportMonth,
@@ -152,7 +146,6 @@ class SalesReportService {
 
           mtdRows.push({
             batch_id: batch.id,
-            tenant_id: tenantId,
             user_id: userId,
             year: reportYear,
             month: monthNum,
@@ -221,8 +214,8 @@ class SalesReportService {
   }
 
   /**
-   * Manager-only: returns one `ISalesReport` per agent in the tenant for the
-   * given year. Each entry combines the agent's latest YTD snapshot with
+   * Manager-only: returns one `ISalesReport` per agent for the given year.
+   * Each entry combines the agent's latest YTD snapshot with
    * monthly arrays for ACE/NOC (from `sales_report_mtd`) and FYC/FYCt
    * (from the `sales_report_mtd_fyc` view).
    *
@@ -237,7 +230,6 @@ class SalesReportService {
    *   don't survive the filter are dropped from the assembled result.
    */
   async getYearReports(p: {
-    tenantId: string;
     year: number;
     scope: Scope;
   }): Promise<ISalesReport[]> {
@@ -248,11 +240,9 @@ class SalesReportService {
         return [];
       }
 
-      const ytdRows =
-        await salesReportYtdRepository.findLatestYtdPerUserByTenantYear(
-          p.tenantId,
-          p.year,
-        );
+      const ytdRows = await salesReportYtdRepository.findLatestYtdPerUserByYear(
+        p.year,
+      );
 
       if (ytdRows.length === 0) return [];
 
@@ -261,8 +251,8 @@ class SalesReportService {
         p.scope.type === 'group_ids' ? p.scope.groupIds : undefined;
 
       const [mtdRows, fycRows, users] = await Promise.all([
-        salesReportMtdRepository.findAceNocByTenantYear(p.tenantId, p.year),
-        salesReportMtdRepository.findFycByTenantYear(p.tenantId, p.year),
+        salesReportMtdRepository.findAceNocByYear(p.year),
+        salesReportMtdRepository.findFycByYear(p.year),
         userRepository.findIdNameAgentCodeByIds(userIds, groupIds),
       ]);
 
@@ -288,25 +278,19 @@ class SalesReportService {
    * the user has no YTD row yet (controller maps null → 404).
    */
   async getMyYearReport(p: {
-    tenantId: string;
     userId: string;
     year: number;
   }): Promise<ISalesReport | null> {
     try {
       const ytd = await salesReportYtdRepository.findLatestYtdForUserYear(
-        p.tenantId,
         p.userId,
         p.year,
       );
       if (!ytd) return null;
 
       const [mtdRows, fycRows, users] = await Promise.all([
-        salesReportMtdRepository.findAceNocByTenantYear(p.tenantId, p.year, [
-          p.userId,
-        ]),
-        salesReportMtdRepository.findFycByTenantYear(p.tenantId, p.year, [
-          p.userId,
-        ]),
+        salesReportMtdRepository.findAceNocByYear(p.year, [p.userId]),
+        salesReportMtdRepository.findFycByYear(p.year, [p.userId]),
         userRepository.findIdNameAgentCodeByIds([p.userId]),
       ]);
 
@@ -318,18 +302,16 @@ class SalesReportService {
   }
 
   /**
-   * Manager-only: paginated audit list of upload batches for a tenant + year,
+   * Manager-only: paginated audit list of upload batches for a year,
    * sorted most-recent-first.
    */
   async getUploadAudit(p: {
-    tenantId: string;
     year: number;
     page: number;
     pageSize: number;
   }): Promise<IPaginatedUploadAudit> {
     try {
-      return await uploadBatchRepository.findPaginatedAuditByTenant(
-        p.tenantId,
+      return await uploadBatchRepository.findPaginatedAudit(
         p.year,
         p.page,
         p.pageSize,

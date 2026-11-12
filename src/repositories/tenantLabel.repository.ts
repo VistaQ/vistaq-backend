@@ -1,4 +1,3 @@
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoTable } from '@src/services/dynamo.service';
 import type { ITenantLabel } from '@src/types/tenantLabel.types';
 import { handleRepositoryError } from '@src/utils/errorHandlers';
@@ -22,7 +21,6 @@ class TenantLabelRepository {
       const items = await labels.scanAll();
       return items.map((item) => ({
         id: item.key,
-        tenant_id: TRANSITIONAL_TENANT_ID,
         key: item.key,
         value: item.value,
         created_at: item.created_at,

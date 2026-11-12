@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import userRepository from '@src/repositories/user.repository';
 import { DynamoTable } from '@src/services/dynamo.service';
 import type {
@@ -35,7 +34,6 @@ const uploadBatches = new DynamoTable<IUploadBatchItem>('UploadBatches');
 function toBatch(item: IUploadBatchItem): IUploadBatch {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     uploaded_by: item.uploaded_by ?? null,
     year: item.year,
     month: item.month,
@@ -53,7 +51,6 @@ function toBatch(item: IUploadBatchItem): IUploadBatch {
 
 class UploadBatchRepository {
   async findPriorBatchIdsForPeriod(
-    _tenantId: string,
     year: number,
     month: number,
     excludeBatchId: string,
@@ -118,8 +115,7 @@ class UploadBatchRepository {
     }
   }
 
-  async findPaginatedAuditByTenant(
-    _tenantId: string,
+  async findPaginatedAudit(
     year: number,
     page: number,
     pageSize: number,
@@ -157,7 +153,7 @@ class UploadBatchRepository {
       };
     } catch (error) {
       return handleRepositoryError(
-        'UploadBatchRepository.findPaginatedAuditByTenant',
+        'UploadBatchRepository.findPaginatedAudit',
         error,
       );
     }

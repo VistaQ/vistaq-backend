@@ -14,7 +14,6 @@ export interface ICoachingSessionAttendance {
 
 export interface ICoachingSession {
   id: string;
-  tenant_id: string;
   coaching_type: string;
   title: string;
   description: string | null;

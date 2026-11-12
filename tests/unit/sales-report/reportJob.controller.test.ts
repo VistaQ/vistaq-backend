@@ -36,7 +36,7 @@ const REF = 'SALES-REPORT-20260502143022873';
 
 describe('ReportJobController.create', () => {
   const baseReq = (role: string): ICreateJobReq => ({
-    user: { id: 'u1', tenant_id: 't1', role },
+    user: { id: 'u1', role },
     body: { reportYear: 2026, reportMonth: 5 },
     file: {
       buffer: Buffer.from('x'),
@@ -132,12 +132,12 @@ describe('ReportJobController.complete', () => {
 
 describe('ReportJobController.getById', () => {
   const req = (role: string): IGetJobReq => ({
-    user: { id: 'u1', tenant_id: 't1', role },
+    user: { id: 'u1', role },
     params: { reference: REF },
   } as unknown as IGetJobReq);
 
   it('returns 200 with the job', async () => {
-    const job = { id: 'j1', reference: REF, tenant_id: 't1', status: 'completed' };
+    const job = { id: 'j1', reference: REF, status: 'completed' };
     (reportJobService.getJob as jest.Mock).mockResolvedValue(job);
     const res = mkRes();
     const next = jest.fn() as NextFunction;
@@ -165,27 +165,16 @@ describe('ReportJobController.getById', () => {
     const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.NOT_FOUND);
   });
-
-  it('returns 403 when job belongs to another tenant', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({
-      id: 'j1', reference: REF, tenant_id: 'other-tenant', status: 'completed',
-    });
-    const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
-    await reportJobController.getById(req('group_leader'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
-    expect(err.status).toBe(HttpStatusCodes.FORBIDDEN);
-  });
 });
 
 describe('ReportJobController.retry', () => {
   const req = (role: string): IRetryJobReq => ({
-    user: { id: 'u1', tenant_id: 't1', role },
+    user: { id: 'u1', role },
     params: { reference: REF },
   } as unknown as IRetryJobReq);
 
   it('returns 202 with the reference on success', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, tenant_id: 't1', status: 'failed' });
+    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, status: 'failed' });
     (reportJobService.retryJob as jest.Mock).mockResolvedValue(undefined);
     const res = mkRes();
     const next = jest.fn() as NextFunction;
@@ -198,7 +187,7 @@ describe('ReportJobController.retry', () => {
   });
 
   it('maps JobNotRetryableError to 409 Conflict', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, tenant_id: 't1', status: 'completed' });
+    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, status: 'completed' });
     (reportJobService.retryJob as jest.Mock).mockRejectedValue(new JobNotRetryableError());
     const res = mkRes();
     const next = jest.fn() as unknown as NextFunction;

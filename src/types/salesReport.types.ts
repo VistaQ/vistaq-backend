@@ -3,7 +3,6 @@
 ******************************************************************************/
 
 export interface UploadBatchIns {
-  tenant_id?: string;
   uploaded_by?: string | null;
   year: number;
   month: number;
@@ -14,7 +13,6 @@ export interface UploadBatchIns {
 }
 
 export interface SalesReportMtdIns {
-  tenant_id?: string;
   user_id: string;
   batch_id: string;
   year: number;
@@ -41,7 +39,6 @@ export type UploadStatus = 'success' | 'partial' | 'failed';
 
 export interface IUploadBatch {
   id: string;
-  tenant_id: string;
   /**
    * Nullable: manual ETL ingests (POST /api/reports/ingest) authenticate via
    * ETL_API_KEY rather than a user JWT, so there is no uploader to

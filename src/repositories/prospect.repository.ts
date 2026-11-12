@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { TRANSITIONAL_TENANT_ID } from '@src/constants/tenant';
 import { DynamoConditionFailedError } from '@src/models/errors/dynamo.error';
 import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
 import { DynamoTable } from '@src/services/dynamo.service';
@@ -80,7 +79,6 @@ export type IProspectCursor = Partial<Record<string, IStageCursor>>;
 function toProspect(item: IProspectItem): IProspect {
   return {
     id: item.id,
-    tenant_id: TRANSITIONAL_TENANT_ID,
     agent_id: item.agent_id,
     prospect_name: item.prospect_name,
     prospect_email: item.prospect_email ?? null,
