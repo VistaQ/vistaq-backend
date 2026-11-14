@@ -8,13 +8,13 @@
 
 ## 2. Stage and sign-in
 
-- [ ] 2.1 Add `scripts/seed-api/stage.ts`, which resolves `--stage` to the API URL, `UserPoolId`, `UserPoolClientId` and table names from the `vistaq-<stage>` stack, refusing a missing stage, `production`, and any stack whose tables start `prod_`; verify with `tests/unit/seedApi/stage.test.ts` against a mocked CloudFormation client
-- [ ] 2.2 Add `scripts/seed-api/auth.ts`:
+- [x] 2.1 Add `scripts/seed-api/stage.ts`, which resolves `--stage` to the API URL, `UserPoolId`, `UserPoolClientId` and table names from the `vistaq-<stage>` stack, refusing a missing stage, `production`, and any stack whose tables start `prod_`; verify with `tests/unit/seedApi/stage.test.ts` against a mocked CloudFormation client (done 2026-11-15: service name and region come from `serverless.yml`; outputs from `DescribeStacks`, tables from a paginated `ListStackResources`, keyed by the `<Base>Table` logical ids, with one shared prefix required. 10 tests; removing the `prod_` prefix guard or the production name guard each fails one. Added `@aws-sdk/client-cloudformation` 3.1161.0, matching the other SDK clients)
+- [x] 2.2 Add `scripts/seed-api/auth.ts`:
   - create the seed admin as `create-admin.js` does (`AdminCreateUser` with `SUPPRESS`, and the Users item);
   - set the run's temporary password with `AdminSetUserPassword` and sign in with `USER_AUTH` and `PASSWORD`, signing in again on a 401;
   - in `finally` and on `SIGINT`, re-randomise every user it touched.
 
-  Verify with `tests/unit/seedApi/auth.test.ts` that no create call omits `SUPPRESS` and that a thrown error still re-randomises every touched user.
+  Verify with `tests/unit/seedApi/auth.test.ts` that no create call omits `SUPPRESS` and that a thrown error still re-randomises every touched user. Done 2026-11-15: `SeedAuth` with `createSeedAdmin`, `tokenFor` and `run`; a user counts as touched before its password is set, so a failed sign-in is still restored. 7 tests, including Ctrl+C through the registered handler; without the restore on failure 2 fail, without `SUPPRESS` 1 fails.
 
 ## 3. Seed and reset commands
 
