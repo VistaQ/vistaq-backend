@@ -18,21 +18,37 @@
 
 ## 3. Seed and reset commands
 
-- [ ] 3.1 Add `scripts/seed-api/plan.ts`, which builds the deterministic demo plan from a fixed faker seed (users, groups, codes, prospects with target stages, events, sessions and joins in the coming weeks, monthly reports from January to last month) with the seed markers; verify with `tests/unit/seedApi/plan.test.ts` that the same seed gives the same plan, that every user, group, code and title carries its marker, and that every event and session starts in the future
-- [ ] 3.2 Add `scripts/seed-api/seed.ts` and `npm run seed:api -- --stage <stage>`:
+- [x] 3.1 Add `scripts/seed-api/plan.ts`, which builds the deterministic demo plan from a fixed faker seed (users, groups, codes, prospects with target stages, events, sessions and joins in the coming weeks, monthly reports from January to last month) with the seed markers; verify with `tests/unit/seedApi/plan.test.ts` that the same seed gives the same plan, that every user, group, code and title carries its marker, and that every event and session starts in the future (done 2026-11-15: a local seeded `Faker` and an explicit `now`; request bodies are typed from `api.d.ts`. The plan holds 1 master trainer, 3 trainers, 5 groups, 30 agents (one leader per group), 40 codes, 295 prospects (655 requests), 8 events, 8 sessions with 19 joins, and reports for January to last month. Trainers aim events and sessions only at their own groups, and agents carry sales, FYCT and FYC targets. 6 tests, which also check owners and that YTD equals the sum of the monthly figures)
+- [x] 3.2 Add `scripts/seed-api/seed.ts` and `npm run seed:api -- --stage <stage>`:
   - refuse when seed users already exist on the stage;
   - create the data in dependency order as the owning role;
   - write the run record to `scripts/seed-api/.runs/<stage>.json`, replacing the stale `scripts/demo-seed-manifest.json` entry in `.gitignore` with `scripts/seed-api/.runs/`.
 
-  Verify with `tests/unit/seedApi/seed.test.ts` that an existing seed user stops the run before any create call.
-- [ ] 3.3 Add `scripts/seed-api/reset.ts` and `npm run seed:api:reset -- --stage <stage> [--dry-run]`:
+  Verify with `tests/unit/seedApi/seed.test.ts` that an existing seed user stops the run before any create call. Done 2026-11-15:
+  - The order is the seed admin, trainers, codes, groups with trainers, registration, profiles and targets, leaders, prospects, events, sessions, joins, then reports in month order.
+  - One owner's prospects and joins run in sequence, with parallelism across owners. Parallel work waits for every task before passwords are restored.
+  - The run record is saved after every create, and a report that skips rows stops the run.
+  - Uploads are resent on a 409, because the upload guard reads an index, and the Cognito client uses adaptive retries for the burst of first sign-ins.
+  - `auth.ts` now shares one sign-in among parallel requests and refuses sign-ins once passwords are restored. `stage.ts` also returns the stack's queue URLs.
+  - 5 seed tests:
+    - a seed user or a leftover record stops the run before any create or fetch, and an address the filter matches that isn't a seed user does not (without the check, 2 fail);
+    - the 409 resend retries, gives up after 4 attempts, and leaves other statuses alone.
+  - 2 new auth tests: without the shared sign-in 1 fails, and without the refusal 1 fails.
+- [x] 3.3 Add `scripts/seed-api/reset.ts` and `npm run seed:api:reset -- --stage <stage> [--dry-run]`:
   - select seed items by run-record ids, or by markers when the record is missing;
   - delete them by key;
   - wait for the queues to drain and sweep every table again until no item references a seed id;
   - delete the seed users from Cognito.
 
-  Verify with `tests/unit/seedApi/reset.test.ts` that unrelated items (a real admin, activity types, point configs) are never selected, and that the sweep repeats until a pass finds nothing.
-- [ ] 3.4 Add `scripts/seed-api/snapshot.ts` (`save` and `diff` of every table on a stage, keyed by each table's key schema) for verifying live runs; verify `diff` right after `save` reports no change
+  Verify with `tests/unit/seedApi/reset.test.ts` that unrelated items (a real admin, activity types, point configs) are never selected, and that the sweep repeats until a pass finds nothing. Done 2026-11-15, with the design updated:
+  - Reset combines the run record, the seed users' subs and the markers.
+  - Records count as seed data by identity, links by their parent, and derived rows by key or owner field.
+  - Real records that mention a seed id are reported, not deleted. That includes a real event's link to a seed group.
+  - Deletes run stream sources first, then derived rows, then the rest, with Cognito last.
+  - It waits only on the stats queue and reports any growth in the failure queues.
+  - "Clean" is two quiet passes in a row.
+  - 6 tests. Selecting by any mention fails 2, dropping the parent rule for links fails 2, one quiet pass fails 1, and no settle after the stream sources fails 1.
+- [x] 3.4 Add `scripts/seed-api/snapshot.ts` (`save` and `diff` of every table on a stage, keyed by each table's key schema) for verifying live runs; verify `diff` right after `save` reports no change (done 2026-11-15: `npm run seed:api:snapshot -- save|diff --stage <stage>`. The snapshot also holds the pool's usernames, so the user checks in 4.1 and 4.3 are part of the diff, and it is written to the gitignored `.runs/`. Key lookup is shared with reset through `tables.ts`. 2 tests: no change after a save, even with sets reordered (unsorted sets fail it), and added, changed and pool users reported)
 
 ## 4. Live runs and docs
 

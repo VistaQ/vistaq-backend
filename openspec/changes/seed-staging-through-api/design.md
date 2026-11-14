@@ -36,9 +36,11 @@ Staging (`vistaq-staging`, ap-southeast-5) holds one real admin, 13 point activi
 - `client.ts`: the `openapi-fetch` client with retry;
 - `plan.ts`: the data plan, pure and deterministic from a faker seed;
 - `seed.ts` and `reset.ts`: the commands;
+- `snapshot.ts`: saves every table and the pool's usernames, and diffs a stage against the save;
+- `record.ts`, `tables.ts` and `queues.ts`: the run record, table scans and deletes by key, and queue depths;
 - `api.d.ts`: generated.
 
-npm scripts: `seed:api`, `seed:api:reset` and `gen:api`. Alternative: a Postman collection run, rejected because the chained ids, per-user tokens and loops would live in Postman scripts outside git.
+npm scripts: `seed:api`, `seed:api:reset`, `seed:api:snapshot` and `gen:api`. Alternative: a Postman collection run, rejected because the chained ids, per-user tokens and loops would live in Postman scripts outside git.
 
 **The stage comes from the stack, not env vars.** `--stage` is required. The API URL, `UserPoolId` and `UserPoolClientId` come from the `vistaq-<stage>` stack outputs, and table names from the stack's `AWS::DynamoDB::Table` resources. A stage named `production`, or a stack whose tables start with `prod_`, is refused before any request.
 
@@ -47,7 +49,8 @@ npm scripts: `seed:api`, `seed:api:reset` and `gen:api`. Alternative: a Postman 
 **Temporary passwords.**
 - The seed generates one strong random password per run and keeps it in memory.
 - For each user it signs in as, it calls `AdminSetUserPassword` with that password, then `USER_AUTH` with `PASSWORD`.
-- On a 401 it signs in again. A `finally` block, together with a `SIGINT` handler, sets every user it touched to a fresh random password before exit.
+- On a 401 it signs in again. Parallel requests for one user share a single sign-in.
+- A `finally` block, together with a `SIGINT` handler, sets every user it touched to a fresh random password before exit. It first waits for any sign-in still in flight, and refuses new ones, so no user ends with the run password.
 
 **Plan, mirroring dev's `seed.ts`.** A fixed faker seed gives:
 - 1 master trainer and 3 trainers, created with `POST /users`;
@@ -62,17 +65,28 @@ Users are `seed-<role>-NN@example.com`. Together with the `Seed`/`SEED` prefixes
 
 **Low, retried concurrency.** At most 3 requests run at once, with exponential backoff on 429 and 5xx. That leaves room in the account's 10 concurrent executions for the consumers the seed triggers.
 
-**A run record, with markers as the fallback.** The seed writes created ids to `scripts/seed-api/.runs/<stage>.json`, which is gitignored and replaces the stale `scripts/demo-seed-manifest.json` entry.
-- Before creating anything, the seed checks for existing seed users (a Cognito `ListUsers` filter on `email ^= "seed-"`) and refuses if it finds any.
-- Reset uses the run record when it exists, and otherwise rebuilds the seed set from the markers: seed users by email, groups by name, agent codes by prefix, and every record owned by, created by or about a seed user, group, event, session or upload batch.
+**A run record, and the markers as well.** The seed writes each created id to `scripts/seed-api/.runs/<stage>.json` as soon as it exists, so a run that stops part way can still be reset. The folder is gitignored, replacing the stale `scripts/demo-seed-manifest.json` entry, and also holds snapshots.
+- Before creating anything, the seed checks for existing seed users (a Cognito `ListUsers` filter on `email ^= "seed-"`, then the full `seed-…@example.com` pattern) and for a leftover run record, and refuses if it finds either.
+- Reset starts from the recorded ids (when the record exists) and the seed users' subs. It adds whatever the markers find: seed users by email, groups by name, agent codes by `SEED` and four digits, events and sessions by `Seed: ` titles, and uploads by a `seed-` file name. It then follows the ids of everything it selects.
 
-**Reset deletes directly, then sweeps until clean.** There are no delete routes for groups or derived rows, so reset deletes by key through the AWS SDK:
-1. Delete everything referencing a seed id.
-2. Wait for the stats queue and the failure queues to drain.
-3. Scan every table for any item whose string attributes reference a seed id or marker, delete those, and repeat until a scan finds none.
-4. Delete the seed users from Cognito.
+**Reset deletes directly, then sweeps until clean.** There are no delete routes for groups or derived rows, so reset deletes by key through the AWS SDK.
+- **What is seed data.**
+  - Users, groups, agent codes, events, sessions, uploads and report jobs count by marker, by recorded id, or by a seed creator (`created_by`, `uploaded_by`).
+  - A link row counts when its parent is seed data: the group for trainer links, the event or session for the others, attendance included.
+  - Derived rows count when a key attribute or an owner field (`user_id`, `agent_id`, `agent_key`, `subject_id`, `batch_id`, …) names a seed id. Composite keys are matched by the UUIDs inside them.
+  - A real record that only mentions a seed id is reported as left in place and never deleted. Examples are a user placed in a seed group, an event aimed at one, or that event's link row to the group.
+  - Point configs, activity types, taxonomies and labels are never selected.
+- **Order.**
+  1. Delete the stream sources first (prospects, then attendance), while their users still exist.
+  2. Let the consumers settle.
+  3. Delete the derived rows (ledger, totals, guards, sales awards, statistics, report rows and upload batches).
+  4. Delete users, groups, codes, events, sessions and links.
+  5. Delete the Cognito users last, and the run record.
+- **Until clean.** After every pass reset waits 30 seconds and until the stats queue is empty, then scans every table again. It stops after two passes in a row find nothing, because a clawback can land after one quiet pass. It gives up after 10 passes.
+- **Index reads.** The sales upload guard reads the latest month from an index, so the seed resends an upload that gets a 409, with backoff, up to 4 times.
+- **Failure queues** have no consumer, so reset doesn't wait on them. It records their depth at the start and reports any growth, and the seed does the same.
 
-`--dry-run` lists what would be deleted. Items with no seed reference, such as the real admin, the activity types and the point configs, are never selected.
+`--dry-run` lists what would be deleted and what would be left in place.
 
 **Committed generated types, guarded by a test.** `npm run gen:api` runs `openapi-typescript` on `openapi.yaml` and formats the result with Prettier into `scripts/seed-api/api.d.ts`. A unit test regenerates the types in memory the same way and compares them with the committed file, so CI fails on drift. If lint rules flag the generated file, it goes into ESLint's global `ignores`, which isn't a per-folder override.
 
