@@ -9,4 +9,4 @@
 * Every request lifecycle needs a correlation ID. On Lambda the platform request id is already available, so prefer it over generating one.
 * Sensitive fields (`password`, `token`, `refreshToken`, `accessToken`) must be redacted before anything is logged.
 * Error handling at each layer wraps and rethrows (see `error-handling.md`); the new logger should attach at the same points.
-* The award-points spec (`openspec/changes/migrate-to-serverless-lambda/specs/award-points-stream`) requires errors to be logged for unconfigured activities, an unknown coaching type and an invalid duration; those requirements depend on the new logger.
+* The award-points spec (`openspec/specs/award-points-stream`) requires errors to be logged for unconfigured activities, an unknown coaching type and an invalid duration; those requirements depend on the new logger.

@@ -2,7 +2,7 @@
 This repository is the backend API for a React/Vite frontend, on AWS. The Express app runs as one Lambda behind an API Gateway HTTP API, data lives in DynamoDB (its streams feed the award-points and stats functions), report files live in S3, and Cognito handles passwordless sign-in. Everything is defined in `serverless.yml` on Serverless Framework v4. The stack is AWS-only until the owner says otherwise; Supabase has been removed, so do not add it back.
 
 # Workflow
-- Planned work lives in OpenSpec changes under `openspec/changes/`. The active change is `migrate-to-serverless-lambda`.
+- Planned work lives in OpenSpec changes under `openspec/changes/`; the current behaviour is specified in `openspec/specs/`. `migrate-to-serverless-lambda` is archived under `openspec/changes/archive/`.
 - `/opsx:explore` to think a problem through, `/opsx:propose` to create the artifacts, `/opsx:apply` to implement tasks, `/opsx:update` to change the artifacts, `/opsx:archive` when a change is finished. When scope changes during implementation, update the proposal, design and tasks in the same step.
 - `/commit-organiser` is ONLY invoked by the user. Never commit automatically.
 - The DynamoDB access-pattern design is `docs/dynamodb-access-patterns.html` (gitignored, so it exists only on the owner's machine).
