@@ -19,6 +19,7 @@
     "gen:api": "ts-node scripts/seed-api/genTypes.ts",
     "seed:api": "ts-node scripts/seed-api/seed.ts",
     "seed:api:reset": "ts-node scripts/seed-api/reset.ts",
+    "seed:api:snapshot": "ts-node scripts/seed-api/snapshot.ts",
     "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",
