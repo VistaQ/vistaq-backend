@@ -3,9 +3,11 @@ import createClient, { type Client } from 'openapi-fetch';
 import type { paths } from './api';
 
 // The API and the stream consumers share the account's 10 concurrent Lambda
-// executions in ap-southeast-5, so the seed leaves most of them free.
+// executions in ap-southeast-5. The consumers alone reached 11 on dev, so
+// throttled requests (503) retry for about half a minute before giving up.
 export const MAX_IN_FLIGHT = 3;
-const MAX_ATTEMPTS = 5;
+export const MAX_ATTEMPTS = 8;
+const MAX_DELAY_MS = 10_000;
 
 export type ApiClient = Client<paths>;
 export type Limiter = <T>(task: () => Promise<T>) => Promise<T>;
@@ -33,6 +35,15 @@ const wait = (ms: number) =>
 
 const isRetryable = (status: number) => status === 429 || status >= 500;
 
+/** Exponential up to the cap, then scaled by `random` into 50-100% of it. */
+export const backoffDelay = (
+  attempt: number,
+  baseDelayMs: number,
+  random: () => number = Math.random,
+): number =>
+  Math.min(baseDelayMs * 2 ** (attempt - 1), MAX_DELAY_MS) *
+  (0.5 + random() / 2);
+
 export interface IClientOptions {
   baseUrl: string;
   limiter: Limiter;
@@ -44,7 +55,7 @@ export interface IClientOptions {
 /** A client for one caller; `token(true)` must sign in again after a 401. */
 export function createApiClient(options: IClientOptions): ApiClient {
   const send = options.fetch ?? ((request: Request) => fetch(request));
-  const baseDelayMs = options.baseDelayMs ?? 250;
+  const baseDelayMs = options.baseDelayMs ?? 500;
 
   const resilientFetch = async (request: Request): Promise<Response> => {
     let refresh = false;
@@ -68,7 +79,7 @@ export function createApiClient(options: IClientOptions): ApiClient {
       if (!isRetryable(response.status) || attempt >= MAX_ATTEMPTS) {
         return response;
       }
-      await wait(baseDelayMs * 2 ** (attempt - 1));
+      await wait(backoffDelay(attempt, baseDelayMs));
     }
   };
 

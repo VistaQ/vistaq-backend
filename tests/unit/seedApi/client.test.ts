@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  backoffDelay,
   createApiClient,
   createLimiter,
+  MAX_ATTEMPTS,
   MAX_IN_FLIGHT,
 } from '../../../scripts/seed-api/client';
 
@@ -40,7 +42,7 @@ describe('seed API client', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
-  it('gives up after five attempts on repeated server errors', async () => {
+  it('gives up after the last attempt on repeated server errors', async () => {
     const send = vi
       .fn<(request: Request) => Promise<Response>>()
       .mockImplementation(async () => json(503));
@@ -48,7 +50,18 @@ describe('seed API client', () => {
     const { response } = await client(send).GET('/public/groups');
 
     expect(response.status).toBe(503);
-    expect(send).toHaveBeenCalledTimes(5);
+    expect(send).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+  });
+
+  it('waits long enough to outlast a throttling burst, capped and jittered', () => {
+    const waits = Array.from({ length: MAX_ATTEMPTS - 1 }, (_, i) =>
+      backoffDelay(i + 1, 500, () => 1),
+    );
+    expect(waits.reduce((total, ms) => total + ms, 0)).toBeGreaterThanOrEqual(
+      30_000,
+    );
+    expect(Math.max(...waits)).toBe(10_000);
+    expect(backoffDelay(3, 500, () => 0)).toBe(1_000);
   });
 
   it('does not retry a client error', async () => {
