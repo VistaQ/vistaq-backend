@@ -11,6 +11,7 @@ import eventController from '@src/controllers/event.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
 import type { IBaseReq } from '@src/models/interfaces/base.interface';
+import { userIdSchema } from '@src/utils/schemas';
 
 /******************************************************************************
                             Zod Schemas
@@ -48,7 +49,7 @@ export const createEventSchema = z
       .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
       .optional(),
   })
@@ -79,7 +80,7 @@ export const updateEventSchema = z
       .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
       .optional(),
   })

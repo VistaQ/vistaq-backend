@@ -13,6 +13,7 @@ import coachingSessionController from '@src/controllers/coachingSession.controll
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
 import type { IBaseReq } from '@src/models/interfaces/base.interface';
+import { userIdSchema } from '@src/utils/schemas';
 
 // Wire up the reward points configs for coaching sessions
 // Test the attendance too
@@ -64,7 +65,7 @@ export const createCoachingSessionSchema = z
       })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: 'agentIds must not contain duplicates',
       })
@@ -96,7 +97,7 @@ export const updateCoachingSessionSchema = z
       })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: 'agentIds must not contain duplicates',
       })

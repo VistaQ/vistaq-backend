@@ -7,6 +7,7 @@ import agentPointsService from '@src/services/agentPoints.service';
 import type { IAgentPointsResponse } from '@src/types/agentPoints.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import { userIdSchema } from '@src/utils/schemas';
 
 /******************************************************************************
                             Interfaces
@@ -22,7 +23,7 @@ export interface IGetAgentPointsRes extends IBaseRes {
 ******************************************************************************/
 
 const querySchema = z.object({
-  userId: z.string().uuid().optional(),
+  userId: userIdSchema.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
