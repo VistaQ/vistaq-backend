@@ -63,7 +63,7 @@ npm scripts: `seed:api`, `seed:api:reset`, `seed:api:snapshot` and `gen:api`. Al
 
 Users are `seed-<role>-NN@example.com`. Together with the `Seed`/`SEED` prefixes, these are the seed markers.
 
-**Low, retried concurrency.** At most 3 requests run at once, with exponential backoff on 429 and 5xx. That leaves room in the account's 10 concurrent executions for the consumers the seed triggers.
+**Low, retried concurrency.** At most 3 requests run at once. The consumers the seed triggers can still fill the account's 10 concurrent executions on their own: on dev they reached 11, and the API was throttled with 503s. So 429 and 5xx responses are retried up to 8 times, with exponential backoff capped at 10 seconds and jittered. That gives about 35 seconds to outlast a burst.
 
 **A run record, and the markers as well.** The seed writes each created id to `scripts/seed-api/.runs/<stage>.json` as soon as it exists, so a run that stops part way can still be reset. The folder is gitignored, replacing the stale `scripts/demo-seed-manifest.json` entry, and also holds snapshots.
 - Before creating anything, the seed checks for existing seed users (a Cognito `ListUsers` filter on `email ^= "seed-"`, then the full `seed-…@example.com` pattern) and for a leftover run record, and refuses if it finds either.

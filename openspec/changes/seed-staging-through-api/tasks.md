@@ -52,7 +52,7 @@
 
 ## 4. Live runs and docs
 
-- [ ] 4.1 On dev: snapshot, seed, then reset, and diff against the snapshot; verify the diff is empty and the user pool holds the same users as before
+- [x] 4.1 On dev: snapshot, seed, then reset, and diff against the snapshot; verify the diff is empty and the user pool holds the same users as before
   - Progress 2026-11-15:
     - The snapshot was saved, and a diff straight after it reported no change.
     - The first seed stopped at group creation: `trainer_ids` was refused as "Invalid UUID".
@@ -60,6 +60,14 @@
       - User-id fields now use `userIdSchema` (`z.guid()`, in `src/utils/schemas.ts`), with a regression test; 2 of its 3 tests fail on `uuid()`.
       - Dev runs the code from 2026-11-12, so it needs a deploy before the seed can run.
     - Reset of the partial run deleted the 5 users, 40 codes and 5 Cognito users in one pass, then two quiet passes. The diff then reported no change, pool users included.
+    - After dev was deployed, the second seed stopped after about 20 seconds. One prospect create got five 503s: the stream consumers reached 11 concurrent executions against the account limit of 10, and the API was throttled 43 times. Its partial run reset cleanly: 1,655 items, then 584 late clawback rows, then two quiet passes, and no change.
+    - The client now retries up to 8 times, with exponential backoff capped at 10 seconds and jittered (about 35 seconds). A test checks the budget, and the old 5 attempts fail it.
+  - Done 2026-11-15:
+    - The third seed created everything in 31 seconds, with no failure-queue growth.
+    - Against the snapshot it added 35 users, 5 groups, 40 codes, 295 prospects, 8 events, 8 sessions, 48 attendance rows, 10 upload batches and 300 YTD and 300 MTD rows.
+    - The consumers derived 60 UserStats and 60 PointTotals rows, 1,386 transactions, 597 guards and 789 sales awards. Nothing existing was changed or removed, and the pool gained 35 users.
+    - Reset deleted 3,966 items, then 590 late rows, then ran two quiet passes and deleted the 35 Cognito users and the run record.
+    - The diff then reported no change, and the pool holds its one original user.
 - [ ] 4.2 On staging: snapshot, then seed; verify through the API as the seed admin that the planned counts of groups, users, prospects, events and sessions exist, that a seeded agent can sign in, and that after the queues drain the seeded agents have point totals and monthly statistics from the consumers
 - [ ] 4.3 On staging: reset, and diff against the 4.2 snapshot; verify the diff is empty and the pool holds only the users it had before. Then seed again so the frontend team has the data, and record the counts
 - [ ] 4.4 Document `seed:api`, `seed:api:reset` and `gen:api` in the README (including the current-month limitation), and add `npm test` and `npm run verify` results; verify `npm test` and `npm run verify` pass
