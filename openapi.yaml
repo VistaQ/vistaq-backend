@@ -70,6 +70,11 @@ paths:
   ##############################################################################
 
   /health:
+    servers:
+      - url: https://6u9jarp31l.execute-api.ap-southeast-5.amazonaws.com
+        description: Dev (served at the root, outside /api)
+      - url: https://stg-api.vistaq.co
+        description: Staging (served at the root, outside /api)
     get:
       operationId: getHealth
       tags: [Health]
