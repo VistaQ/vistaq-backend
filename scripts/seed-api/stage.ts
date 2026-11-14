@@ -17,6 +17,8 @@ export interface IStage {
   clientId: string;
   tablePrefix: string;
   tables: Record<TableName, string>;
+  /** Queue URLs by logical id, for example `StatsQueue`. */
+  queues: Record<string, string>;
 }
 
 export class StageError extends Error {
@@ -72,12 +74,20 @@ export async function resolveStage(
   };
 
   const tables: Partial<Record<TableName, string>> = {};
+  const queues: Record<string, string> = {};
   const prefixes = new Set<string>();
   for await (const page of paginateListStackResources(
     { client: cloudFormation },
     { StackName: stackName },
   )) {
     for (const resource of page.StackResourceSummaries ?? []) {
+      if (
+        resource.ResourceType === 'AWS::SQS::Queue' &&
+        resource.LogicalResourceId &&
+        resource.PhysicalResourceId
+      ) {
+        queues[resource.LogicalResourceId] = resource.PhysicalResourceId;
+      }
       if (resource.ResourceType !== 'AWS::DynamoDB::Table') continue;
       const base = resource.LogicalResourceId?.replace(/Table$/, '');
       const physical = resource.PhysicalResourceId;
@@ -114,5 +124,6 @@ export async function resolveStage(
     clientId: output('UserPoolClientId'),
     tablePrefix,
     tables: tables as Record<TableName, string>,
+    queues,
   };
 }

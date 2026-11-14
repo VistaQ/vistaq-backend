@@ -42,6 +42,11 @@ const stack = (prefix: string) => {
       PhysicalResourceId: 'vistaq-x-api',
       ResourceType: 'AWS::Lambda::Function',
     },
+    {
+      LogicalResourceId: 'StatsQueue',
+      PhysicalResourceId: 'https://sqs.test/1/vistaq-x-stats.fifo',
+      ResourceType: 'AWS::SQS::Queue',
+    },
   ];
   const half = Math.ceil(resources.length / 2);
   cloudFormation
@@ -89,6 +94,9 @@ describe('resolveStage', () => {
       tablePrefix: 'stg_vistaq_',
     });
     expect(stage.tables.Users).toBe('stg_vistaq_Users');
+    expect(stage.queues).toEqual({
+      StatsQueue: 'https://sqs.test/1/vistaq-x-stats.fifo',
+    });
     expect(Object.keys(stage.tables).sort()).toEqual([...TABLE_NAMES].sort());
     expect(
       cloudFormation.commandCalls(DescribeStacksCommand)[0].args[0].input
