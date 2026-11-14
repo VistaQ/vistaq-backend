@@ -1,24 +1,27 @@
-import '../../helpers/setEnv';
+import { describe, it, expect, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 // Set env vars BEFORE importing — EnvVars captures them at module load time
-process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
-process.env.ETL_SERVICE_URL = process.env.ETL_SERVICE_URL || 'http://etl';
-process.env.ETL_API_KEY = 'expected-key';
+vi.hoisted(() => {
+  process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
+  process.env.ETL_SERVICE_URL = process.env.ETL_SERVICE_URL || 'http://etl';
+  process.env.ETL_API_KEY = 'expected-key';
+});
 
 import { internalKey } from '@src/middleware/internalKey';
 
 const mkRes = () => {
-  const res: { status?: jest.Mock; json?: jest.Mock } = {};
-  res.status = jest.fn().mockReturnValue(res as never);
-  res.json = jest.fn().mockReturnValue(res as never);
-  return res as { status: jest.Mock; json: jest.Mock };
+  const res: { status?: Mock; json?: Mock } = {};
+  res.status = vi.fn().mockReturnValue(res as never);
+  res.json = vi.fn().mockReturnValue(res as never);
+  return res as { status: Mock; json: Mock };
 };
 
 describe('internalKey middleware', () => {
   it('calls next when the header matches', () => {
     const req = { headers: { authorization: 'Bearer expected-key' } } as never;
     const res = mkRes();
-    const next = jest.fn();
+    const next = vi.fn();
 
     internalKey(req, res as never, next);
 
@@ -29,7 +32,7 @@ describe('internalKey middleware', () => {
   it('returns 401 when header is missing', () => {
     const req = { headers: {} } as never;
     const res = mkRes();
-    const next = jest.fn();
+    const next = vi.fn();
 
     internalKey(req, res as never, next);
 
@@ -40,7 +43,7 @@ describe('internalKey middleware', () => {
   it('returns 401 when key is wrong', () => {
     const req = { headers: { authorization: 'Bearer wrong' } } as never;
     const res = mkRes();
-    const next = jest.fn();
+    const next = vi.fn();
 
     internalKey(req, res as never, next);
 

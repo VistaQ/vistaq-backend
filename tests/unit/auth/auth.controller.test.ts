@@ -1,10 +1,15 @@
-const mockRegister = jest.fn();
-const mockLogin = jest.fn();
-const mockVerifyLogin = jest.fn();
-const mockLogout = jest.fn();
-const mockMe = jest.fn();
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
-jest.mock('@src/services/auth.service', () => ({
+const { mockRegister, mockLogin, mockVerifyLogin, mockLogout, mockMe } = vi.hoisted(() => ({
+  mockRegister: vi.fn(),
+  mockLogin: vi.fn(),
+  mockVerifyLogin: vi.fn(),
+  mockLogout: vi.fn(),
+  mockMe: vi.fn(),
+}));
+
+vi.mock('@src/services/auth.service', () => ({
   __esModule: true,
   default: {
     register: mockRegister,
@@ -35,7 +40,7 @@ import { ControllerError } from '@src/models/errors/layer.errors';
 import type { RouteError } from '@src/models/errors/route.error';
 
 const makeRes = () => {
-  const res = { status: jest.fn(), json: jest.fn() };
+  const res = { status: vi.fn(), json: vi.fn() };
   res.status.mockReturnValue(res);
   return res;
 };
@@ -43,10 +48,10 @@ const makeRes = () => {
 const request = <T>(overrides: Record<string, unknown>): T =>
   ({ headers: {}, body: {}, ...overrides }) as unknown as T;
 
-const statusOf = (next: jest.Mock): number =>
+const statusOf = (next: Mock): number =>
   (next.mock.calls[0][0] as RouteError).status;
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 describe('AuthController.register', () => {
   const body = {
@@ -61,7 +66,7 @@ describe('AuthController.register', () => {
     mockRegister.mockResolvedValue({ user: { id: 'u1' } });
     const res = makeRes();
 
-    await authController.register(request<IRegisterReq>({ body }), res as unknown as Response, jest.fn());
+    await authController.register(request<IRegisterReq>({ body }), res as unknown as Response, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { user: { id: 'u1' } } });
@@ -72,7 +77,7 @@ describe('AuthController.register', () => {
     [new UserAlreadyExistsError(), 409],
   ])('maps %p to %i', async (error, status) => {
     mockRegister.mockRejectedValue(error);
-    const next = jest.fn();
+    const next = vi.fn();
 
     await authController.register(request<IRegisterReq>({ body }), makeRes() as unknown as Response, next);
 
@@ -81,7 +86,7 @@ describe('AuthController.register', () => {
 
   it('forwards an unexpected failure as a ControllerError', async () => {
     mockRegister.mockRejectedValue(new Error('boom'));
-    const next = jest.fn();
+    const next = vi.fn();
 
     await authController.register(request<IRegisterReq>({ body }), makeRes() as unknown as Response, next);
 
@@ -94,7 +99,7 @@ describe('AuthController.login', () => {
     mockLogin.mockResolvedValue({ session: 's' });
     const res = makeRes();
 
-    await authController.login(request<ILoginReq>({ body: { email: 'a@b.co' } }), res as unknown as Response, jest.fn());
+    await authController.login(request<ILoginReq>({ body: { email: 'a@b.co' } }), res as unknown as Response, vi.fn());
 
     expect(mockLogin).toHaveBeenCalledWith('a@b.co');
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { session: 's' } });
@@ -105,7 +110,7 @@ describe('AuthController.login', () => {
     [new CognitoRateLimitedError(), 429],
   ])('maps %p to %i', async (error, status) => {
     mockLogin.mockRejectedValue(error);
-    const next = jest.fn();
+    const next = vi.fn();
 
     await authController.login(request<ILoginReq>({ body: { email: 'a@b.co' } }), makeRes() as unknown as Response, next);
 
@@ -120,7 +125,7 @@ describe('AuthController.verifyLogin', () => {
     mockVerifyLogin.mockResolvedValue({ user: { id: 'u1' }, tokens: { accessToken: 't' } });
     const res = makeRes();
 
-    await authController.verifyLogin(request<IVerifyLoginReq>({ body }), res as unknown as Response, jest.fn());
+    await authController.verifyLogin(request<IVerifyLoginReq>({ body }), res as unknown as Response, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -135,7 +140,7 @@ describe('AuthController.verifyLogin', () => {
     [new CognitoRateLimitedError(), 429],
   ])('maps %p to %i', async (error, status) => {
     mockVerifyLogin.mockRejectedValue(error);
-    const next = jest.fn();
+    const next = vi.fn();
 
     await authController.verifyLogin(request<IVerifyLoginReq>({ body }), makeRes() as unknown as Response, next);
 
@@ -145,7 +150,7 @@ describe('AuthController.verifyLogin', () => {
 
 describe('AuthController.logout', () => {
   it('rejects a request without a bearer token', async () => {
-    const next = jest.fn();
+    const next = vi.fn();
 
     await authController.logout(request<ILogoutReq>({}), makeRes() as unknown as Response, next);
 
@@ -160,7 +165,7 @@ describe('AuthController.logout', () => {
     await authController.logout(
       request<ILogoutReq>({ headers: { authorization: 'Bearer abc' } }),
       res as unknown as Response,
-      jest.fn(),
+      vi.fn(),
     );
 
     expect(mockLogout).toHaveBeenCalledWith('abc');
@@ -173,14 +178,14 @@ describe('AuthController.me', () => {
     mockMe.mockResolvedValue({ id: 'u1' });
     const res = makeRes();
 
-    await authController.me(request<IMeReq>({ user: { id: 'u1' } }), res as unknown as Response, jest.fn());
+    await authController.me(request<IMeReq>({ user: { id: 'u1' } }), res as unknown as Response, vi.fn());
 
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: 'u1' } });
   });
 
   it('returns 404 when the user item is missing', async () => {
     mockMe.mockResolvedValue(null);
-    const next = jest.fn();
+    const next = vi.fn();
 
     await authController.me(request<IMeReq>({ user: { id: 'u1' } }), makeRes() as unknown as Response, next);
 

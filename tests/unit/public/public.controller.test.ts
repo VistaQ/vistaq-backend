@@ -1,6 +1,7 @@
-const getActiveGroups = jest.fn();
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+const { getActiveGroups } = vi.hoisted(() => ({ getActiveGroups: vi.fn() }));
 
-jest.mock('@src/services/group.service', () => ({
+vi.mock('@src/services/group.service', () => ({
   __esModule: true,
   groupService: { getActiveGroups },
   default: { getActiveGroups },
@@ -18,12 +19,12 @@ const groups = [
 ];
 
 const makeRes = () => {
-  const res = { status: jest.fn(), json: jest.fn() };
+  const res = { status: vi.fn(), json: vi.fn() };
   res.status.mockReturnValue(res);
   return res;
 };
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 describe('PublicController.getGroups', () => {
   it('returns 200 with the active groups and needs no tenant header', async () => {
@@ -33,7 +34,7 @@ describe('PublicController.getGroups', () => {
     await publicController.getGroups(
       { headers: {} } as unknown as IBaseReq,
       res as unknown as Response,
-      jest.fn() as unknown as NextFunction,
+      vi.fn() as unknown as NextFunction,
     );
 
     expect(res.status).toHaveBeenCalledWith(200);
@@ -42,7 +43,7 @@ describe('PublicController.getGroups', () => {
 
   it('forwards a service failure as a ControllerError', async () => {
     getActiveGroups.mockRejectedValue(new Error('boom'));
-    const next = jest.fn();
+    const next = vi.fn();
 
     await publicController.getGroups(
       { headers: {} } as unknown as IBaseReq,

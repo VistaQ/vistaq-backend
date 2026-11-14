@@ -1,3 +1,5 @@
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 // Supply env vars before env.ts runs so the validation guards do not throw
 
 // ---------------------------------------------------------------------------
@@ -101,13 +103,13 @@ function makeDeleteReq(overrides: Partial<IDeleteProspectReq> = {}): IDeletePros
 
 function makeRes(): Response {
   return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
   } as unknown as Response;
 }
 
-function makeNext(): jest.Mock {
-  return jest.fn();
+function makeNext(): Mock {
+  return vi.fn();
 }
 
 /******************************************************************************
@@ -115,10 +117,10 @@ function makeNext(): jest.Mock {
 ******************************************************************************/
 
 describe('ProspectController.create', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 201 with { success: true, data: prospect } when role is agent and all params valid', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq();
     const res = makeRes();
@@ -135,7 +137,7 @@ describe('ProspectController.create', () => {
   });
 
   it('returns 201 when role is group_leader', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq({
       user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
@@ -172,7 +174,7 @@ describe('ProspectController.create', () => {
   });
 
   it('calls next(ControllerError) when prospectService.createProspect throws', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockRejectedValue(new Error('unexpected db failure'));
+    vi.spyOn(prospectService, 'createProspect').mockRejectedValue(new Error('unexpected db failure'));
 
     const req = makeReq();
     const res = makeRes();
@@ -189,7 +191,7 @@ describe('ProspectController.create', () => {
   });
 
   it('calls createProspect without groupId (column was dropped)', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq({} as Partial<ICreateProspectReq>);
     const res = makeRes();
@@ -209,7 +211,7 @@ describe('ProspectController.create', () => {
       prospect_email: null,
       prospect_phone: null,
     };
-    const createProspectSpy = jest
+    const createProspectSpy = vi
       .spyOn(prospectService, 'createProspect')
       .mockResolvedValue(prospectWithNoContact);
 
@@ -236,10 +238,10 @@ describe('ProspectController.create', () => {
 ******************************************************************************/
 
 describe('ProspectController.getAll', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospects } when service returns a non-empty array', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [mockProspect] });
+    vi.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [mockProspect] });
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -256,7 +258,7 @@ describe('ProspectController.getAll', () => {
   });
 
   it('returns 200 with { success: true, data: [] } when service returns an empty array', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [] });
+    vi.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [] });
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -273,7 +275,7 @@ describe('ProspectController.getAll', () => {
   });
 
   it('calls next(ControllerError) when prospectService.getProspects throws', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockRejectedValue(new Error('db failure'));
+    vi.spyOn(prospectService, 'getProspects').mockRejectedValue(new Error('db failure'));
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -295,10 +297,10 @@ describe('ProspectController.getAll', () => {
 ******************************************************************************/
 
 describe('ProspectController.getById', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospect } when service returns a prospect', async () => {
-    jest.spyOn(prospectService, 'getProspectById').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'getProspectById').mockResolvedValue(mockProspect);
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -315,7 +317,7 @@ describe('ProspectController.getById', () => {
   });
 
   it('calls next(RouteError) with status 404 when service returns null', async () => {
-    jest.spyOn(prospectService, 'getProspectById').mockResolvedValue(null);
+    vi.spyOn(prospectService, 'getProspectById').mockResolvedValue(null);
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -333,7 +335,7 @@ describe('ProspectController.getById', () => {
   });
 
   it('calls next(ControllerError) when prospectService.getProspectById throws', async () => {
-    jest.spyOn(prospectService, 'getProspectById').mockRejectedValue(new Error('db failure'));
+    vi.spyOn(prospectService, 'getProspectById').mockRejectedValue(new Error('db failure'));
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -355,10 +357,10 @@ describe('ProspectController.getById', () => {
 ******************************************************************************/
 
 describe('ProspectController.update', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospect } when role is agent', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -375,7 +377,7 @@ describe('ProspectController.update', () => {
   });
 
   it('returns 200 with { success: true, data: prospect } when role is group_leader', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
 
     const req = makeUpdateReq({
       user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
@@ -412,7 +414,7 @@ describe('ProspectController.update', () => {
   });
 
   it('calls next(RouteError) with status 404 when service throws ProspectNotFoundError', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockRejectedValue(new ProspectNotFoundError());
+    vi.spyOn(prospectService, 'updateProspect').mockRejectedValue(new ProspectNotFoundError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -430,7 +432,7 @@ describe('ProspectController.update', () => {
   });
 
   it('calls next(ControllerError) when service throws a generic Error', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockRejectedValue(new Error('unexpected failure'));
+    vi.spyOn(prospectService, 'updateProspect').mockRejectedValue(new Error('unexpected failure'));
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -452,10 +454,10 @@ describe('ProspectController.update', () => {
 ******************************************************************************/
 
 describe('ProspectController.delete', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true } when role is agent and service resolves', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+    vi.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq();
     const res = makeRes();
@@ -469,7 +471,7 @@ describe('ProspectController.delete', () => {
   });
 
   it('returns 200 with { success: true } when role is admin and service resolves', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+    vi.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq({
       user: { id: AGENT_ID, role: 'admin', group_id: null },
@@ -485,7 +487,7 @@ describe('ProspectController.delete', () => {
   });
 
   it('returns 200 with { success: true } when role is group_leader and service resolves', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+    vi.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq({
       user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
@@ -537,7 +539,7 @@ describe('ProspectController.delete', () => {
   });
 
   it('calls next(RouteError) with status 404 when service throws ProspectNotFoundError', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new ProspectNotFoundError());
+    vi.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new ProspectNotFoundError());
 
     const req = makeDeleteReq();
     const res = makeRes();
@@ -555,7 +557,7 @@ describe('ProspectController.delete', () => {
   });
 
   it('calls next(ControllerError) when service throws a generic Error', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new Error('unexpected failure'));
+    vi.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new Error('unexpected failure'));
 
     const req = makeDeleteReq();
     const res = makeRes();

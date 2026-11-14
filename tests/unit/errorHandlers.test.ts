@@ -1,3 +1,4 @@
+import { describe, it, expect, vi } from 'vitest';
 import {
   ControllerError,
   RepositoryError,
@@ -53,7 +54,7 @@ describe('per-layer error handlers', () => {
   });
 
   it('handleControllerError forwards a ControllerError to next with the original as cause', () => {
-    const next = jest.fn();
+    const next = vi.fn();
     const original = new Error('service failed');
 
     handleControllerError('UserController.getById', original, next);

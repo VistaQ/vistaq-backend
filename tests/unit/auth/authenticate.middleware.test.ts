@@ -1,18 +1,23 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 
-const mockVerify = jest.fn();
-const mockGetUserContext = jest.fn();
 
-jest.mock('aws-jwt-verify', () => ({
-  CognitoJwtVerifier: { create: jest.fn(() => ({ verify: mockVerify })) },
+const { mockVerify, mockGetUserContext } = vi.hoisted(() => ({
+  mockVerify: vi.fn(),
+  mockGetUserContext: vi.fn(),
 }));
 
-jest.mock('@src/utils/env', () => ({
+vi.mock('aws-jwt-verify', () => ({
+  CognitoJwtVerifier: { create: vi.fn(() => ({ verify: mockVerify })) },
+}));
+
+vi.mock('@src/utils/env', () => ({
   __esModule: true,
   default: { CognitoUserPoolId: 'pool', CognitoClientId: 'client' },
 }));
 
-jest.mock('@src/services/auth.service', () => ({
+vi.mock('@src/services/auth.service', () => ({
   __esModule: true,
   default: { getUserContext: mockGetUserContext },
 }));
@@ -39,13 +44,13 @@ const gatewayRequest = (claims: Record<string, unknown>): Request =>
 const localRequest = (authorization?: string): Request =>
   ({ headers: authorization ? { authorization } : {} }) as unknown as Request;
 
-const run = async (req: Request): Promise<jest.Mock> => {
-  const next = jest.fn() as jest.Mock & NextFunction;
+const run = async (req: Request): Promise<Mock> => {
+  const next = vi.fn() as Mock & NextFunction;
   await authenticate(req, {} as Response, next);
   return next;
 };
 
-const rejectedWith = (next: jest.Mock): RouteError => {
+const rejectedWith = (next: Mock): RouteError => {
   expect(next).toHaveBeenCalledTimes(1);
   const error = next.mock.calls[0][0] as RouteError;
   expect(error).toBeInstanceOf(RouteError);
@@ -53,7 +58,7 @@ const rejectedWith = (next: jest.Mock): RouteError => {
 };
 
 describe('authenticate middleware', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => vi.clearAllMocks());
 
   describe('behind the gateway', () => {
     it('loads the user by subject and sets req.user from the record', async () => {

@@ -1,4 +1,5 @@
-import './helpers/setEnv';
+import { describe, it, expect, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 import request from 'supertest';
 
@@ -88,16 +89,16 @@ describe('HealthController.check() — error path', () => {
   it('calls next(error) with a HealthControllerError when HealthService throws', () => {
     // Arrange: make healthService.check throw
     const serviceError = new Error('service layer exploded');
-    jest.spyOn(healthService, 'check').mockImplementationOnce(() => {
+    vi.spyOn(healthService, 'check').mockImplementationOnce(() => {
       throw serviceError;
     });
 
     const req = {} as Request;
     const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
     } as unknown as Response;
-    const next = jest.fn() as NextFunction;
+    const next = vi.fn() as NextFunction;
 
     // Act
     healthController.check(req, res, next);
@@ -106,7 +107,7 @@ describe('HealthController.check() — error path', () => {
     expect(next).toHaveBeenCalledTimes(1);
 
     // Assert: the argument passed to next is a ControllerError
-    const passedError = (next as jest.Mock).mock.calls[0][0];
+    const passedError = (next as Mock).mock.calls[0][0];
     expect(passedError).toBeInstanceOf(ControllerError);
 
     // Assert: the controller error wraps the original service error as its cause

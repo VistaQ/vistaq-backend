@@ -1,24 +1,27 @@
-import '../../helpers/setEnv';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const mockFindById = jest.fn();
-const mockFindByRoles = jest.fn();
-const mockFindByGroupId = jest.fn();
-const mockFindByIds = jest.fn();
-const mockUpdateUser = jest.fn();
-const mockInsertUser = jest.fn();
-const mockDeleteUser = jest.fn();
-const mockUpdateGroupId = jest.fn();
-const mockFindCode = jest.fn();
-const mockClaim = jest.fn();
-const mockRelease = jest.fn();
-const mockFindGroupIds = jest.fn();
-const mockCreateCognitoUser = jest.fn();
-const mockDeleteCognitoUser = jest.fn();
-const mockUpdateEmail = jest.fn();
-const mockDisable = jest.fn();
-const mockEnable = jest.fn();
 
-jest.mock('@src/repositories/user.repository', () => ({
+const { mockFindById, mockFindByRoles, mockFindByGroupId, mockFindByIds, mockUpdateUser, mockInsertUser, mockDeleteUser, mockUpdateGroupId, mockFindCode, mockClaim, mockRelease, mockFindGroupIds, mockCreateCognitoUser, mockDeleteCognitoUser, mockUpdateEmail, mockDisable, mockEnable } = vi.hoisted(() => ({
+  mockFindById: vi.fn(),
+  mockFindByRoles: vi.fn(),
+  mockFindByGroupId: vi.fn(),
+  mockFindByIds: vi.fn(),
+  mockUpdateUser: vi.fn(),
+  mockInsertUser: vi.fn(),
+  mockDeleteUser: vi.fn(),
+  mockUpdateGroupId: vi.fn(),
+  mockFindCode: vi.fn(),
+  mockClaim: vi.fn(),
+  mockRelease: vi.fn(),
+  mockFindGroupIds: vi.fn(),
+  mockCreateCognitoUser: vi.fn(),
+  mockDeleteCognitoUser: vi.fn(),
+  mockUpdateEmail: vi.fn(),
+  mockDisable: vi.fn(),
+  mockEnable: vi.fn(),
+}));
+
+vi.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
   default: {
     findById: mockFindById,
@@ -32,17 +35,17 @@ jest.mock('@src/repositories/user.repository', () => ({
   },
 }));
 
-jest.mock('@src/repositories/agentCode.repository', () => ({
+vi.mock('@src/repositories/agentCode.repository', () => ({
   __esModule: true,
   default: { findByCode: mockFindCode, claim: mockClaim, release: mockRelease },
 }));
 
-jest.mock('@src/repositories/groupTrainer.repository', () => ({
+vi.mock('@src/repositories/groupTrainer.repository', () => ({
   __esModule: true,
   default: { findGroupIdsByTrainerIds: mockFindGroupIds },
 }));
 
-jest.mock('@src/services/cognito.service', () => ({
+vi.mock('@src/services/cognito.service', () => ({
   __esModule: true,
   default: {
     createUser: mockCreateCognitoUser,
@@ -72,7 +75,7 @@ const user = (overrides: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
-  jest.resetAllMocks();
+  vi.resetAllMocks();
   mockFindGroupIds.mockResolvedValue(new Map());
   mockDeleteCognitoUser.mockResolvedValue(undefined);
   mockRelease.mockResolvedValue(undefined);

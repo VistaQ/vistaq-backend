@@ -14,3 +14,4 @@ scripts/demo-seed-manifest.json
 .claude/.verify-stamp
 .DS_Store
 .serverless/
+coverage/

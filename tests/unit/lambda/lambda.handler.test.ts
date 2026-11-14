@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll } from 'vitest';
 import type { APIGatewayProxyEventV2, Context } from 'aws-lambda';
 
 type IHandler = (

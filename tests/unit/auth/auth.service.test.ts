@@ -1,17 +1,21 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
 
-const mockFindByCode = jest.fn();
-const mockClaim = jest.fn();
-const mockRelease = jest.fn();
-const mockInsertUser = jest.fn();
-const mockFindById = jest.fn();
-const mockCreateUser = jest.fn();
-const mockDeleteUser = jest.fn();
-const mockStartLogin = jest.fn();
-const mockVerifyLogin = jest.fn();
-const mockSignOut = jest.fn();
 
-jest.mock('@src/repositories/agentCode.repository', () => ({
+const { mockFindByCode, mockClaim, mockRelease, mockInsertUser, mockFindById, mockCreateUser, mockDeleteUser, mockStartLogin, mockVerifyLogin, mockSignOut } = vi.hoisted(() => ({
+  mockFindByCode: vi.fn(),
+  mockClaim: vi.fn(),
+  mockRelease: vi.fn(),
+  mockInsertUser: vi.fn(),
+  mockFindById: vi.fn(),
+  mockCreateUser: vi.fn(),
+  mockDeleteUser: vi.fn(),
+  mockStartLogin: vi.fn(),
+  mockVerifyLogin: vi.fn(),
+  mockSignOut: vi.fn(),
+}));
+
+vi.mock('@src/repositories/agentCode.repository', () => ({
   __esModule: true,
   default: {
     findByCode: mockFindByCode,
@@ -20,12 +24,12 @@ jest.mock('@src/repositories/agentCode.repository', () => ({
   },
 }));
 
-jest.mock('@src/repositories/user.repository', () => ({
+vi.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
   default: { insertUser: mockInsertUser, findById: mockFindById },
 }));
 
-jest.mock('@src/services/cognito.service', () => ({
+vi.mock('@src/services/cognito.service', () => ({
   __esModule: true,
   default: {
     createUser: mockCreateUser,
@@ -64,7 +68,7 @@ const tokens = {
 };
 
 beforeEach(() => {
-  jest.resetAllMocks();
+  vi.resetAllMocks();
   mockRelease.mockResolvedValue(undefined);
   mockDeleteUser.mockResolvedValue(undefined);
   mockSignOut.mockResolvedValue(undefined);

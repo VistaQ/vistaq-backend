@@ -1,4 +1,4 @@
-import '../../helpers/setEnv';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import {
   DeleteCommand,

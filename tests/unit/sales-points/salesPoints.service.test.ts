@@ -1,3 +1,5 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import salesPointsService from '@src/services/salesPoints.service';
 import pointConfigRepository from '@src/repositories/pointConfig.repository';
 import pointTransactionRepository from '@src/repositories/pointTransaction.repository';
@@ -5,24 +7,24 @@ import salesReportMtdRepository from '@src/repositories/salesReportMtd.repositor
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
 import type { IUploadBatch } from '@src/types/salesReport.types';
 
-jest.mock('@src/repositories/pointConfig.repository', () => ({
+vi.mock('@src/repositories/pointConfig.repository', () => ({
   __esModule: true,
-  default: { findByCategory: jest.fn() },
+  default: { findByCategory: vi.fn() },
 }));
-jest.mock('@src/repositories/pointTransaction.repository', () => ({
+vi.mock('@src/repositories/pointTransaction.repository', () => ({
   __esModule: true,
-  default: { awardWithReversal: jest.fn() },
+  default: { awardWithReversal: vi.fn() },
 }));
-jest.mock('@src/repositories/salesReportMtd.repository', () => ({
+vi.mock('@src/repositories/salesReportMtd.repository', () => ({
   __esModule: true,
-  default: { findAceNocByYearMonth: jest.fn() },
+  default: { findAceNocByYearMonth: vi.fn() },
 }));
-jest.mock('@src/repositories/salesReportYtd.repository', () => ({
+vi.mock('@src/repositories/salesReportYtd.repository', () => ({
   __esModule: true,
-  default: { findFyctByYearMonths: jest.fn() },
+  default: { findFyctByYearMonths: vi.fn() },
 }));
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 function makeBatch(overrides: Partial<IUploadBatch> = {}): IUploadBatch {
   return {
@@ -47,13 +49,13 @@ const RATES_30 = [
 
 describe('SalesPointsService.awardForBatch — happy path (first upload of month)', () => {
   it('computes and forwards awards based on MTD ACE/NOC and YTD-derived MTD FYCT', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(
       RATES_30,
     );
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyct: 14500 },
       { user_id: 'u1', month: 4, fyct: 12000 },
     ]);
@@ -63,7 +65,7 @@ describe('SalesPointsService.awardForBatch — happy path (first upload of month
     ]);
 
     expect(pointTransactionRepository.awardWithReversal).toHaveBeenCalledTimes(1);
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
 
     expect(call.year).toBe(2026);
     expect(call.month).toBe(5);
@@ -81,11 +83,11 @@ describe('SalesPointsService.awardForBatch — happy path (first upload of month
   });
 
   it('treats first month of year (no previous YTD) as MTD FYCT = current YTD', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(RATES_30);
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 1, ace: 0, noc: 0 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([
       { user_id: 'u1', month: 1, fyct: 4000 },
     ]);
 
@@ -93,7 +95,7 @@ describe('SalesPointsService.awardForBatch — happy path (first upload of month
       { user_id: 'u1', agent_code: 'AG006' },
     ]);
 
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
     // sales_fyct: floor(4000 / 1000) = 4 → 4 × 30 = 120
     expect(call.awards).toEqual([
       expect.objectContaining({ activity: 'sales_fyct', points: 120 }),
@@ -107,11 +109,11 @@ describe('SalesPointsService.awardForBatch — concurrency (advisory lock)', () 
     // function). At the service level we assert that two concurrent calls
     // both reach the RPC layer without dropping awards or recomputing
     // priors in JS — the database is the single arbiter for ordering.
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(RATES_30);
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 0, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([]);
 
     // Simulate the RPC being called twice concurrently. Each invocation
     // resolves independently; the RPC body (in Postgres) serialises by
@@ -132,7 +134,7 @@ describe('SalesPointsService.awardForBatch — concurrency (advisory lock)', () 
     ]);
 
     expect(pointTransactionRepository.awardWithReversal).toHaveBeenCalledTimes(2);
-    const calls = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls;
+    const calls = (pointTransactionRepository.awardWithReversal as Mock).mock.calls;
     const batchIds = calls.map((c) => (c[0] as { batchId: string }).batchId).sort();
     expect(batchIds).toEqual(['batch-A', 'batch-B']);
     // Each call must carry its OWN batch's awards — the second caller's
@@ -146,11 +148,11 @@ describe('SalesPointsService.awardForBatch — concurrency (advisory lock)', () 
 
 describe('SalesPointsService.awardForBatch — zero-points skipped', () => {
   it('forwards an empty award list when computed points all equal 0', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(RATES_30);
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 0, noc: 0 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyct: 100 },
       { user_id: 'u1', month: 4, fyct: 100 }, // delta = 0
     ]);
@@ -163,22 +165,22 @@ describe('SalesPointsService.awardForBatch — zero-points skipped', () => {
     // there are no fresh awards (a re-upload that zeroes everything must
     // still negate the prior batch's awards).
     expect(pointTransactionRepository.awardWithReversal).toHaveBeenCalledTimes(1);
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
     expect(call.awards).toEqual([]);
   });
 
   it('omits a sub-1000 ACE bucket (floor(999/1000) = 0)', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(RATES_30);
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 999, noc: 1 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([]);
 
     await salesPointsService.awardForBatch(makeBatch(), [
       { user_id: 'u1', agent_code: 'AG006' },
     ]);
 
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
     // sales_noc: 1×30=30 (kept). sales_fyct: 0 (omitted). sales_ace: floor(999/1000)=0 (omitted).
     expect(call.awards).toHaveLength(1);
     expect(call.awards[0]).toMatchObject({ activity: 'sales_noc', points: 30 });
@@ -188,20 +190,20 @@ describe('SalesPointsService.awardForBatch — zero-points skipped', () => {
 describe('SalesPointsService.awardForBatch — missing config defaults to 0', () => {
   it('does not award sales_noc when its rate is missing (defaults to 0)', async () => {
     // Only sales_fyct + sales_ace configured — sales_noc absent.
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue([
       { activity: 'sales_fyct', points: 30, category: 'sales' },
       { activity: 'sales_ace', points: 30, category: 'sales' },
     ]);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([]);
 
     await salesPointsService.awardForBatch(makeBatch(), [
       { user_id: 'u1', agent_code: 'AG006' },
     ]);
 
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
     // sales_noc skipped (rate=0). sales_fyct: 0 (no YTD rows). sales_ace: 13×30=390.
     expect(call.awards).toEqual([
       expect.objectContaining({ activity: 'sales_ace', points: 390 }),
@@ -209,11 +211,11 @@ describe('SalesPointsService.awardForBatch — missing config defaults to 0', ()
   });
 
   it('forwards an empty award list when no rates are configured at all', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue([]);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue([]);
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, fyct: 14500 },
       { user_id: 'u1', month: 4, fyct: 12000 },
     ]);
@@ -222,19 +224,19 @@ describe('SalesPointsService.awardForBatch — missing config defaults to 0', ()
       { user_id: 'u1', agent_code: 'AG006' },
     ]);
 
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
     expect(call.awards).toEqual([]);
   });
 });
 
 describe('SalesPointsService.awardForBatch — non-throwing contract', () => {
   it('swallows errors raised by the awarding RPC (upload must not fail)', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
-    (salesReportMtdRepository.findAceNocByYearMonth as jest.Mock).mockResolvedValue([
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(RATES_30);
+    (salesReportMtdRepository.findAceNocByYearMonth as Mock).mockResolvedValue([
       { user_id: 'u1', month: 5, ace: 13000, noc: 4 },
     ]);
-    (salesReportYtdRepository.findFyctByYearMonths as jest.Mock).mockResolvedValue([]);
-    (pointTransactionRepository.awardWithReversal as jest.Mock).mockRejectedValue(
+    (salesReportYtdRepository.findFyctByYearMonths as Mock).mockResolvedValue([]);
+    (pointTransactionRepository.awardWithReversal as Mock).mockRejectedValue(
       new Error('db on fire'),
     );
 
@@ -246,7 +248,7 @@ describe('SalesPointsService.awardForBatch — non-throwing contract', () => {
   });
 
   it('swallows errors raised by config lookup (logs but does not propagate)', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockRejectedValue(
+    (pointConfigRepository.findByCategory as Mock).mockRejectedValue(
       new Error('db down'),
     );
 
@@ -262,12 +264,12 @@ describe('SalesPointsService.awardForBatch — non-throwing contract', () => {
 
 describe('SalesPointsService.awardForBatch — no resolved agents', () => {
   it('still calls the RPC with an empty awards list (so reversals run)', async () => {
-    (pointConfigRepository.findByCategory as jest.Mock).mockResolvedValue(RATES_30);
+    (pointConfigRepository.findByCategory as Mock).mockResolvedValue(RATES_30);
 
     await salesPointsService.awardForBatch(makeBatch(), []);
 
     expect(pointTransactionRepository.awardWithReversal).toHaveBeenCalledTimes(1);
-    const call = (pointTransactionRepository.awardWithReversal as jest.Mock).mock.calls[0][0];
+    const call = (pointTransactionRepository.awardWithReversal as Mock).mock.calls[0][0];
     expect(call.awards).toEqual([]);
   });
 });

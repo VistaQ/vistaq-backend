@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 const env: Record<string, string> = {
   USERS_TABLE: 'users',
   AGENT_CODES_TABLE: 'agent-codes',

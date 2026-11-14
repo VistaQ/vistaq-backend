@@ -1,10 +1,14 @@
-const mockCreateMany = jest.fn();
-const mockFindAll = jest.fn();
-const mockRename = jest.fn();
-const mockFindByCode = jest.fn();
-const mockDeleteByCode = jest.fn();
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-jest.mock('@src/repositories/agentCode.repository', () => ({
+const { mockCreateMany, mockFindAll, mockRename, mockFindByCode, mockDeleteByCode } = vi.hoisted(() => ({
+  mockCreateMany: vi.fn(),
+  mockFindAll: vi.fn(),
+  mockRename: vi.fn(),
+  mockFindByCode: vi.fn(),
+  mockDeleteByCode: vi.fn(),
+}));
+
+vi.mock('@src/repositories/agentCode.repository', () => ({
   __esModule: true,
   default: {
     createMany: mockCreateMany,
@@ -32,7 +36,7 @@ const code = (agent_code: string, is_used = false): IAgentCode => ({
   updated_at: '2026-04-23T00:00:00.000Z',
 });
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 describe('AgentCodeService.createMany', () => {
   it('creates each distinct code once', async () => {

@@ -1,18 +1,20 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import scopeService from '@src/services/scope.service';
 import groupTrainerRepository from '@src/repositories/groupTrainer.repository';
 import userRepository from '@src/repositories/user.repository';
 
-jest.mock('@src/repositories/groupTrainer.repository', () => ({
+vi.mock('@src/repositories/groupTrainer.repository', () => ({
   __esModule: true,
-  default: { findGroupIdsByTrainerIds: jest.fn() },
+  default: { findGroupIdsByTrainerIds: vi.fn() },
 }));
 
-jest.mock('@src/repositories/user.repository', () => ({
+vi.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
-  default: { findGroupIdById: jest.fn() },
+  default: { findGroupIdById: vi.fn() },
 }));
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 describe('ScopeService.resolveSalesReportScope', () => {
   const baseParams = {
@@ -42,7 +44,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
   });
 
   it('returns the trainer\'s managed groups via group_trainers (multiple groups)', async () => {
-    (groupTrainerRepository.findGroupIdsByTrainerIds as jest.Mock).mockResolvedValue(
+    (groupTrainerRepository.findGroupIdsByTrainerIds as Mock).mockResolvedValue(
       new Map([['u1', ['g1', 'g2']]]),
     );
 
@@ -58,7 +60,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
   });
 
   it('returns empty group_ids for a trainer with no managed groups (NOT forbidden)', async () => {
-    (groupTrainerRepository.findGroupIdsByTrainerIds as jest.Mock).mockResolvedValue(
+    (groupTrainerRepository.findGroupIdsByTrainerIds as Mock).mockResolvedValue(
       new Map(),
     );
 
@@ -71,7 +73,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
   });
 
   it('returns the group_leader\'s own users.group_id wrapped in a list', async () => {
-    (userRepository.findGroupIdById as jest.Mock).mockResolvedValue('g-leader');
+    (userRepository.findGroupIdById as Mock).mockResolvedValue('g-leader');
 
     const out = await scopeService.resolveSalesReportScope({
       ...baseParams,
@@ -83,7 +85,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
   });
 
   it('returns empty group_ids for a group_leader with null group_id', async () => {
-    (userRepository.findGroupIdById as jest.Mock).mockResolvedValue(null);
+    (userRepository.findGroupIdById as Mock).mockResolvedValue(null);
 
     const out = await scopeService.resolveSalesReportScope({
       ...baseParams,
