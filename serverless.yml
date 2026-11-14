@@ -17,6 +17,8 @@ params:
     allowedOrigins:
       - https://stg-app.vistaq.co
       - http://localhost:3000
+    apiDomainName: stg-api.vistaq.co
+    apiCertificateArn: arn:aws:acm:ap-southeast-5:760013760993:certificate/f4eb9044-fa24-4e8e-8e36-d4213eaf53d7
   production:
     tablePrefix: prod_vistaq_
 
@@ -230,7 +232,33 @@ resources:
         - Fn::Equals:
             - ${env:SES_SOURCE_ARN, ''}
             - ''
+    HasApiDomain:
+      Fn::Not:
+        - Fn::Equals:
+            - ${param:apiDomainName, ''}
+            - ''
   Resources:
+    # vistaq.co's DNS is on Vercel, so the certificate is requested and
+    # validated outside the stack and only its ARN is passed in.
+    ApiDomainName:
+      Type: AWS::ApiGatewayV2::DomainName
+      Condition: HasApiDomain
+      Properties:
+        DomainName: ${param:apiDomainName, ''}
+        DomainNameConfigurations:
+          - CertificateArn: ${param:apiCertificateArn, ''}
+            EndpointType: REGIONAL
+            SecurityPolicy: TLS_1_2
+    ApiDomainMapping:
+      Type: AWS::ApiGatewayV2::ApiMapping
+      Condition: HasApiDomain
+      DependsOn: HttpApiStage
+      Properties:
+        ApiId:
+          Ref: HttpApi
+        DomainName:
+          Ref: ApiDomainName
+        Stage: $default
     UserPool:
       Type: AWS::Cognito::UserPool
       Properties:
@@ -1057,3 +1085,9 @@ resources:
     UserPoolClientId:
       Value:
         Ref: UserPoolClient
+    ApiDomainTarget:
+      Condition: HasApiDomain
+      Value:
+        Fn::GetAtt:
+          - ApiDomainName
+          - RegionalDomainName
