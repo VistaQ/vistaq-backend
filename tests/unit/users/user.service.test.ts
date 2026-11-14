@@ -333,3 +333,78 @@ describe('UserService lookups', () => {
     expect(mockUpdateGroupId).toHaveBeenCalledWith(['u1'], 'g2');
   });
 });
+
+describe('UserService.getVisibleUserById', () => {
+  const caller = (role: string, overrides: Record<string, unknown> = {}) => ({
+    id: 'caller',
+    role,
+    group_id: null as string | null,
+    ...overrides,
+  });
+
+  it('returns null for an unknown user', async () => {
+    mockFindById.mockResolvedValue(null);
+
+    expect(await userService.getVisibleUserById('nope', caller('admin'))).toBeNull();
+  });
+
+  it('lets anyone read their own record', async () => {
+    mockFindById.mockResolvedValue(user({ id: 'caller', status: 'inactive' }));
+
+    expect(await userService.getVisibleUserById('caller', caller('agent'))).not.toBeNull();
+  });
+
+  it('lets an admin read any user, inactive or admin', async () => {
+    mockFindById.mockResolvedValue(user({ role: 'admin', status: 'inactive' }));
+
+    expect(await userService.getVisibleUserById('u1', caller('admin'))).not.toBeNull();
+  });
+
+  it.each([
+    ['an active agent', user(), true],
+    ['an inactive agent', user({ status: 'inactive' }), false],
+    ['an admin', user({ role: 'admin' }), false],
+  ])('lets a master trainer read %s: %s', async (_label, target, visible) => {
+    mockFindById.mockResolvedValue(target);
+
+    const result = await userService.getVisibleUserById('u1', caller('master_trainer'));
+
+    expect(result !== null).toBe(visible);
+  });
+
+  it.each([
+    ['in a managed group', user({ group_id: 'g1' }), true],
+    ['in another group', user({ group_id: 'g9' }), false],
+    ['with no group', user({ group_id: null }), false],
+    ['inactive in a managed group', user({ group_id: 'g1', status: 'inactive' }), false],
+  ])('lets a trainer read a user %s: %s', async (_label, target, visible) => {
+    mockFindById.mockResolvedValue(target);
+    mockFindGroupIds.mockResolvedValue(new Map([['caller', ['g1']]]));
+
+    const result = await userService.getVisibleUserById('u1', caller('trainer'));
+
+    expect(result !== null).toBe(visible);
+  });
+
+  it.each([
+    ['in their group', user({ group_id: 'g1' }), true],
+    ['in another group', user({ group_id: 'g2' }), false],
+  ])('lets a group leader read a user %s: %s', async (_label, target, visible) => {
+    mockFindById.mockResolvedValue(target);
+
+    const result = await userService.getVisibleUserById(
+      'u1',
+      caller('group_leader', { group_id: 'g1' }),
+    );
+
+    expect(result !== null).toBe(visible);
+  });
+
+  it('hides every other user from an agent', async () => {
+    mockFindById.mockResolvedValue(user({ group_id: 'g1' }));
+
+    expect(
+      await userService.getVisibleUserById('u1', caller('agent', { group_id: 'g1' })),
+    ).toBeNull();
+  });
+});

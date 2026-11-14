@@ -164,3 +164,44 @@ describe('authenticate middleware', () => {
     });
   });
 });
+
+describe('authenticate revocation through signed_out_at', () => {
+  const signedOutAt = '2026-11-14T10:00:00.000Z';
+  const signedOutSeconds = Date.parse(signedOutAt) / 1000;
+
+  beforeEach(() => {
+    mockGetUserContext.mockResolvedValue({
+      ...activeUser,
+      signed_out_at: signedOutAt,
+    });
+  });
+
+  it.each([
+    ['before', signedOutSeconds - 60],
+    ['in the same second as', signedOutSeconds],
+  ])(
+    'rejects with 401 a gateway token issued %s the sign-out',
+    async (_when, iat) => {
+      const next = await run(gatewayRequest({ sub: 'sub-1', iat }));
+
+      expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+    },
+  );
+
+  it('accepts a token issued after the sign-out', async () => {
+    const req = gatewayRequest({ sub: 'sub-1', iat: signedOutSeconds + 1 });
+
+    const next = await run(req);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.user?.id).toBe('sub-1');
+  });
+
+  it('applies the same check to a locally verified token', async () => {
+    mockVerify.mockResolvedValue({ sub: 'sub-1', iat: signedOutSeconds - 1 });
+
+    const next = await run(localRequest('Bearer token'));
+
+    expect(rejectedWith(next).status).toBe(HttpStatusCodes.UNAUTHORIZED);
+  });
+});

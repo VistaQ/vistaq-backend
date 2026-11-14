@@ -239,3 +239,49 @@ describe('CognitoService admin and session calls', () => {
     });
   });
 });
+
+describe('CognitoService decoy sessions', () => {
+  it('returns a decoy session for a disabled user', async () => {
+    cognito
+      .on(InitiateAuthCommand)
+      .rejects(Object.assign(new Error('User is disabled.'), { name: 'NotAuthorizedException' }));
+
+    const { session } = await cognitoService.startLogin('disabled@example.com');
+
+    expect(session.length).toBeGreaterThan(0);
+  });
+
+  it('makes each decoy session as long as a real one and different every time', async () => {
+    cognito.on(InitiateAuthCommand).rejects(failure('UserNotFoundException'));
+
+    const first = (await cognitoService.startLogin('a@b.co')).session;
+    const second = (await cognitoService.startLogin('a@b.co')).session;
+
+    expect(first).not.toBe(second);
+    for (const session of [first, second]) {
+      expect(session.length).toBeGreaterThanOrEqual(800);
+      expect(session.length).toBeLessThanOrEqual(2048);
+    }
+  });
+
+  it('fails verification of a decoy session the same way as a wrong code', async () => {
+    cognito.on(InitiateAuthCommand).rejects(failure('UserNotFoundException'));
+    const { session } = await cognitoService.startLogin('nobody@example.com');
+
+    cognito
+      .on(RespondToAuthChallengeCommand)
+      .rejects(Object.assign(new Error('Invalid session for the user.'), { name: 'NotAuthorizedException' }));
+    const decoyError = await cognitoService
+      .verifyLogin('nobody@example.com', session, '12345678')
+      .catch((error: unknown) => error);
+
+    cognito.on(RespondToAuthChallengeCommand).rejects(failure('CodeMismatchException'));
+    const wrongCodeError = await cognitoService
+      .verifyLogin('ann@example.com', 'real', '00000000')
+      .catch((error: unknown) => error);
+
+    expect(decoyError).toBeInstanceOf(InvalidCredentialsError);
+    expect(wrongCodeError).toBeInstanceOf(InvalidCredentialsError);
+    expect((decoyError as Error).message).toBe((wrongCodeError as Error).message);
+  });
+});

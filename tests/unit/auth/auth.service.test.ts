@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
 
 
-const { mockFindByCode, mockClaim, mockRelease, mockInsertUser, mockFindById, mockFindContextById, mockCreateUser, mockDeleteUser, mockStartLogin, mockVerifyLogin, mockSignOut } = vi.hoisted(() => ({
+const { mockFindByCode, mockClaim, mockRelease, mockInsertUser, mockFindById, mockFindContextById, mockMarkSignedOut, mockCreateUser, mockDeleteUser, mockStartLogin, mockVerifyLogin, mockSignOut } = vi.hoisted(() => ({
   mockFindByCode: vi.fn(),
   mockClaim: vi.fn(),
   mockRelease: vi.fn(),
   mockInsertUser: vi.fn(),
   mockFindById: vi.fn(),
   mockFindContextById: vi.fn(),
+  mockMarkSignedOut: vi.fn(),
   mockCreateUser: vi.fn(),
   mockDeleteUser: vi.fn(),
   mockStartLogin: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('@src/repositories/user.repository', () => ({
     insertUser: mockInsertUser,
     findById: mockFindById,
     findContextById: mockFindContextById,
+    markSignedOut: mockMarkSignedOut,
   },
 }));
 
@@ -215,6 +217,18 @@ describe('AuthService.logout, me and getUserContext', () => {
     await authService.logout('tok');
 
     expect(mockSignOut).toHaveBeenCalledWith('tok');
+  });
+
+  it('logout stamps the sign-out on the user before revoking the Cognito session', async () => {
+    const token = jwt.sign({ sub: 'sub-1' }, 'secret');
+
+    await authService.logout(token);
+
+    expect(mockMarkSignedOut).toHaveBeenCalledWith('sub-1');
+    expect(mockSignOut).toHaveBeenCalledWith(token);
+    expect(mockMarkSignedOut.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSignOut.mock.invocationCallOrder[0],
+    );
   });
 
   it('logout wraps a Cognito failure', async () => {
