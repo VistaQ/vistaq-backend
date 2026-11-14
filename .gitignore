@@ -9,7 +9,7 @@ serviceAccountKey.json
 docs/
 scripts/seed-manifest.json
 .env.stg
-scripts/demo-seed-manifest.json
+scripts/seed-api/.runs/
 .claude/.write-flag
 .claude/.verify-stamp
 .DS_Store

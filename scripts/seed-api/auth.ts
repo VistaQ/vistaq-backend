@@ -3,6 +3,7 @@ import {
   AdminSetUserPasswordCommand,
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
+  paginateListUsers,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -11,9 +12,37 @@ import { randomBytes } from 'crypto';
 import { nowUtc } from '@src/utils/period';
 
 import type { TokenSource } from './client';
+import { SEED_EMAIL } from './plan';
 import type { IStage } from './stage';
 
 export const SEED_ADMIN_EMAIL = 'seed-admin@example.com';
+
+export interface ISeedUser {
+  username: string;
+  email: string;
+  sub: string;
+}
+
+export async function findSeedUsers(
+  stage: IStage,
+  cognito: CognitoIdentityProviderClient,
+): Promise<ISeedUser[]> {
+  const users: ISeedUser[] = [];
+  for await (const page of paginateListUsers(
+    { client: cognito },
+    { UserPoolId: stage.userPoolId, Filter: 'email ^= "seed-"' },
+  )) {
+    for (const user of page.Users ?? []) {
+      const attribute = (name: string) =>
+        user.Attributes?.find((a) => a.Name === name)?.Value ?? '';
+      const email = attribute('email');
+      if (user.Username && SEED_EMAIL.test(email)) {
+        users.push({ username: user.Username, email, sub: attribute('sub') });
+      }
+    }
+  }
+  return users;
+}
 
 // The suffix covers the pool's default policy (upper, lower, digit, symbol).
 export const randomPassword = (): string =>
