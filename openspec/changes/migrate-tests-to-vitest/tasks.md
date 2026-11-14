@@ -27,7 +27,7 @@
 
 ## 4. Gate the deploy and update the docs
 
-- [ ] 4.1 Add a `npm test` step to `.github/workflows/staging.yml` after `npm run verify` and before the AWS login and deploy; verify a workflow run on `feature/migrate-to-serverless` (or its successor branch) shows the test step passing before the deploy (step added 2026-11-14 between verify and the AWS login, `actionlint` passes; waiting on a pushed run)
+- [x] 4.1 Add a `npm test` step to `.github/workflows/staging.yml` after `npm run verify` and before the AWS login and deploy; verify a workflow run on `feature/migrate-to-serverless` (or its successor branch) shows the test step passing before the deploy (done 2026-11-14: run 43612867376 on `feature/migrate-to-serverless` ran `Unit tests` as step 6, after lint and type-check and before the AWS login and `Deploy`; all 40 test files passed and the stack updated)
 - [x] 4.2 Update the Verification section of `.claude/CLAUDE.md` with `npm test` and `npm run test:coverage`, and the README's test commands; verify both name Vitest and no Jest command remains in the repo (`rg -n "jest" --glob '!node_modules' --glob '!openspec/changes/archive/**'` finds only intentional mentions) (done 2026-11-14: README documents `npm test`, `test:watch` and `test:coverage` and that the staging deploy waits for the tests; the Verification section names the commands, the no-`.env` rule, that the Stop hook does not run tests, and the regression-test rule. `jest` appears only in this change's own history)
 
 ## Workflow follow-up
