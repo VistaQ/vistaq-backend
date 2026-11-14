@@ -53,6 +53,13 @@
 ## 4. Live runs and docs
 
 - [ ] 4.1 On dev: snapshot, seed, then reset, and diff against the snapshot; verify the diff is empty and the user pool holds the same users as before
+  - Progress 2026-11-15:
+    - The snapshot was saved, and a diff straight after it reported no change.
+    - The first seed stopped at group creation: `trainer_ids` was refused as "Invalid UUID".
+      - Cognito subs in the pool are 8-4-4-4-12 hex, but not RFC 4122 (for example variant nibble 3), and Zod's `uuid()` rejects them.
+      - User-id fields now use `userIdSchema` (`z.guid()`, in `src/utils/schemas.ts`), with a regression test; 2 of its 3 tests fail on `uuid()`.
+      - Dev runs the code from 2026-11-12, so it needs a deploy before the seed can run.
+    - Reset of the partial run deleted the 5 users, 40 codes and 5 Cognito users in one pass, then two quiet passes. The diff then reported no change, pool users included.
 - [ ] 4.2 On staging: snapshot, then seed; verify through the API as the seed admin that the planned counts of groups, users, prospects, events and sessions exist, that a seeded agent can sign in, and that after the queues drain the seeded agents have point totals and monthly statistics from the consumers
 - [ ] 4.3 On staging: reset, and diff against the 4.2 snapshot; verify the diff is empty and the pool holds only the users it had before. Then seed again so the frontend team has the data, and record the counts
 - [ ] 4.4 Document `seed:api`, `seed:api:reset` and `gen:api` in the README (including the current-month limitation), and add `npm test` and `npm run verify` results; verify `npm test` and `npm run verify` pass

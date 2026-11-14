@@ -30,4 +30,4 @@ Staging runs the migrated stack but holds almost no data: one real admin, the re
 - **Dependencies**: `openapi-fetch` and `openapi-typescript` as devDependencies.
 - **Code**: `scripts/seed-api/` (the client, the generated types, the seed and reset commands), `package.json` scripts, `.gitignore` (the run manifest replaces the stale `scripts/demo-seed-manifest.json` entry), tests for the reset scoping, the production refusal and the type drift.
 - **Systems**: writes to the target stage's Cognito user pool and DynamoDB tables through the API and the AWS SDK. It needs AWS credentials for the Cognito admin calls and for reset, and never runs against production.
-- **Behaviour**: no API or deployment change.
+- **Behaviour**: no deployment change. The first dev run found that user-id fields (group leader, trainers and members, event and coaching agents, the agent-points filter) used Zod's RFC 4122 `uuid()`, which rejects Cognito subs. They now accept any 8-4-4-4-12 hex id through a shared `userIdSchema`.
