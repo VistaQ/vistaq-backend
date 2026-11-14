@@ -15,5 +15,6 @@ This repository is the backend API for a React/Vite frontend, on AWS. The Expres
 
 # Verification
 - The package manager is npm. `npm run verify` runs lint and type-check.
+- `npm test` runs the unit tests in `tests/` on Vitest; `npm run test:coverage` adds coverage for `src/`. Tests never read `.env`: `tests/helpers/setEnv.ts` sets fixed values and AWS calls are stubbed with `aws-sdk-client-mock`. The staging workflow runs them before deploying; the Stop hook does not, so run them yourself after changing behaviour. A fixed defect gets a regression test that fails when the fix is reverted.
 - After writing `.ts` files, run `npm run verify && sh .claude/hooks/verify-stamp.sh`. The Stop hook (`.claude/hooks/stop-gate.sh`) blocks the stop until the stamp matches the working tree, and checks added comments against `.claude/rules/comments.md`.
 - ESLint is deliberately minimal: JS and typescript-eslint recommended (not type-checked, `tsc` covers types) plus prettier and a few targeted rules (layering, env access, `no-console`, type-only imports, and the promise rules for `src/`). Do not add custom plugins, per-folder override blocks or a suppressions baseline.

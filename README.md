@@ -31,7 +31,15 @@ Run the server in development mode.<br/>
 
 ### `npm test`
 
-Run unit-tests with <a href="https://vitest.dev/guide/">vitest</a>.
+Run the unit tests once with <a href="https://vitest.dev/guide/">Vitest</a>. They need no `.env`, AWS credentials or network: `tests/helpers/setEnv.ts` sets fixed test values and AWS calls are stubbed with `aws-sdk-client-mock`.
+
+### `npm run test:watch`
+
+Re-run the affected tests on every change.
+
+### `npm run test:coverage`
+
+Run the tests once and print line and branch coverage for `src/`.
 
 ### `npm run lint`
 
@@ -62,7 +70,7 @@ npx sls remove --stage dev
 
 `npm run package`, `npm run deploy` and `npm run remove` wrap the same commands; pass the stage with `npm run deploy -- --stage dev`. Resources are declared in `serverless.yml`. The first run downloads the framework binary and needs a Serverless login or license key (`SERVERLESS_ACCESS_KEY` in CI).
 
-Pushing to `staging` deploys the staging stage through `.github/workflows/staging.yml`. The workflow's `staging` environment needs the `AWS_DEPLOY_ROLE_ARN` variable (an IAM role that trusts GitHub's OIDC provider for this repository's `staging` environment) and the `SERVERLESS_ACCESS_KEY` secret.
+Pushing to `staging` deploys the staging stage through `.github/workflows/staging.yml`, after lint, type-check and the unit tests pass. The workflow's `staging` environment needs the `AWS_DEPLOY_ROLE_ARN` variable (an IAM role that trusts GitHub's OIDC provider for this repository's `staging` environment) and the `SERVERLESS_ACCESS_KEY` secret.
 
 ## Additional Notes
 
