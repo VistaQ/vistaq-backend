@@ -1,18 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
-// Supply env vars before env.ts runs so the validation guards do not throw
-const env: Record<string, string> = {
-  USERS_TABLE: 'users',
-  AGENT_CODES_TABLE: 'agent-codes',
-  GROUP_TRAINERS_TABLE: 'group-trainers',
-  COGNITO_USER_POOL_ID: 'pool',
-  COGNITO_CLIENT_ID: 'client',
-  ETL_SERVICE_URL: 'http://etl.test',
-  ETL_API_KEY: 'key',
-};
-for (const [name, value] of Object.entries(env)) {
-  process.env[name] ??= value;
-}
 
 
 import type { Response, NextFunction } from 'express';

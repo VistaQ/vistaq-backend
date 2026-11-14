@@ -23,13 +23,6 @@ describe('Lambda handler', () => {
   let handler: IHandler;
 
   beforeAll(async () => {
-    process.env.USERS_TABLE ??= 'users-table';
-    process.env.AGENT_CODES_TABLE ??= 'agent-codes-table';
-    process.env.GROUP_TRAINERS_TABLE ??= 'group-trainers-table';
-    process.env.COGNITO_USER_POOL_ID ??= 'ap-southeast-1_test';
-    process.env.COGNITO_CLIENT_ID ??= 'test-client';
-    process.env.ETL_SERVICE_URL ??= 'http://etl.test';
-    process.env.ETL_API_KEY ??= 'test-key';
     const loaded = await import('@src/lambda');
     handler = loaded.handler as unknown as IHandler;
   });

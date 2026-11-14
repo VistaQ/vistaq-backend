@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
 
 
-const { mockFindByCode, mockClaim, mockRelease, mockInsertUser, mockFindById, mockCreateUser, mockDeleteUser, mockStartLogin, mockVerifyLogin, mockSignOut } = vi.hoisted(() => ({
+const { mockFindByCode, mockClaim, mockRelease, mockInsertUser, mockFindById, mockFindContextById, mockCreateUser, mockDeleteUser, mockStartLogin, mockVerifyLogin, mockSignOut } = vi.hoisted(() => ({
   mockFindByCode: vi.fn(),
   mockClaim: vi.fn(),
   mockRelease: vi.fn(),
   mockInsertUser: vi.fn(),
   mockFindById: vi.fn(),
+  mockFindContextById: vi.fn(),
   mockCreateUser: vi.fn(),
   mockDeleteUser: vi.fn(),
   mockStartLogin: vi.fn(),
@@ -26,7 +27,11 @@ vi.mock('@src/repositories/agentCode.repository', () => ({
 
 vi.mock('@src/repositories/user.repository', () => ({
   __esModule: true,
-  default: { insertUser: mockInsertUser, findById: mockFindById },
+  default: {
+    insertUser: mockInsertUser,
+    findById: mockFindById,
+    findContextById: mockFindContextById,
+  },
 }));
 
 vi.mock('@src/services/cognito.service', () => ({
@@ -218,11 +223,12 @@ describe('AuthService.logout, me and getUserContext', () => {
     await expect(authService.logout('tok')).rejects.toBeInstanceOf(ServiceError);
   });
 
-  it('getUserContext reads the user with a strongly consistent read', async () => {
-    mockFindById.mockResolvedValue(activeUser);
+  it('getUserContext returns the user with its sign-out time from the repository', async () => {
+    const context = { ...activeUser, signed_out_at: '2026-11-14T00:00:00.000Z' };
+    mockFindContextById.mockResolvedValue(context);
 
-    expect(await authService.getUserContext('sub-1')).toBe(activeUser);
-    expect(mockFindById).toHaveBeenCalledWith('sub-1', { consistent: true });
+    expect(await authService.getUserContext('sub-1')).toBe(context);
+    expect(mockFindContextById).toHaveBeenCalledWith('sub-1');
   });
 
   it('me reads the user without forcing a consistent read', async () => {

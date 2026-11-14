@@ -19,6 +19,7 @@ import { RepositoryError } from '@src/models/errors/layer.errors';
 import userRepository from '@src/repositories/user.repository';
 
 const ddb = mockClient(DynamoDBDocumentClient);
+const USERS_TABLE = `${process.env.TABLE_PREFIX}Users`;
 
 const item = (overrides: Record<string, unknown> = {}) => ({
   id: 'u1',
@@ -54,7 +55,7 @@ describe('UserRepository.insertUser', () => {
     });
 
     const input = ddb.commandCalls(PutCommand)[0].args[0].input;
-    expect(input.TableName).toBe('users-table');
+    expect(input.TableName).toBe(USERS_TABLE);
     expect(input.ConditionExpression).toBe('attribute_not_exists(#id)');
     expect(input.Item).toMatchObject({ id: 'u1', email: 'ann@example.com', group_id: 'g1', status: 'active' });
     expect(input.Item).not.toHaveProperty('phone');
@@ -84,6 +85,24 @@ describe('UserRepository reads', () => {
     expect(user).toMatchObject({ id: 'u1', name: 'Ann', agent_code: 'A100', fyct_target: null });
   });
 
+  it('findContextById reads consistently and adds the sign-out time', async () => {
+    ddb.on(GetCommand).resolves({
+      Item: item({ signed_out_at: '2026-11-14T00:00:00.000Z' }),
+    });
+
+    const context = await userRepository.findContextById('u1');
+
+    expect(ddb.commandCalls(GetCommand)[0].args[0].input).toMatchObject({
+      TableName: USERS_TABLE,
+      Key: { id: 'u1' },
+      ConsistentRead: true,
+    });
+    expect(context).toMatchObject({
+      id: 'u1',
+      signed_out_at: '2026-11-14T00:00:00.000Z',
+    });
+  });
+
   it('findById returns null for a missing user', async () => {
     ddb.on(GetCommand).resolves({});
 
@@ -91,11 +110,11 @@ describe('UserRepository reads', () => {
   });
 
   it('findByIds removes duplicates before the batch get', async () => {
-    ddb.on(BatchGetCommand).resolves({ Responses: { 'users-table': [item()] } });
+    ddb.on(BatchGetCommand).resolves({ Responses: { [USERS_TABLE]: [item()] } });
 
     const users = await userRepository.findByIds(['u1', 'u1']);
 
-    const keys = ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems!['users-table'].Keys;
+    const keys = ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems![USERS_TABLE].Keys;
     expect(keys).toEqual([{ id: 'u1' }]);
     expect(users).toHaveLength(1);
   });
@@ -150,7 +169,7 @@ describe('UserRepository reads', () => {
 
   it('findIdNameAgentCodeByIds filters to the permitted groups and short-circuits an empty scope', async () => {
     ddb.on(BatchGetCommand).resolves({
-      Responses: { 'users-table': [item({ id: 'a', group_id: 'g1' }), item({ id: 'b', group_id: 'g2' })] },
+      Responses: { [USERS_TABLE]: [item({ id: 'a', group_id: 'g1' }), item({ id: 'b', group_id: 'g2' })] },
     });
 
     const inScope = await userRepository.findIdNameAgentCodeByIds(['a', 'b'], ['g1']);

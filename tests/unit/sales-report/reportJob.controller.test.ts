@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
-// Set env vars BEFORE importing
-process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
-process.env.ETL_SERVICE_URL = process.env.ETL_SERVICE_URL || 'http://etl';
-process.env.ETL_API_KEY = process.env.ETL_API_KEY || 'test-key';
 
 import type { NextFunction, Response } from 'express';
 import type {
@@ -35,9 +31,13 @@ const mkRes = () => {
 beforeEach(() => vi.resetAllMocks());
 
 const REF = 'SALES-REPORT-20260502143022873';
+const throughGateway = {
+  apiGateway: { event: { requestContext: { domainName: 'stg-api.vistaq.co' } } },
+};
 
 describe('ReportJobController.create', () => {
   const baseReq = (role: string): ICreateJobReq => ({
+    ...throughGateway,
     user: { id: 'u1', role },
     body: { reportYear: 2026, reportMonth: 5 },
     file: {
@@ -55,8 +55,28 @@ describe('ReportJobController.create', () => {
 
     await reportJobController.create(baseReq('group_leader'), res, next);
 
+    expect(reportJobService.createJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uploadedBy: 'u1',
+        reportYear: 2026,
+        reportMonth: 5,
+        callbackBaseUrl: 'https://stg-api.vistaq.co',
+      }),
+    );
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.ACCEPTED);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { reference: REF } });
+  });
+
+  it('builds the callback URL from the host when not behind API Gateway', async () => {
+    (reportJobService.createJob as Mock).mockResolvedValue({ id: 'j1', reference: REF });
+    const { apiGateway: _gateway, ...local } = baseReq('group_leader') as unknown as Record<string, unknown>;
+    const req = { ...local, protocol: 'http', get: () => 'localhost:3000' } as unknown as ICreateJobReq;
+
+    await reportJobController.create(req, mkRes(), vi.fn() as NextFunction);
+
+    expect(reportJobService.createJob).toHaveBeenCalledWith(
+      expect.objectContaining({ callbackBaseUrl: 'http://localhost:3000' }),
+    );
   });
 
   it('returns 403 for non-manager', async () => {
@@ -171,25 +191,24 @@ describe('ReportJobController.getById', () => {
 
 describe('ReportJobController.retry', () => {
   const req = (role: string): IRetryJobReq => ({
+    ...throughGateway,
     user: { id: 'u1', role },
     params: { reference: REF },
   } as unknown as IRetryJobReq);
 
   it('returns 202 with the reference on success', async () => {
-    (reportJobService.getJob as Mock).mockResolvedValue({ id: 'j1', reference: REF, status: 'failed' });
     (reportJobService.retryJob as Mock).mockResolvedValue(undefined);
     const res = mkRes();
     const next = vi.fn() as NextFunction;
 
     await reportJobController.retry(req('group_leader'), res, next);
 
-    expect(reportJobService.retryJob).toHaveBeenCalledWith(REF);
+    expect(reportJobService.retryJob).toHaveBeenCalledWith(REF, 'https://stg-api.vistaq.co');
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.ACCEPTED);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { reference: REF } });
   });
 
   it('maps JobNotRetryableError to 409 Conflict', async () => {
-    (reportJobService.getJob as Mock).mockResolvedValue({ id: 'j1', reference: REF, status: 'completed' });
     (reportJobService.retryJob as Mock).mockRejectedValue(new JobNotRetryableError());
     const res = mkRes();
     const next = vi.fn() as unknown as NextFunction;
