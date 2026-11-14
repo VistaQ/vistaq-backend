@@ -22,7 +22,9 @@ export const randomPassword = (): string =>
 export class SeedAuth {
   private readonly runPassword = randomPassword();
   private readonly tokens = new Map<string, string>();
+  private readonly signingIn = new Map<string, Promise<string>>();
   private readonly touched = new Set<string>();
+  private closed = false;
 
   public constructor(
     private readonly stage: IStage,
@@ -70,35 +72,51 @@ export class SeedAuth {
     return id;
   }
 
-  /** Signs the user in with the run's temporary password; `refresh` forces a new sign-in. */
+  /** Signs in with the run password; `refresh` forces a new sign-in. */
   public tokenFor(email: string): TokenSource {
     return async (refresh) => {
+      if (this.closed) {
+        throw new Error(`Sign-in for ${email} after the run ended`);
+      }
       const cached = this.tokens.get(email);
       if (cached && !refresh) return cached;
 
-      if (!this.touched.has(email)) {
-        this.touched.add(email);
-        await this.setPassword(email, this.runPassword);
-      }
-      const result = await this.cognito.send(
-        new InitiateAuthCommand({
-          AuthFlow: 'USER_AUTH',
-          ClientId: this.stage.clientId,
-          AuthParameters: {
-            USERNAME: email,
-            PREFERRED_CHALLENGE: 'PASSWORD',
-            PASSWORD: this.runPassword,
-          },
-        }),
+      const inFlight = this.signingIn.get(email);
+      if (inFlight) return inFlight;
+      const signIn = this.signIn(email).finally(() =>
+        this.signingIn.delete(email),
       );
-      const token = result.AuthenticationResult?.AccessToken;
-      if (!token) throw new Error(`Sign-in for ${email} returned no token`);
-      this.tokens.set(email, token);
-      return token;
+      this.signingIn.set(email, signIn);
+      return signIn;
     };
   }
 
+  private async signIn(email: string): Promise<string> {
+    if (!this.touched.has(email)) {
+      this.touched.add(email);
+      await this.setPassword(email, this.runPassword);
+    }
+    const result = await this.cognito.send(
+      new InitiateAuthCommand({
+        AuthFlow: 'USER_AUTH',
+        ClientId: this.stage.clientId,
+        AuthParameters: {
+          USERNAME: email,
+          PREFERRED_CHALLENGE: 'PASSWORD',
+          PASSWORD: this.runPassword,
+        },
+      }),
+    );
+    const token = result.AuthenticationResult?.AccessToken;
+    if (!token) throw new Error(`Sign-in for ${email} returned no token`);
+    this.tokens.set(email, token);
+    return token;
+  }
+
+  /** Ends the run: later sign-ins fail, and any in flight finishes first. */
   public async restorePasswords(): Promise<void> {
+    this.closed = true;
+    await Promise.allSettled(this.signingIn.values());
     const failures: unknown[] = [];
     for (const email of Array.from(this.touched)) {
       try {

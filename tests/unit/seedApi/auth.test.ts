@@ -111,6 +111,25 @@ describe('SeedAuth.tokenFor', () => {
     expect(cognito.commandCalls(InitiateAuthCommand)).toHaveLength(2);
     expect(passwordsSet()).toHaveLength(1);
   });
+
+  it('signs in once when parallel requests need the same user', async () => {
+    const token = auth().tokenFor('seed-agent-01@example.com');
+
+    await Promise.all([token(false), token(false), token(false)]);
+
+    expect(passwordsSet()).toHaveLength(1);
+    expect(cognito.commandCalls(InitiateAuthCommand)).toHaveLength(1);
+  });
+
+  it('refuses a sign-in once the run has restored passwords', async () => {
+    const seed = auth();
+    await seed.run(async () => undefined);
+
+    await expect(seed.tokenFor('late@example.com')(false)).rejects.toThrow(
+      /after the run ended/,
+    );
+    expect(passwordsSet()).toHaveLength(0);
+  });
 });
 
 describe('SeedAuth.run', () => {
