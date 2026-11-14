@@ -18,7 +18,7 @@ params:
       - https://stg-app.vistaq.co
       - http://localhost:3000
     apiDomainName: stg-api.vistaq.co
-    apiCertificateArn: arn:aws:acm:ap-southeast-5:760013760993:certificate/f4eb9044-fa24-4e8e-8e36-d4213eaf53d7
+    apiCertificateArn: arn:aws:acm:ap-southeast-5:760013760993:certificate/7c4c102e-b957-4dec-a8a8-93851bdec5af
   production:
     tablePrefix: prod_vistaq_
 
