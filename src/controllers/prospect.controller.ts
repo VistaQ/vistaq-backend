@@ -1,10 +1,15 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
+import { z } from 'zod';
 
-import { ProspectNotFoundError } from '@src/models/errors/prospect.errors';
+import {
+  InvalidPageTokenError,
+  ProspectNotFoundError,
+} from '@src/models/errors/prospect.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import prospectService from '@src/services/prospect.service';
-import { IProspect } from '@src/types/auth.types';
+import type { IProspect } from '@src/types/auth.types';
+import { callerOf } from '@src/utils/caller';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -28,7 +33,14 @@ export interface ICreateProspectRes extends IBaseRes {
 export interface IGetProspectsRes extends IBaseRes {
   success: boolean;
   data: IProspect[];
+  nextToken?: string;
 }
+
+export const listProspectsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  nextToken: z.string().min(1).optional(),
+  stage: z.enum(['prospect', 'appointment', 'sales']).optional(),
+});
 
 export interface IGetProspectByIdReq extends IBaseReq {
   params: { prospectId: string };
@@ -87,7 +99,6 @@ class ProspectController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { fullName, phoneNum, email } = req.body;
 
       const prospect = await prospectService.createProspect({
@@ -95,8 +106,6 @@ class ProspectController {
         prospectPhone: phoneNum,
         prospectEmail: email,
         agentId: req.user!.id,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: ICreateProspectRes = {
@@ -116,16 +125,32 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
-      const prospects = await prospectService.getProspects(token);
+      const parsed = listProspectsQuerySchema.safeParse(req.query ?? {});
+      if (!parsed.success) {
+        res.status(HttpStatusCodes.BAD_REQUEST).json({
+          message: 'Validation failed',
+          errors: parsed.error.issues,
+        });
+        return;
+      }
+
+      const page = await prospectService.getProspects(
+        callerOf(req),
+        parsed.data,
+      );
 
       const responseBody: IGetProspectsRes = {
         success: true,
-        data: prospects,
+        data: page.prospects,
+        ...(page.nextToken && { nextToken: page.nextToken }),
       };
 
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
+      if (error instanceof InvalidPageTokenError) {
+        next(new RouteError(HttpStatusCodes.BAD_REQUEST, error.message));
+        return;
+      }
       return handleControllerError('ProspectController.getAll', error, next);
     }
   }
@@ -136,10 +161,12 @@ class ProspectController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
-      const prospect = await prospectService.getProspectById(prospectId, token);
+      const prospect = await prospectService.getProspectById(
+        prospectId,
+        callerOf(req),
+      );
 
       if (!prospect) {
         next(new RouteError(HttpStatusCodes.NOT_FOUND, 'Prospect not found'));
@@ -168,15 +195,9 @@ class ProspectController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
-      await prospectService.deleteProspect({
-        prospectId,
-        userId: req.user!.id,
-        role: req.user!.role,
-        token,
-      });
+      await prospectService.deleteProspect(prospectId, callerOf(req));
 
       const responseBody: IDeleteProspectRes = { success: true };
       res.status(HttpStatusCodes.OK).json(responseBody);
@@ -200,12 +221,11 @@ class ProspectController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { prospectId } = req.params;
 
       const updatedProspect = await prospectService.updateProspect({
         prospectId,
-        token,
+        caller: callerOf(req),
         data: req.body,
       });
 

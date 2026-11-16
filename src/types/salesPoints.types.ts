@@ -1,26 +1,10 @@
-import { Database } from '@src/types/database.types';
-
-/******************************************************************************
-                            Raw row types (Repository-only)
-******************************************************************************/
-
-export type PointTransactionRow =
-  Database['public']['Tables']['point_transactions']['Row'];
-
-/**
- * Insert shape for `point_transactions`. Matches the supabase-generated
- * `Insert` type 1:1 — the repository accepts and forwards this exact shape.
- */
-export type IPointTransactionIns =
-  Database['public']['Tables']['point_transactions']['Insert'];
-
 /******************************************************************************
                             Domain interfaces (Service)
 ******************************************************************************/
 
 /**
- * The three configured per-tenant rates needed to compute sales-completion
- * points. Values default to 0 when a tenant has no `point_configs` row for a
+ * The three configured rates needed to compute sales-completion points.
+ * Values default to 0 when there is no `point_configs` row for a
  * given activity (defensive: a missing config short-circuits awarding without
  * blocking the upload).
  */

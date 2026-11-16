@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '[.](ts|mts|cts|tsx)$' && touch \"$CLAUDE_PROJECT_DIR/.claude/.write-flag\" || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.sh\"",
+            "timeout": 60,
+            "statusMessage": "Checking comments and the last passing npm run verify"
+          }
+        ]
+      }
+    ]
+  }
+}

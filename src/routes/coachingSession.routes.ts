@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 
-import coachingSessionController, {
+import type {
   ICreateCoachingSessionReq,
   IDeleteCoachingSessionReq,
   IGetCoachingSessionByIdReq,
@@ -9,9 +9,11 @@ import coachingSessionController, {
   IMarkNonAttendeesReq,
   IUpdateCoachingSessionReq,
 } from '@src/controllers/coachingSession.controller';
+import coachingSessionController from '@src/controllers/coachingSession.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
+import { userIdSchema } from '@src/utils/schemas';
 
 // Wire up the reward points configs for coaching sessions
 // Test the attendance too
@@ -63,7 +65,7 @@ export const createCoachingSessionSchema = z
       })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: 'agentIds must not contain duplicates',
       })
@@ -95,7 +97,7 @@ export const updateCoachingSessionSchema = z
       })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: 'agentIds must not contain duplicates',
       })

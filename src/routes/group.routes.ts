@@ -1,15 +1,17 @@
 import express from 'express';
 import { z } from 'zod';
 
-import groupController, {
+import type {
   ICreateGroupReq,
   IGetGroupByIdReq,
   IGetGroupStatsByIdReq,
   IUpdateGroupReq,
 } from '@src/controllers/group.controller';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import groupController from '@src/controllers/group.controller';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
+import { userIdSchema } from '@src/utils/schemas';
 
 /******************************************************************************
                             Zod Schema
@@ -17,16 +19,16 @@ import { validate } from '@src/middleware/validate';
 
 export const createGroupSchema = z.object({
   name: z.string().min(1),
-  leader_id: z.string().uuid().optional(),
-  trainer_ids: z.array(z.string().uuid()).min(1).optional(),
+  leader_id: userIdSchema.optional(),
+  trainer_ids: z.array(userIdSchema).min(1).optional(),
 }).strict();
 
 export const updateGroupSchema = z.object({
   name: z.string().min(1).optional(),
   status: z.enum(['active', 'inactive']).optional(),
-  leader_id: z.string().uuid().optional(),
-  trainer_ids: z.array(z.string().uuid()).min(1).optional(),
-  member_ids: z.array(z.string().uuid()).optional(),
+  leader_id: userIdSchema.optional(),
+  trainer_ids: z.array(userIdSchema).min(1).optional(),
+  member_ids: z.array(userIdSchema).optional(),
 }).strict().refine((data) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });

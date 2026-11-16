@@ -1,5 +1,6 @@
-import { NextFunction, Request, Response } from 'express';
-import { z, ZodError, ZodSchema } from 'zod';
+import type { NextFunction, Request, Response } from 'express';
+import type { ZodSchema } from 'zod';
+import { z, ZodError } from 'zod';
 
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

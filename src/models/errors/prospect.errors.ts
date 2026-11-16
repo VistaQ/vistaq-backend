@@ -8,3 +8,10 @@ export class ProspectNotFoundError extends Error {
     this.name = 'ProspectNotFoundError';
   }
 }
+
+export class InvalidPageTokenError extends Error {
+  public constructor(message = 'Invalid nextToken') {
+    super(message);
+    this.name = 'InvalidPageTokenError';
+  }
+}

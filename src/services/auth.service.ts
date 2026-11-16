@@ -1,300 +1,167 @@
+import jwt from 'jsonwebtoken';
+
 import {
   AgentCodeInvalidError,
   InvalidCredentialsError,
-  TenantNotFoundError,
+  UserAlreadyExistsError,
   UserInactiveError,
 } from '@src/models/errors/auth.errors';
-import { UserStatus } from '@src/models/auth/auth.interface';
-import authRepository from '@src/repositories/auth.repository';
-import loggingService from '@src/services/logging.service';
-import EnvVars from '@src/utils/env';
-import { IUser } from '@src/types/auth.types';
+import { CognitoRateLimitedError } from '@src/models/errors/cognito.error';
+import agentCodeRepository from '@src/repositories/agentCode.repository';
+import userRepository from '@src/repositories/user.repository';
+import cognitoService, { type ITokens } from '@src/services/cognito.service';
+import type { IUser, IUserContext } from '@src/types/auth.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { emitLogin, emitRegistration, withServiceSpan } from '@src/utils/sentry.metrics';
+
+/******************************************************************************
+                            Interfaces
+******************************************************************************/
+
+interface IRegisterParams {
+  fullName: string;
+  agentCode: string;
+  email: string;
+  groupId: string;
+  location: string;
+}
+
+interface IVerifyLoginParams {
+  email: string;
+  session: string;
+  code: string;
+}
+
+interface IVerifyLoginResult {
+  user: IUser;
+  tokens: ITokens;
+}
+
+const DOMAIN_ERRORS = [
+  AgentCodeInvalidError,
+  InvalidCredentialsError,
+  UserAlreadyExistsError,
+  UserInactiveError,
+  CognitoRateLimitedError,
+];
+
+function isDomainError(error: unknown): boolean {
+  return DOMAIN_ERRORS.some((type) => error instanceof type);
+}
 
 /******************************************************************************
                             AuthService
 ******************************************************************************/
 
-interface IRegisterParams {
-  tenantSlug: string;
-  fullName: string;
-  agentCode: string;
-  email: string;
-  password: string;
-  groupId: string;
-  location: string;
-}
-
-interface IRegisterResult {
-  user: IUser;
-  token: string | null;
-}
-
-interface ILoginParams {
-  tenantSlug: string;
-  email: string;
-  password: string;
-}
-
-interface ILoginResult {
-  user: IUser;
-  token: string;
-}
-
-interface IForgotPasswordParams {
-  tenantSlug: string;
-  email: string;
-  origin?: string;
-}
-
-interface IResetPasswordParams {
-  token: string;
-  newPassword: string;
-}
-
 class AuthService {
-  async register(params: IRegisterParams): Promise<IRegisterResult> {
-    return withServiceSpan('AuthService', 'register', { tenant_slug: params.tenantSlug }, async () => {
+  async register(params: IRegisterParams): Promise<{ user: IUser }> {
     try {
-      // Step 1 — Resolve tenant
-      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
+      const email = params.email.toLowerCase();
 
-      // Step 2 — Validate agent code
-      const agentCodeRecord = await authRepository.findAgentCode(
-        params.agentCode,
-        tenant.id,
-      );
-      if (!agentCodeRecord) {
+      const agentCode = await agentCodeRepository.findByCode(params.agentCode, {
+        consistent: true,
+      });
+      if (!agentCode || agentCode.is_used) {
         throw new AgentCodeInvalidError();
       }
 
-      // Step 4a — Create Supabase Auth user
-      const authUser = await authRepository.createAuthUser(
-        params.email,
-        params.password,
-      );
+      const authUser = await cognitoService.createUser(email);
 
-      // Step 4b — Insert into users table (with rollback on failure)
-      let user: IUser;
       try {
-        user = await authRepository.insertUser({
+        await agentCodeRepository.claim(params.agentCode, authUser.id);
+      } catch (claimError) {
+        await cognitoService.deleteUser(email).catch(() => undefined);
+        throw claimError;
+      }
+
+      try {
+        const user = await userRepository.insertUser({
           id: authUser.id,
-          tenant_id: tenant.id,
-          email: params.email,
+          email,
           name: params.fullName,
           role: 'agent',
           agent_code: params.agentCode,
           location: params.location,
           group_id: params.groupId,
         });
+        return { user };
       } catch (insertError) {
-        loggingService.error(
-          'AuthService.register — user insert failed, rolling back auth user',
-          insertError,
-          { authUserId: authUser.id },
-        );
-        try {
-          await authRepository.deleteAuthUser(authUser.id);
-        } catch (rollbackError) {
-          loggingService.error(
-            'AuthService.register — rollback failed, auth user may be orphaned',
-            rollbackError,
-            { authUserId: authUser.id },
-          );
-        }
+        await agentCodeRepository.release(params.agentCode).catch(() => undefined);
+        await cognitoService.deleteUser(email).catch(() => undefined);
         throw insertError;
       }
-
-      // Step 4c — Mark agent code as used
-      await authRepository.updateAgentCode(agentCodeRecord.id, authUser.id);
-
-      // Step 4d — Sign in to obtain session token
-      let token: string | null;
-      try {
-        const signInResult = await authRepository.signInWithPassword(
-          params.email,
-          params.password,
-        );
-        token = signInResult ? signInResult.token : null;
-      } catch (error) {
-        loggingService.error(
-          'AuthService.register — sign-in after registration failed',
-          error,
-          { email: params.email },
-        );
-        token = null;
-      }
-
-      emitRegistration(tenant.id);
-      return { user, token };
     } catch (error) {
-      // Re-throw domain errors directly so the controller can handle them
-      if (
-        error instanceof TenantNotFoundError ||
-        error instanceof AgentCodeInvalidError
-      ) {
+      if (isDomainError(error)) {
         throw error;
       }
       return handleServiceError('AuthService.register', error);
     }
-    });
   }
 
-  async me(userId: string): Promise<IUser | null> {
+  /** Emails a sign-in code and returns the session that must accompany it. */
+  async login(email: string): Promise<{ session: string }> {
     try {
-      const user = await authRepository.findUserById(userId);
-      return user;
+      return await cognitoService.startLogin(email.toLowerCase());
     } catch (error) {
-      return handleServiceError('AuthService.me', error);
+      if (isDomainError(error)) {
+        throw error;
+      }
+      return handleServiceError('AuthService.login', error);
     }
   }
 
-  async logout(token: string): Promise<void> {
+  async verifyLogin(params: IVerifyLoginParams): Promise<IVerifyLoginResult> {
     try {
-      await authRepository.signOut(token);
+      const tokens = await cognitoService.verifyLogin(
+        params.email.toLowerCase(),
+        params.session,
+        params.code,
+      );
+
+      const subject = (jwt.decode(tokens.accessToken) as { sub?: string } | null)
+        ?.sub;
+      const user = subject
+        ? await userRepository.findById(subject, { consistent: true })
+        : null;
+
+      if (!user || user.status !== 'active') {
+        await cognitoService.signOut(tokens.accessToken).catch(() => undefined);
+        throw user ? new UserInactiveError() : new InvalidCredentialsError();
+      }
+
+      return { user, tokens };
+    } catch (error) {
+      if (isDomainError(error)) {
+        throw error;
+      }
+      return handleServiceError('AuthService.verifyLogin', error);
+    }
+  }
+
+  async logout(accessToken: string): Promise<void> {
+    try {
+      const subject = (jwt.decode(accessToken) as { sub?: string } | null)?.sub;
+      if (subject) {
+        await userRepository.markSignedOut(subject);
+      }
+      await cognitoService.signOut(accessToken);
     } catch (error) {
       return handleServiceError('AuthService.logout', error);
     }
   }
 
-  async login(params: ILoginParams): Promise<ILoginResult> {
-    return withServiceSpan('AuthService', 'login', { tenant_slug: params.tenantSlug }, async () => {
+  async me(userId: string): Promise<IUser | null> {
     try {
-      // Step 1 — Resolve tenant
-      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
-
-      // Step 2 — Sign in with Supabase Auth
-      const signInResult = await authRepository.signInWithPassword(
-        params.email,
-        params.password,
-      );
-      if (!signInResult) {
-        emitLogin(tenant.id, false);
-        throw new InvalidCredentialsError();
-      }
-
-      // Step 3 — Fetch user profile
-      const user = await authRepository.findUserById(signInResult.userId);
-      if (!user) {
-        emitLogin(tenant.id, false);
-        throw new InvalidCredentialsError();
-      }
-
-      // Step 4 — Verify tenant membership
-      if (user.tenant_id !== tenant.id) {
-        emitLogin(tenant.id, false);
-        throw new InvalidCredentialsError();
-      }
-
-      // Step 5 — Check user is active
-      if (user.status !== 'active') {
-        emitLogin(tenant.id, false);
-        throw new UserInactiveError();
-      }
-
-      emitLogin(tenant.id, true);
-      return { user, token: signInResult.token };
+      return await userRepository.findById(userId);
     } catch (error) {
-      // Re-throw domain errors directly so the controller can handle them
-      if (
-        error instanceof TenantNotFoundError ||
-        error instanceof InvalidCredentialsError ||
-        error instanceof UserInactiveError
-      ) {
-        throw error;
-      }
-      return handleServiceError('AuthService.login', error);
-    }
-    });
-  }
-
-  async forgotPassword(params: IForgotPasswordParams): Promise<void> {
-    try {
-      const tenant = await authRepository.findTenantBySlug(params.tenantSlug);
-      if (!tenant) {
-        throw new TenantNotFoundError();
-      }
-
-      const user = await authRepository.findUserByEmail(params.email, tenant.id);
-      if (!user) {
-        // Silently return — do not reveal whether the email exists
-        return;
-      }
-
-      // Prevents probing reset behaviour to distinguish inactive from non-existent accounts
-      if (user.status !== 'active') {
-        return;
-      }
-
-      const redirectTo = this.resolveResetPasswordUrl(params.origin);
-
-      await authRepository.resetPasswordForEmail(params.email, redirectTo);
-    } catch (error) {
-      if (error instanceof TenantNotFoundError) {
-        throw error;
-      }
-      return handleServiceError('AuthService.forgotPassword', error);
+      return handleServiceError('AuthService.me', error);
     }
   }
 
-  /**
-   * Builds the Supabase redirectTo URL from the request Origin when it is
-   * allowlisted; otherwise falls back to the configured env URL.
-   */
-  private resolveResetPasswordUrl(origin?: string): string {
+  async getUserContext(userId: string): Promise<IUserContext | null> {
     try {
-      let normalisedOrigin: string | null = null;
-      if (origin) {
-        try {
-          normalisedOrigin = new URL(origin).origin;
-        } catch {
-          normalisedOrigin = null;
-        }
-      }
-
-      if (normalisedOrigin && EnvVars.AllowedOrigins.includes(normalisedOrigin)) {
-        const url = `${normalisedOrigin}/reset-password`;
-        loggingService.info('AuthService.resolveResetPasswordUrl — using request origin', {
-          source: 'origin',
-          url,
-        });
-        return url;
-      }
-
-      loggingService.info('AuthService.resolveResetPasswordUrl — using fallback URL', {
-        source: 'fallback',
-        url: EnvVars.FrontendResetPasswordUrl,
-      });
-      return EnvVars.FrontendResetPasswordUrl;
+      return await userRepository.findContextById(userId);
     } catch (error) {
-      return handleServiceError('AuthService.resolveResetPasswordUrl', error);
-    }
-  }
-
-  async resetPassword(params: IResetPasswordParams): Promise<void> {
-    try {
-      const { userId } = await authRepository.getUserIdFromToken(params.token);
-
-      await authRepository.updateAuthUserPassword(userId, params.newPassword);
-    } catch (error) {
-      return handleServiceError('AuthService.resetPassword', error);
-    }
-  }
-
-  async getUserStatus(userId: string): Promise<UserStatus | null> {
-    try {
-      loggingService.info('AuthService.getUserStatus called', { userId });
-      const status = await authRepository.findUserStatusById(userId);
-      return status;
-    } catch (error) {
-      return handleServiceError('AuthService.getUserStatus', error);
+      return handleServiceError('AuthService.getUserContext', error);
     }
   }
 }

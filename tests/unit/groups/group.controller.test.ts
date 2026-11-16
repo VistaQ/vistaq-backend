@@ -1,70 +1,19 @@
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
+
 // Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => ({
-  __esModule: true,
-  default: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  loggingService: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
-  asyncLocalStorage: {
-    getStore: jest.fn().mockReturnValue(null),
-  },
-}));
-
 // ---------------------------------------------------------------------------
-// Sentry mock
 // ---------------------------------------------------------------------------
 
-jest.mock('@sentry/node', () => ({
-  withScope: jest.fn((cb) => cb({ setFingerprint: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
-}));
-
 // ---------------------------------------------------------------------------
-// sentry.metrics mock
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/utils/sentry.metrics', () => ({
-  emitErrorCount: jest.fn(),
-}));
 
-// ---------------------------------------------------------------------------
-// SupabaseService mock — prevent real client instantiation
-// ---------------------------------------------------------------------------
-
-jest.mock('@src/services/supabase.service', () => ({
-  __esModule: true,
-  default: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    userInsert: jest.fn(),
-  },
-  supabaseService: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    userInsert: jest.fn(),
-  },
-}));
 
 import type { Response, NextFunction } from 'express';
 
@@ -91,13 +40,11 @@ import type { IGroup } from '@src/types/auth.types';
 ******************************************************************************/
 
 const GROUP_ID = '11111111-2222-3333-4444-555555555555';
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const LEADER_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 const USER_TOKEN = 'mock-user-jwt-token';
 
 const mockGroup: IGroup = {
   id: GROUP_ID,
-  tenant_id: TENANT_ID,
   name: 'Alpha Squad',
   status: 'active',
   leader_id: null,
@@ -112,7 +59,7 @@ const mockGroup: IGroup = {
 function makeGetAllReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: 'user-id', tenant_id: TENANT_ID, role: 'agent' },
+    user: { id: 'user-id', role: 'agent' },
     ...overrides,
   } as unknown as IBaseReq;
 }
@@ -121,20 +68,20 @@ function makeReq(overrides: Partial<ICreateGroupReq> = {}): ICreateGroupReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     body: { name: 'Alpha Squad' },
-    user: { id: 'admin-user-id', tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: 'admin-user-id', role: 'admin' },
     ...overrides,
   } as unknown as ICreateGroupReq;
 }
 
 function makeRes(): Response {
   return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
   } as unknown as Response;
 }
 
-function makeNext(): jest.Mock {
-  return jest.fn();
+function makeNext(): Mock {
+  return vi.fn();
 }
 
 /******************************************************************************
@@ -142,11 +89,11 @@ function makeNext(): jest.Mock {
 ******************************************************************************/
 
 describe('GroupController.getAll', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with IGroup[] on success', async () => {
     const mockGroups: IGroup[] = [mockGroup];
-    jest.spyOn(groupService, 'getGroups').mockResolvedValue(mockGroups);
+    vi.spyOn(groupService, 'getGroups').mockResolvedValue(mockGroups);
 
     const req = makeGetAllReq();
     const res = makeRes();
@@ -163,7 +110,7 @@ describe('GroupController.getAll', () => {
   });
 
   it('returns 200 with empty array when no groups exist', async () => {
-    jest.spyOn(groupService, 'getGroups').mockResolvedValue([]);
+    vi.spyOn(groupService, 'getGroups').mockResolvedValue([]);
 
     const req = makeGetAllReq();
     const res = makeRes();
@@ -180,7 +127,7 @@ describe('GroupController.getAll', () => {
   });
 
   it('calls next(ControllerError) for unexpected errors', async () => {
-    jest.spyOn(groupService, 'getGroups').mockRejectedValue(new Error('unexpected db failure'));
+    vi.spyOn(groupService, 'getGroups').mockRejectedValue(new Error('unexpected db failure'));
 
     const req = makeGetAllReq();
     const res = makeRes();
@@ -202,10 +149,10 @@ describe('GroupController.getAll', () => {
 ******************************************************************************/
 
 describe('GroupController.create', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 403 when user role is not admin', async () => {
-    const req = makeReq({ user: { id: 'agent-id', tenant_id: TENANT_ID, role: 'agent' } } as Partial<ICreateGroupReq>);
+    const req = makeReq({ user: { id: 'agent-id', role: 'agent' } } as Partial<ICreateGroupReq>);
     const res = makeRes();
     const next = makeNext();
 
@@ -221,7 +168,7 @@ describe('GroupController.create', () => {
   });
 
   it('returns 201 with group data on success', async () => {
-    jest.spyOn(groupService, 'createGroup').mockResolvedValue(mockGroup);
+    vi.spyOn(groupService, 'createGroup').mockResolvedValue(mockGroup);
 
     const req = makeReq();
     const res = makeRes();
@@ -239,7 +186,7 @@ describe('GroupController.create', () => {
 
   it('returns 201 with group data when leader_id is provided', async () => {
     const groupWithLeader: IGroup = { ...mockGroup, leader_id: LEADER_ID };
-    jest.spyOn(groupService, 'createGroup').mockResolvedValue(groupWithLeader);
+    vi.spyOn(groupService, 'createGroup').mockResolvedValue(groupWithLeader);
 
     const req = makeReq({
       body: { name: 'Alpha Squad', leader_id: LEADER_ID },
@@ -258,7 +205,7 @@ describe('GroupController.create', () => {
   });
 
   it('returns 400 when service throws UserNotInTenantError', async () => {
-    jest.spyOn(groupService, 'createGroup').mockRejectedValue(new UserNotInTenantError());
+    vi.spyOn(groupService, 'createGroup').mockRejectedValue(new UserNotInTenantError());
 
     const req = makeReq({ body: { name: 'Alpha Squad', leader_id: LEADER_ID } } as Partial<ICreateGroupReq>);
     const res = makeRes();
@@ -276,7 +223,7 @@ describe('GroupController.create', () => {
   });
 
   it('returns 400 when service throws InvalidLeaderRoleError', async () => {
-    jest.spyOn(groupService, 'createGroup').mockRejectedValue(new InvalidLeaderRoleError());
+    vi.spyOn(groupService, 'createGroup').mockRejectedValue(new InvalidLeaderRoleError());
 
     const req = makeReq({ body: { name: 'Alpha Squad', leader_id: LEADER_ID } } as Partial<ICreateGroupReq>);
     const res = makeRes();
@@ -294,7 +241,7 @@ describe('GroupController.create', () => {
   });
 
   it('returns 400 when service throws InvalidTrainerRoleError', async () => {
-    jest.spyOn(groupService, 'createGroup').mockRejectedValue(new InvalidTrainerRoleError());
+    vi.spyOn(groupService, 'createGroup').mockRejectedValue(new InvalidTrainerRoleError());
 
     const req = makeReq({ body: { name: 'Alpha Squad', trainer_id: 'trainer-uuid' } } as Partial<ICreateGroupReq>);
     const res = makeRes();
@@ -312,7 +259,7 @@ describe('GroupController.create', () => {
   });
 
   it('calls next(ControllerError) for unexpected errors', async () => {
-    jest.spyOn(groupService, 'createGroup').mockRejectedValue(new Error('unexpected db failure'));
+    vi.spyOn(groupService, 'createGroup').mockRejectedValue(new Error('unexpected db failure'));
 
     const req = makeReq();
     const res = makeRes();
@@ -337,7 +284,7 @@ function makeGetByIdReq(overrides: Partial<IGetGroupByIdReq> = {}): IGetGroupByI
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { groupId: GROUP_ID },
-    user: { id: 'user-id', tenant_id: TENANT_ID, role: 'agent' },
+    user: { id: 'user-id', role: 'agent' },
     ...overrides,
   } as unknown as IGetGroupByIdReq;
 }
@@ -347,10 +294,10 @@ function makeGetByIdReq(overrides: Partial<IGetGroupByIdReq> = {}): IGetGroupByI
 ******************************************************************************/
 
 describe('GroupController.getById', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: group } when group found', async () => {
-    jest.spyOn(groupService, 'getGroupById').mockResolvedValue(mockGroup);
+    vi.spyOn(groupService, 'getGroupById').mockResolvedValue(mockGroup);
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -367,7 +314,7 @@ describe('GroupController.getById', () => {
   });
 
   it('calls next(RouteError(404)) when service returns null', async () => {
-    jest.spyOn(groupService, 'getGroupById').mockResolvedValue(null);
+    vi.spyOn(groupService, 'getGroupById').mockResolvedValue(null);
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -385,7 +332,7 @@ describe('GroupController.getById', () => {
   });
 
   it('calls handleControllerError when service throws', async () => {
-    jest.spyOn(groupService, 'getGroupById').mockRejectedValue(new Error('unexpected db failure'));
+    vi.spyOn(groupService, 'getGroupById').mockRejectedValue(new Error('unexpected db failure'));
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -407,16 +354,16 @@ function makeUpdateReq(overrides: Partial<IUpdateGroupReq> = {}): IUpdateGroupRe
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { groupId: GROUP_ID },
     body: { name: 'Updated Squad' },
-    user: { id: 'admin-user-id', tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: 'admin-user-id', role: 'admin' },
     ...overrides,
   } as unknown as IUpdateGroupReq;
 }
 
 describe('GroupController.update', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 403 when role is not admin', async () => {
-    const req = makeUpdateReq({ user: { id: 'agent-id', tenant_id: TENANT_ID, role: 'agent' } } as Partial<IUpdateGroupReq>);
+    const req = makeUpdateReq({ user: { id: 'agent-id', role: 'agent' } } as Partial<IUpdateGroupReq>);
     const res = makeRes();
     const next = makeNext();
 
@@ -433,7 +380,7 @@ describe('GroupController.update', () => {
 
   it('returns 200 with updated group on success', async () => {
     const updatedGroup: IGroup = { ...mockGroup, name: 'Updated Squad' };
-    jest.spyOn(groupService, 'updateGroup').mockResolvedValue(updatedGroup);
+    vi.spyOn(groupService, 'updateGroup').mockResolvedValue(updatedGroup);
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -450,7 +397,7 @@ describe('GroupController.update', () => {
   });
 
   it('returns 404 when service throws GroupNotFoundError', async () => {
-    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new GroupNotFoundError());
+    vi.spyOn(groupService, 'updateGroup').mockRejectedValue(new GroupNotFoundError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -468,7 +415,7 @@ describe('GroupController.update', () => {
   });
 
   it('returns 404 when service throws UserNotFoundError', async () => {
-    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new UserNotFoundError());
+    vi.spyOn(groupService, 'updateGroup').mockRejectedValue(new UserNotFoundError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -486,7 +433,7 @@ describe('GroupController.update', () => {
   });
 
   it('returns 400 when service throws InvalidLeaderError', async () => {
-    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new InvalidLeaderError());
+    vi.spyOn(groupService, 'updateGroup').mockRejectedValue(new InvalidLeaderError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -504,7 +451,7 @@ describe('GroupController.update', () => {
   });
 
   it('returns 400 when service throws InvalidTrainerError', async () => {
-    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new InvalidTrainerError());
+    vi.spyOn(groupService, 'updateGroup').mockRejectedValue(new InvalidTrainerError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -522,7 +469,7 @@ describe('GroupController.update', () => {
   });
 
   it('returns 400 when service throws MissingMembersError', async () => {
-    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new MissingMembersError());
+    vi.spyOn(groupService, 'updateGroup').mockRejectedValue(new MissingMembersError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -540,7 +487,7 @@ describe('GroupController.update', () => {
   });
 
   it('calls handleControllerError for unexpected errors', async () => {
-    jest.spyOn(groupService, 'updateGroup').mockRejectedValue(new Error('unexpected db failure'));
+    vi.spyOn(groupService, 'updateGroup').mockRejectedValue(new Error('unexpected db failure'));
 
     const req = makeUpdateReq();
     const res = makeRes();

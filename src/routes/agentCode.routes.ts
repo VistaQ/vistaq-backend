@@ -1,12 +1,13 @@
 import express from 'express';
 import { z } from 'zod';
 
-import agentCodeController, {
+import type {
   ICreateAgentCodesReq,
 } from '@src/controllers/agentCode.controller';
+import agentCodeController from '@src/controllers/agentCode.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Zod Schemas

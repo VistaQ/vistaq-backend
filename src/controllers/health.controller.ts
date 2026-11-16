@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 import { handleControllerError } from '@src/utils/errorHandlers';

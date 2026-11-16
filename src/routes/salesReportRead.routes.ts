@@ -1,10 +1,12 @@
-import express, { Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import express from 'express';
 
-import salesReportController, {
+import type {
   IGetMyYearReportReq,
   IGetUploadAuditReq,
   IGetYearReportsReq,
 } from '@src/controllers/salesReport.controller';
+import salesReportController from '@src/controllers/salesReport.controller';
 import { authenticate } from '@src/middleware/auth';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 

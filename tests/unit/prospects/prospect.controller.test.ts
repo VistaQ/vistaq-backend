@@ -1,53 +1,12 @@
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 // Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
 // ---------------------------------------------------------------------------
 // LoggingService mock — must be registered before any imports that trigger side effects
 // ---------------------------------------------------------------------------
 
-jest.mock('@src/services/logging.service', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AsyncLocalStorage } = require('async_hooks');
-  return {
-    __esModule: true,
-    default: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    loggingService: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    asyncLocalStorage: new AsyncLocalStorage(),
-  };
-});
 
-// ---------------------------------------------------------------------------
-// SupabaseService mock — prevent real client instantiation
-// ---------------------------------------------------------------------------
-
-jest.mock('@src/services/supabase.service', () => ({
-  __esModule: true,
-  default: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    userInsert: jest.fn(),
-  },
-  supabaseService: {
-    adminSelect: jest.fn(),
-    adminInsert: jest.fn(),
-    adminUpdate: jest.fn(),
-    adminDelete: jest.fn(),
-    userInsert: jest.fn(),
-  },
-}));
 
 import type { Response, NextFunction } from 'express';
 
@@ -65,14 +24,12 @@ import type { IBaseReq } from '@src/models/interfaces/base.interface';
 ******************************************************************************/
 
 const PROSPECT_ID = '11111111-2222-3333-4444-555555555555';
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const AGENT_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 const GROUP_ID = 'cccccccc-dddd-eeee-ffff-000000000000';
 const USER_TOKEN = 'test-token';
 
 const mockProspect: IProspect = {
   id: PROSPECT_ID,
-  tenant_id: TENANT_ID,
   agent_id: AGENT_ID,
   prospect_name: 'John Doe',
   prospect_email: 'john@example.com',
@@ -103,7 +60,7 @@ function makeReq(overrides: Partial<ICreateProspectReq> = {}): ICreateProspectRe
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     body: { fullName: 'John Doe', phoneNum: '+61400000000', email: 'john@example.com' },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     ...overrides,
   } as unknown as ICreateProspectReq;
 }
@@ -111,7 +68,7 @@ function makeReq(overrides: Partial<ICreateProspectReq> = {}): ICreateProspectRe
 function makeBaseReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     ...overrides,
   } as unknown as IBaseReq;
 }
@@ -119,7 +76,7 @@ function makeBaseReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
 function makeGetByIdReq(overrides: Partial<IGetProspectByIdReq> = {}): IGetProspectByIdReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     params: { prospectId: PROSPECT_ID },
     ...overrides,
   } as unknown as IGetProspectByIdReq;
@@ -128,7 +85,7 @@ function makeGetByIdReq(overrides: Partial<IGetProspectByIdReq> = {}): IGetProsp
 function makeUpdateReq(overrides: Partial<IUpdateProspectReq> = {}): IUpdateProspectReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     params: { prospectId: PROSPECT_ID },
     body: { appointmentStatus: 'scheduled' },
     ...overrides,
@@ -138,7 +95,7 @@ function makeUpdateReq(overrides: Partial<IUpdateProspectReq> = {}): IUpdatePros
 function makeDeleteReq(overrides: Partial<IDeleteProspectReq> = {}): IDeleteProspectReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
-    user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'agent', group_id: GROUP_ID },
+    user: { id: AGENT_ID, role: 'agent', group_id: GROUP_ID },
     params: { prospectId: PROSPECT_ID },
     ...overrides,
   } as unknown as IDeleteProspectReq;
@@ -146,13 +103,13 @@ function makeDeleteReq(overrides: Partial<IDeleteProspectReq> = {}): IDeletePros
 
 function makeRes(): Response {
   return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
   } as unknown as Response;
 }
 
-function makeNext(): jest.Mock {
-  return jest.fn();
+function makeNext(): Mock {
+  return vi.fn();
 }
 
 /******************************************************************************
@@ -160,10 +117,10 @@ function makeNext(): jest.Mock {
 ******************************************************************************/
 
 describe('ProspectController.create', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 201 with { success: true, data: prospect } when role is agent and all params valid', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq();
     const res = makeRes();
@@ -180,10 +137,10 @@ describe('ProspectController.create', () => {
   });
 
   it('returns 201 when role is group_leader', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+      user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
     } as Partial<ICreateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -200,7 +157,7 @@ describe('ProspectController.create', () => {
 
   it('returns 403 when role is not agent or group_leader', async () => {
     const req = makeReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'manager', group_id: null },
+      user: { id: AGENT_ID, role: 'manager', group_id: null },
     } as Partial<ICreateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -217,7 +174,7 @@ describe('ProspectController.create', () => {
   });
 
   it('calls next(ControllerError) when prospectService.createProspect throws', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockRejectedValue(new Error('unexpected db failure'));
+    vi.spyOn(prospectService, 'createProspect').mockRejectedValue(new Error('unexpected db failure'));
 
     const req = makeReq();
     const res = makeRes();
@@ -234,7 +191,7 @@ describe('ProspectController.create', () => {
   });
 
   it('calls createProspect without groupId (column was dropped)', async () => {
-    jest.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'createProspect').mockResolvedValue(mockProspect);
 
     const req = makeReq({} as Partial<ICreateProspectReq>);
     const res = makeRes();
@@ -254,7 +211,7 @@ describe('ProspectController.create', () => {
       prospect_email: null,
       prospect_phone: null,
     };
-    const createProspectSpy = jest
+    const createProspectSpy = vi
       .spyOn(prospectService, 'createProspect')
       .mockResolvedValue(prospectWithNoContact);
 
@@ -281,10 +238,10 @@ describe('ProspectController.create', () => {
 ******************************************************************************/
 
 describe('ProspectController.getAll', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospects } when service returns a non-empty array', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockResolvedValue([mockProspect]);
+    vi.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [mockProspect] });
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -301,7 +258,7 @@ describe('ProspectController.getAll', () => {
   });
 
   it('returns 200 with { success: true, data: [] } when service returns an empty array', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockResolvedValue([]);
+    vi.spyOn(prospectService, 'getProspects').mockResolvedValue({ prospects: [] });
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -318,7 +275,7 @@ describe('ProspectController.getAll', () => {
   });
 
   it('calls next(ControllerError) when prospectService.getProspects throws', async () => {
-    jest.spyOn(prospectService, 'getProspects').mockRejectedValue(new Error('db failure'));
+    vi.spyOn(prospectService, 'getProspects').mockRejectedValue(new Error('db failure'));
 
     const req = makeBaseReq();
     const res = makeRes();
@@ -340,10 +297,10 @@ describe('ProspectController.getAll', () => {
 ******************************************************************************/
 
 describe('ProspectController.getById', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospect } when service returns a prospect', async () => {
-    jest.spyOn(prospectService, 'getProspectById').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'getProspectById').mockResolvedValue(mockProspect);
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -360,7 +317,7 @@ describe('ProspectController.getById', () => {
   });
 
   it('calls next(RouteError) with status 404 when service returns null', async () => {
-    jest.spyOn(prospectService, 'getProspectById').mockResolvedValue(null);
+    vi.spyOn(prospectService, 'getProspectById').mockResolvedValue(null);
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -378,7 +335,7 @@ describe('ProspectController.getById', () => {
   });
 
   it('calls next(ControllerError) when prospectService.getProspectById throws', async () => {
-    jest.spyOn(prospectService, 'getProspectById').mockRejectedValue(new Error('db failure'));
+    vi.spyOn(prospectService, 'getProspectById').mockRejectedValue(new Error('db failure'));
 
     const req = makeGetByIdReq();
     const res = makeRes();
@@ -400,10 +357,10 @@ describe('ProspectController.getById', () => {
 ******************************************************************************/
 
 describe('ProspectController.update', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true, data: prospect } when role is agent', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -420,10 +377,10 @@ describe('ProspectController.update', () => {
   });
 
   it('returns 200 with { success: true, data: prospect } when role is group_leader', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
+    vi.spyOn(prospectService, 'updateProspect').mockResolvedValue(mockProspect);
 
     const req = makeUpdateReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+      user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
     } as Partial<IUpdateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -440,7 +397,7 @@ describe('ProspectController.update', () => {
 
   it('calls next(RouteError) with status 403 when role is admin', async () => {
     const req = makeUpdateReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'admin', group_id: null },
+      user: { id: AGENT_ID, role: 'admin', group_id: null },
     } as Partial<IUpdateProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -457,7 +414,7 @@ describe('ProspectController.update', () => {
   });
 
   it('calls next(RouteError) with status 404 when service throws ProspectNotFoundError', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockRejectedValue(new ProspectNotFoundError());
+    vi.spyOn(prospectService, 'updateProspect').mockRejectedValue(new ProspectNotFoundError());
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -475,7 +432,7 @@ describe('ProspectController.update', () => {
   });
 
   it('calls next(ControllerError) when service throws a generic Error', async () => {
-    jest.spyOn(prospectService, 'updateProspect').mockRejectedValue(new Error('unexpected failure'));
+    vi.spyOn(prospectService, 'updateProspect').mockRejectedValue(new Error('unexpected failure'));
 
     const req = makeUpdateReq();
     const res = makeRes();
@@ -497,10 +454,10 @@ describe('ProspectController.update', () => {
 ******************************************************************************/
 
 describe('ProspectController.delete', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with { success: true } when role is agent and service resolves', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+    vi.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq();
     const res = makeRes();
@@ -514,10 +471,10 @@ describe('ProspectController.delete', () => {
   });
 
   it('returns 200 with { success: true } when role is admin and service resolves', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+    vi.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'admin', group_id: null },
+      user: { id: AGENT_ID, role: 'admin', group_id: null },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -530,10 +487,10 @@ describe('ProspectController.delete', () => {
   });
 
   it('returns 200 with { success: true } when role is group_leader and service resolves', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
+    vi.spyOn(prospectService, 'deleteProspect').mockResolvedValue(undefined);
 
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'group_leader', group_id: GROUP_ID },
+      user: { id: AGENT_ID, role: 'group_leader', group_id: GROUP_ID },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -547,7 +504,7 @@ describe('ProspectController.delete', () => {
 
   it('calls next(RouteError) with status 403 when role is not agent, admin, or group_leader', async () => {
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'master_trainer', group_id: null },
+      user: { id: AGENT_ID, role: 'master_trainer', group_id: null },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -565,7 +522,7 @@ describe('ProspectController.delete', () => {
 
   it('calls next(RouteError) with status 403 when role is trainer', async () => {
     const req = makeDeleteReq({
-      user: { id: AGENT_ID, tenant_id: TENANT_ID, role: 'trainer', group_id: null },
+      user: { id: AGENT_ID, role: 'trainer', group_id: null },
     } as Partial<IDeleteProspectReq>);
     const res = makeRes();
     const next = makeNext();
@@ -582,7 +539,7 @@ describe('ProspectController.delete', () => {
   });
 
   it('calls next(RouteError) with status 404 when service throws ProspectNotFoundError', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new ProspectNotFoundError());
+    vi.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new ProspectNotFoundError());
 
     const req = makeDeleteReq();
     const res = makeRes();
@@ -600,7 +557,7 @@ describe('ProspectController.delete', () => {
   });
 
   it('calls next(ControllerError) when service throws a generic Error', async () => {
-    jest.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new Error('unexpected failure'));
+    vi.spyOn(prospectService, 'deleteProspect').mockRejectedValue(new Error('unexpected failure'));
 
     const req = makeDeleteReq();
     const res = makeRes();

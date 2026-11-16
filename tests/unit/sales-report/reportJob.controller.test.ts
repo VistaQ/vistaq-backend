@@ -1,45 +1,44 @@
-// Set env vars BEFORE importing
-process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'test-anon';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-srk';
-process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
-process.env.ETL_SERVICE_URL = process.env.ETL_SERVICE_URL || 'http://etl';
-process.env.ETL_API_KEY = process.env.ETL_API_KEY || 'test-key';
-process.env.BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || 'http://api';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
-import { NextFunction, Response } from 'express';
-import reportJobController, {
+import type { NextFunction, Response } from 'express';
+import type {
   ICreateJobReq, IGetJobReq, IRetryJobReq, ICompleteJobReq,
 } from '@src/controllers/reportJob.controller';
+import reportJobController from '@src/controllers/reportJob.controller';
 import reportJobService from '@src/services/reportJob.service';
 import { ReportJobNotFoundError, JobNotRetryableError } from '@src/models/errors/reportJob.errors';
 import { NonConsecutiveUploadError } from '@src/models/errors/salesReport.errors';
-import { RouteError } from '@src/models/errors/route.error';
+import type { RouteError } from '@src/models/errors/route.error';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
-jest.mock('@src/services/reportJob.service', () => ({
+vi.mock('@src/services/reportJob.service', () => ({
   __esModule: true,
   default: {
-    createJob: jest.fn(), completeJob: jest.fn(),
-    getJob: jest.fn(), retryJob: jest.fn(),
+    createJob: vi.fn(), completeJob: vi.fn(),
+    getJob: vi.fn(), retryJob: vi.fn(),
   },
 }));
 
 const mkRes = () => {
   const res = {} as Partial<Response>;
-  res.status = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
-  res.end = jest.fn().mockReturnValue(res);
+  res.status = vi.fn().mockReturnValue(res);
+  res.json = vi.fn().mockReturnValue(res);
+  res.end = vi.fn().mockReturnValue(res);
   return res as Response;
 };
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 const REF = 'SALES-REPORT-20260502143022873';
+const throughGateway = {
+  apiGateway: { event: { requestContext: { domainName: 'stg-api.vistaq.co' } } },
+};
 
 describe('ReportJobController.create', () => {
   const baseReq = (role: string): ICreateJobReq => ({
-    user: { id: 'u1', tenant_id: 't1', role },
+    ...throughGateway,
+    user: { id: 'u1', role },
     body: { reportYear: 2026, reportMonth: 5 },
     file: {
       buffer: Buffer.from('x'),
@@ -50,32 +49,52 @@ describe('ReportJobController.create', () => {
   } as unknown as ICreateJobReq);
 
   it('returns 202 with the reference (not the UUID) on success', async () => {
-    (reportJobService.createJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF });
+    (reportJobService.createJob as Mock).mockResolvedValue({ id: 'j1', reference: REF });
     const res = mkRes();
-    const next = jest.fn() as NextFunction;
+    const next = vi.fn() as NextFunction;
 
     await reportJobController.create(baseReq('group_leader'), res, next);
 
+    expect(reportJobService.createJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uploadedBy: 'u1',
+        reportYear: 2026,
+        reportMonth: 5,
+        callbackBaseUrl: 'https://stg-api.vistaq.co',
+      }),
+    );
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.ACCEPTED);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { reference: REF } });
   });
 
+  it('builds the callback URL from the host when not behind API Gateway', async () => {
+    (reportJobService.createJob as Mock).mockResolvedValue({ id: 'j1', reference: REF });
+    const { apiGateway: _gateway, ...local } = baseReq('group_leader') as unknown as Record<string, unknown>;
+    const req = { ...local, protocol: 'http', get: () => 'localhost:3000' } as unknown as ICreateJobReq;
+
+    await reportJobController.create(req, mkRes(), vi.fn() as NextFunction);
+
+    expect(reportJobService.createJob).toHaveBeenCalledWith(
+      expect.objectContaining({ callbackBaseUrl: 'http://localhost:3000' }),
+    );
+  });
+
   it('returns 403 for non-manager', async () => {
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
     await reportJobController.create(baseReq('agent'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.FORBIDDEN);
   });
 
   it('maps NonConsecutiveUploadError to 409 Conflict', async () => {
-    (reportJobService.createJob as jest.Mock).mockRejectedValue(
+    (reportJobService.createJob as Mock).mockRejectedValue(
       new NonConsecutiveUploadError('Cannot upload 2026-04. Latest uploaded is 2026-02; next must be 3.'),
     );
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
     await reportJobController.create(baseReq('group_leader'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.CONFLICT);
     expect(err.message).toMatch(/^Cannot upload 2026-04/);
   });
@@ -83,9 +102,9 @@ describe('ReportJobController.create', () => {
   it('returns 400 when no file is attached', async () => {
     const req = { ...baseReq('group_leader'), file: undefined } as unknown as ICreateJobReq;
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
     await reportJobController.create(req, res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.BAD_REQUEST);
   });
 });
@@ -99,9 +118,9 @@ describe('ReportJobController.complete', () => {
   } as unknown as ICompleteJobReq);
 
   it('returns 204 on success-path completion', async () => {
-    (reportJobService.completeJob as jest.Mock).mockResolvedValue(undefined);
+    (reportJobService.completeJob as Mock).mockResolvedValue(undefined);
     const res = mkRes();
-    const next = jest.fn() as NextFunction;
+    const next = vi.fn() as NextFunction;
 
     await reportJobController.complete(req('success'), res, next);
 
@@ -112,9 +131,9 @@ describe('ReportJobController.complete', () => {
   });
 
   it('returns 204 on failed-path completion', async () => {
-    (reportJobService.completeJob as jest.Mock).mockResolvedValue(undefined);
+    (reportJobService.completeJob as Mock).mockResolvedValue(undefined);
     const res = mkRes();
-    const next = jest.fn() as NextFunction;
+    const next = vi.fn() as NextFunction;
 
     await reportJobController.complete(req('failed'), res, next);
 
@@ -124,26 +143,26 @@ describe('ReportJobController.complete', () => {
   });
 
   it('maps ReportJobNotFoundError to 404', async () => {
-    (reportJobService.completeJob as jest.Mock).mockRejectedValue(new ReportJobNotFoundError());
+    (reportJobService.completeJob as Mock).mockRejectedValue(new ReportJobNotFoundError());
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
     await reportJobController.complete(req('success'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.NOT_FOUND);
   });
 });
 
 describe('ReportJobController.getById', () => {
   const req = (role: string): IGetJobReq => ({
-    user: { id: 'u1', tenant_id: 't1', role },
+    user: { id: 'u1', role },
     params: { reference: REF },
   } as unknown as IGetJobReq);
 
   it('returns 200 with the job', async () => {
-    const job = { id: 'j1', reference: REF, tenant_id: 't1', status: 'completed' };
-    (reportJobService.getJob as jest.Mock).mockResolvedValue(job);
+    const job = { id: 'j1', reference: REF, status: 'completed' };
+    (reportJobService.getJob as Mock).mockResolvedValue(job);
     const res = mkRes();
-    const next = jest.fn() as NextFunction;
+    const next = vi.fn() as NextFunction;
 
     await reportJobController.getById(req('group_leader'), res, next);
 
@@ -154,61 +173,49 @@ describe('ReportJobController.getById', () => {
 
   it('returns 403 for non-manager', async () => {
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
     await reportJobController.getById(req('agent'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.FORBIDDEN);
   });
 
   it('returns 404 when job not found', async () => {
-    (reportJobService.getJob as jest.Mock).mockRejectedValue(new ReportJobNotFoundError());
+    (reportJobService.getJob as Mock).mockRejectedValue(new ReportJobNotFoundError());
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
     await reportJobController.getById(req('group_leader'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.NOT_FOUND);
-  });
-
-  it('returns 403 when job belongs to another tenant', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({
-      id: 'j1', reference: REF, tenant_id: 'other-tenant', status: 'completed',
-    });
-    const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
-    await reportJobController.getById(req('group_leader'), res, next);
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
-    expect(err.status).toBe(HttpStatusCodes.FORBIDDEN);
   });
 });
 
 describe('ReportJobController.retry', () => {
   const req = (role: string): IRetryJobReq => ({
-    user: { id: 'u1', tenant_id: 't1', role },
+    ...throughGateway,
+    user: { id: 'u1', role },
     params: { reference: REF },
   } as unknown as IRetryJobReq);
 
   it('returns 202 with the reference on success', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, tenant_id: 't1', status: 'failed' });
-    (reportJobService.retryJob as jest.Mock).mockResolvedValue(undefined);
+    (reportJobService.retryJob as Mock).mockResolvedValue(undefined);
     const res = mkRes();
-    const next = jest.fn() as NextFunction;
+    const next = vi.fn() as NextFunction;
 
     await reportJobController.retry(req('group_leader'), res, next);
 
-    expect(reportJobService.retryJob).toHaveBeenCalledWith(REF);
+    expect(reportJobService.retryJob).toHaveBeenCalledWith(REF, 'https://stg-api.vistaq.co');
     expect(res.status).toHaveBeenCalledWith(HttpStatusCodes.ACCEPTED);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { reference: REF } });
   });
 
   it('maps JobNotRetryableError to 409 Conflict', async () => {
-    (reportJobService.getJob as jest.Mock).mockResolvedValue({ id: 'j1', reference: REF, tenant_id: 't1', status: 'completed' });
-    (reportJobService.retryJob as jest.Mock).mockRejectedValue(new JobNotRetryableError());
+    (reportJobService.retryJob as Mock).mockRejectedValue(new JobNotRetryableError());
     const res = mkRes();
-    const next = jest.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction;
 
     await reportJobController.retry(req('group_leader'), res, next);
 
-    const err = (next as jest.Mock).mock.calls[0][0] as RouteError;
+    const err = (next as Mock).mock.calls[0][0] as RouteError;
     expect(err.status).toBe(HttpStatusCodes.CONFLICT);
   });
 });

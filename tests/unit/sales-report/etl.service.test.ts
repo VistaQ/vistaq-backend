@@ -1,11 +1,10 @@
+import { describe, it, expect, afterEach, vi } from 'vitest';
+
 // Set env vars BEFORE importing — EnvVars captures them at module load time
-process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'test-anon';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-srk';
-process.env.FRONTEND_RESET_PASSWORD_URL = process.env.FRONTEND_RESET_PASSWORD_URL || 'http://test/reset';
-process.env.ETL_SERVICE_URL = 'http://etl';
-process.env.ETL_API_KEY = 'test-key';
-process.env.BACKEND_BASE_URL = 'http://api';
+vi.hoisted(() => {
+  process.env.ETL_SERVICE_URL = 'http://etl';
+  process.env.ETL_API_KEY = 'test-key';
+});
 
 import etlService from '@src/services/etl.service';
 import { EtlServiceError } from '@src/models/errors/reportJob.errors';
@@ -16,7 +15,7 @@ afterEach(() => { global.fetch = originalFetch; });
 
 describe('EtlService.kickoff', () => {
   it('POSTs the job_reference payload with the bearer key', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true, status: 200, json: async () => ({ accepted: true }),
     });
     global.fetch = fetchMock as never;
@@ -37,7 +36,7 @@ describe('EtlService.kickoff', () => {
   });
 
   it('throws EtlServiceError when ETL returns non-2xx', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValue({
       ok: false, status: 502, text: async () => 'bad gateway',
     }) as never;
 
@@ -47,7 +46,7 @@ describe('EtlService.kickoff', () => {
   });
 
   it('throws EtlServiceError when fetch rejects (network failure)', async () => {
-    global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as never;
+    global.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) as never;
 
     await expect(
       etlService.kickoff({ reference: REF, fileUrl: 'u', callbackUrl: 'c' }),

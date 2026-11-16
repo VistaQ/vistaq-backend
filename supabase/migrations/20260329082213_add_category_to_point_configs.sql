@@ -1,1 +1,0 @@
-ALTER TABLE point_configs ADD COLUMN category TEXT NOT NULL;

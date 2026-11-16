@@ -1,10 +1,7 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
-import { TenantNotFoundError } from '@src/models/errors/auth.errors';
-import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import groupService from '@src/services/group.service';
-import loggingService from '@src/services/logging.service';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -33,22 +30,7 @@ class PublicController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const tenantSlug = req.headers['x-tenant-slug'];
-
-      if (!tenantSlug || typeof tenantSlug !== 'string') {
-        loggingService.error(
-          'PublicController.getGroups — missing or invalid X-Tenant-Slug header',
-        );
-        next(
-          new RouteError(
-            HttpStatusCodes.BAD_REQUEST,
-            'X-Tenant-Slug header is required',
-          ),
-        );
-        return;
-      }
-
-      const groups = await groupService.getActiveGroupsByTenantSlug(tenantSlug);
+      const groups = await groupService.getActiveGroups();
 
       const responseBody: IGetPublicGroupsRes = {
         success: true,
@@ -57,11 +39,6 @@ class PublicController {
 
       res.status(HttpStatusCodes.OK).json(responseBody);
     } catch (error) {
-      if (error instanceof TenantNotFoundError) {
-        next(new RouteError(HttpStatusCodes.NOT_FOUND, error.message));
-        return;
-      }
-
       return handleControllerError('PublicController.getGroups', error, next);
     }
   }

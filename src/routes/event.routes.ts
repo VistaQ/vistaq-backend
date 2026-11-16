@@ -1,14 +1,17 @@
-import express, { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import express from 'express';
 import { z } from 'zod';
 
-import eventController, {
+import type {
   ICreateEventReq,
   IGetEventByIdReq,
   IUpdateEventReq,
 } from '@src/controllers/event.controller';
+import eventController from '@src/controllers/event.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
+import { userIdSchema } from '@src/utils/schemas';
 
 /******************************************************************************
                             Zod Schemas
@@ -46,7 +49,7 @@ export const createEventSchema = z
       .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
       .optional(),
   })
@@ -77,7 +80,7 @@ export const updateEventSchema = z
       .refine((ids) => new Set(ids).size === ids.length, { message: 'groupIds must not contain duplicates' })
       .optional(),
     agentIds: z
-      .array(z.string().uuid())
+      .array(userIdSchema)
       .refine((ids) => new Set(ids).size === ids.length, { message: 'agentIds must not contain duplicates' })
       .optional(),
   })

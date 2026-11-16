@@ -1,6 +1,6 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import tenantLabelService from '@src/services/tenantLabel.service';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
@@ -25,12 +25,8 @@ class TenantLabelController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const token = req.headers['authorization']!.slice(7);
 
-      const data = await tenantLabelService.getLabels({
-        tenantId: req.user!.tenant_id,
-        token,
-      });
+      const data = await tenantLabelService.getLabels();
 
       const responseBody: IGetLabelsRes = {
         success: true,

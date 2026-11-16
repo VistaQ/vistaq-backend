@@ -2,13 +2,6 @@
                             Auth Domain Errors
 ******************************************************************************/
 
-export class TenantNotFoundError extends Error {
-  public constructor(message = 'Tenant not found') {
-    super(message);
-    this.name = 'TenantNotFoundError';
-  }
-}
-
 export class AgentCodeInvalidError extends Error {
   public constructor(message = 'Invalid or already used agent code') {
     super(message);
@@ -20,6 +13,13 @@ export class UserNotFoundError extends Error {
   public constructor(message = 'User not found') {
     super(message);
     this.name = 'UserNotFoundError';
+  }
+}
+
+export class UserAlreadyExistsError extends Error {
+  public constructor(message = 'User already exists') {
+    super(message);
+    this.name = 'UserAlreadyExistsError';
   }
 }
 

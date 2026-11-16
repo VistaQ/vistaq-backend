@@ -1,15 +1,16 @@
-import { Database } from '@src/types/database.types';
-
-export type ReportJobRow = Database['public']['Tables']['report_jobs']['Row'];
-export type ReportJobIns = Database['public']['Tables']['report_jobs']['Insert'];
-export type ReportJobUpd = Database['public']['Tables']['report_jobs']['Update'];
+export interface ReportJobIns {
+  uploaded_by: string;
+  storage_path: string;
+  file_name: string;
+  report_year: number;
+  report_month: number;
+}
 
 export type ReportJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface IReportJob {
   id: string;
   reference: string;
-  tenant_id: string;
   uploaded_by: string;
   storage_path: string;
   file_name: string;
@@ -25,12 +26,12 @@ export interface IReportJob {
 }
 
 export interface ICreateJobParams {
-  tenantId: string;
   uploadedBy: string;
   fileBuffer: Buffer;
   fileName: string;
   reportYear: number;
   reportMonth: number;
+  callbackBaseUrl: string;
 }
 
 export interface ICompleteJobParams {

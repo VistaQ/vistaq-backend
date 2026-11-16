@@ -1,4 +1,4 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
 import {
@@ -6,9 +6,9 @@ import {
   TaxonomyNotFoundError,
 } from '@src/models/errors/taxonomy.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import taxonomyService from '@src/services/taxonomy.service';
-import { ITaxonomy } from '@src/types/taxonomy.types';
+import type { ITaxonomy } from '@src/types/taxonomy.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -79,12 +79,8 @@ class TaxonomyController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
-
       const data = await taxonomyService.getTaxonomies({
-        tenantId: req.user!.tenant_id,
         type: parsed.data.type,
-        token,
       });
 
       const responseBody: IGetTaxonomiesRes = {
@@ -108,16 +104,12 @@ class TaxonomyController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { type, value, sort_order } = req.body;
 
       const data = await taxonomyService.createTaxonomy({
-        tenantId: req.user!.tenant_id,
         type,
         value,
         sortOrder: sort_order,
-        token,
       });
 
       const responseBody: ICreateTaxonomyRes = {
@@ -145,17 +137,13 @@ class TaxonomyController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { id } = req.params;
       const { value, sort_order } = req.body;
 
       const data = await taxonomyService.updateTaxonomy({
         id,
-        tenantId: req.user!.tenant_id,
         value,
         sortOrder: sort_order,
-        token,
       });
 
       const responseBody: IUpdateTaxonomyRes = {
@@ -187,14 +175,10 @@ class TaxonomyController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-
-      const token = req.headers['authorization']!.slice(7);
       const { id } = req.params;
 
       await taxonomyService.deleteTaxonomy({
         id,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       res.status(HttpStatusCodes.NO_CONTENT).send();

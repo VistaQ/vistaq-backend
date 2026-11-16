@@ -1,79 +1,32 @@
 /******************************************************************************
-                                Constants
-******************************************************************************/
-
-// NOTE: These need to match the names of your ".env" files
-export const NodeEnvs = {
-  DEV: 'development',
-  TEST: 'test',
-  PRODUCTION: 'production',
-} as const;
-
-/******************************************************************************
                                 Setup
 ******************************************************************************/
 
 const EnvVars = {
-  NodeEnv: (process.env.NODE_ENV ||
-    NodeEnvs.DEV) as (typeof NodeEnvs)[keyof typeof NodeEnvs],
   Port: Number(process.env.PORT || 3000),
-  SupabaseUrl: process.env.SUPABASE_URL || '',
-  SupabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
-  SupabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-  FrontendResetPasswordUrl: process.env.FRONTEND_RESET_PASSWORD_URL || '',
-  SentryDsn: process.env.SENTRY_DSN || '',
-  VercelEnv: process.env.VERCEL_ENV || '',
-  DisableHelmet: process.env.DISABLE_HELMET === 'true',
+  TablePrefix: process.env.TABLE_PREFIX || '',
+  StatsQueueUrl: process.env.STATS_QUEUE_URL || '',
+  ReportsBucket: process.env.REPORTS_BUCKET || '',
+  CognitoUserPoolId: process.env.COGNITO_USER_POOL_ID || '',
+  CognitoClientId: process.env.COGNITO_CLIENT_ID || '',
   MaintenanceMode: (process.env.MAINTENANCE_MODE || 'false') === 'true',
-  AllowedOrigins: (process.env.ALLOWED_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
   EtlServiceUrl: process.env.ETL_SERVICE_URL || '',
   InternalApiKey: process.env.ETL_API_KEY || '',
   ReportFileMaxBytes: Number(
     process.env.REPORT_FILE_MAX_BYTES || 10 * 1024 * 1024,
   ),
-  BackendBaseUrl: process.env.BACKEND_BASE_URL || '',
 };
 
-if (!EnvVars.SupabaseUrl.trim()) {
-  throw new Error('Missing required environment variable: SUPABASE_URL');
+if (!EnvVars.TablePrefix.trim()) {
+  throw new Error('Missing required environment variable: TABLE_PREFIX');
 }
 
-if (!EnvVars.SupabaseAnonKey.trim()) {
-  throw new Error('Missing required environment variable: SUPABASE_ANON_KEY');
+if (!EnvVars.CognitoUserPoolId.trim()) {
+  throw new Error('Missing required environment variable: COGNITO_USER_POOL_ID');
 }
 
-if (!EnvVars.SupabaseServiceRoleKey.trim()) {
-  throw new Error(
-    'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY',
-  );
-}
-
-if (!EnvVars.FrontendResetPasswordUrl.trim()) {
-  throw new Error(
-    'Missing required environment variable: FRONTEND_RESET_PASSWORD_URL',
-  );
-}
-
-if (!EnvVars.EtlServiceUrl.trim()) {
-  throw new Error('Missing required environment variable: ETL_SERVICE_URL');
-}
-
-if (!EnvVars.InternalApiKey.trim()) {
-  throw new Error('Missing required environment variable: ETL_API_KEY');
-}
-
-if (!EnvVars.BackendBaseUrl.trim()) {
-  throw new Error('Missing required environment variable: BACKEND_BASE_URL');
-}
-
-if (
-  EnvVars.NodeEnv === NodeEnvs.PRODUCTION &&
-  EnvVars.AllowedOrigins.length === 0
-) {
-  throw new Error('Missing required environment variable: ALLOWED_ORIGINS');
+if (!EnvVars.CognitoClientId.trim()) {
+  throw new Error('Missing required environment variable: COGNITO_CLIENT_ID');
 }
 
 /******************************************************************************

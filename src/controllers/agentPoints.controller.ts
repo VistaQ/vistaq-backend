@@ -1,12 +1,13 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import agentPointsService from '@src/services/agentPoints.service';
-import { IAgentPointsResponse } from '@src/types/agentPoints.types';
+import type { IAgentPointsResponse } from '@src/types/agentPoints.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
+import { userIdSchema } from '@src/utils/schemas';
 
 /******************************************************************************
                             Interfaces
@@ -22,7 +23,7 @@ export interface IGetAgentPointsRes extends IBaseRes {
 ******************************************************************************/
 
 const querySchema = z.object({
-  userId: z.string().uuid().optional(),
+  userId: userIdSchema.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -46,7 +47,6 @@ class AgentPointsController {
       const { userId, page, limit } = parsed.data;
       const requestingUserId = req.user!.id;
       const requestingRole = req.user!.role;
-      const tenantId = req.user!.tenant_id;
 
       const targetUserId = userId ?? requestingUserId;
 
@@ -55,7 +55,7 @@ class AgentPointsController {
         return;
       }
 
-      const data = await agentPointsService.getAgentPoints(tenantId, targetUserId, page, limit);
+      const data = await agentPointsService.getAgentPoints(targetUserId, page, limit);
 
       const responseBody: IGetAgentPointsRes = {
         success: true,

@@ -1,8 +1,8 @@
-import { Database } from '@src/types/database.types';
-
-type TaxonomiesRow = Database['public']['Tables']['taxonomies']['Row'];
-
-export type ITaxonomy = Pick<
-  TaxonomiesRow,
-  'id' | 'tenant_id' | 'type' | 'value' | 'sort_order' | 'created_at' | 'updated_at'
->;
+export interface ITaxonomy {
+  id: string;
+  type: string;
+  value: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}

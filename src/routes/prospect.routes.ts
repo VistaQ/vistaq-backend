@@ -1,15 +1,16 @@
 import express from 'express';
 import { z } from 'zod';
 
-import prospectController, {
+import type {
   ICreateProspectReq,
   IDeleteProspectReq,
   IGetProspectByIdReq,
   IUpdateProspectReq,
 } from '@src/controllers/prospect.controller';
+import prospectController from '@src/controllers/prospect.controller';
 import { authenticate } from '@src/middleware/auth';
 import { validate } from '@src/middleware/validate';
-import { IBaseReq } from '@src/models/interfaces/base.interface';
+import type { IBaseReq } from '@src/models/interfaces/base.interface';
 
 /******************************************************************************
                             Zod Schemas

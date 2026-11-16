@@ -1,11 +1,11 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
 import { AgentCodeConflictError, AgentCodeInUseError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
 import { RouteError } from '@src/models/errors/route.error';
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import agentCodeService from '@src/services/agentCode.service';
-import { IAgentCode } from '@src/types/agentCode';
+import type { IAgentCode } from '@src/types/agentCode';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -69,13 +69,10 @@ class AgentCodeController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const { agentCodes } = req.body;
 
       const result = await agentCodeService.createMany({
         agentCodes,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: ICreateAgentCodesRes = {
@@ -118,13 +115,12 @@ class AgentCodeController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const isUsed =
         parsed.data.isUsed !== undefined
           ? parsed.data.isUsed === 'true'
           : undefined;
 
-      const result = await agentCodeService.list({ isUsed, token });
+      const result = await agentCodeService.list({ isUsed });
 
       const responseBody: IListAgentCodesRes = {
         success: true,
@@ -154,15 +150,12 @@ class AgentCodeController {
         return;
       }
 
-      const token = req.headers['authorization']!.slice(7);
       const currentAgentCode = req.params['agentCode'] as string;
       const { agentCode: newAgentCode } = req.body;
 
       const updated = await agentCodeService.update({
         currentAgentCode,
         newAgentCode,
-        tenantId: req.user!.tenant_id,
-        token,
       });
 
       const responseBody: IUpdateAgentCodeRes = {
@@ -196,9 +189,8 @@ class AgentCodeController {
         next(new RouteError(HttpStatusCodes.FORBIDDEN, 'Forbidden'));
         return;
       }
-      const token = req.headers['authorization']!.slice(7);
       const agentCode = req.params['agentCode'] as string;
-      await agentCodeService.remove({ agentCode, tenantId: req.user!.tenant_id, token });
+      await agentCodeService.remove({ agentCode });
       res.status(HttpStatusCodes.OK).json({ success: true });
     } catch (error) {
       if (error instanceof AgentCodeNotFoundError) {

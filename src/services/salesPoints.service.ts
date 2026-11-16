@@ -1,16 +1,13 @@
-import * as Sentry from '@sentry/node';
-
 import pointConfigRepository from '@src/repositories/pointConfig.repository';
 import pointTransactionRepository from '@src/repositories/pointTransaction.repository';
 import salesReportMtdRepository from '@src/repositories/salesReportMtd.repository';
 import salesReportYtdRepository from '@src/repositories/salesReportYtd.repository';
-import loggingService from '@src/services/logging.service';
-import { IUploadBatch } from '@src/types/salesReport.types';
-import {
+import type {
   ISalesPointsAward,
   ISalesPointsRates,
-  SALES_POINTS_ACTIVITIES,
 } from '@src/types/salesPoints.types';
+import { SALES_POINTS_ACTIVITIES } from '@src/types/salesPoints.types';
+import type { IUploadBatch } from '@src/types/salesReport.types';
 
 /**
  * Resolution row passed in from the parent upload flow — one entry per agent
@@ -39,23 +36,14 @@ export interface IAgentResolution {
  * `current_month_YTD − previous_month_YTD` (same math the
  * `sales_report_mtd_fyc` view does via LAG).
  *
- * Re-uploads of an existing month (corrections) trigger a reversal step that
- * inserts offsetting negative entries for every prior batch's transactions
- * before awarding the fresh positives. The ledger stays append-only.
+ * Re-uploads of an existing month (corrections) write only the difference
+ * from what each agent already holds for that month, so the ledger stays
+ * append-only and concurrent re-uploads cannot double-count (see
+ * `pointTransactionRepository.awardWithReversal`).
  *
- * Concurrency guarantee: the critical reversal-then-insert section is pushed
- * into a single Postgres function (`award_sales_points_for_batch`) which
- * acquires `pg_advisory_xact_lock(hashtext('sales_points:tenant:year:month'))`
- * before reading priors and writing offsets+awards. Two simultaneous
- * re-uploads of the same period are serialised inside the database — the
- * second caller sees the first caller's writes when it acquires the lock,
- * so each correction reverses the immediately-preceding state, not a stale
- * one. See `supabase/migrations/.._add_award_sales_points_rpc.sql`.
- *
- * The whole flow is non-throwing by design: if any step fails it is logged,
- * surfaced as a Sentry issue, and swallowed — the upload itself has already
- * succeeded by the time this runs, and we don't want a points failure to
- * roll the upload back.
+ * The whole flow is non-throwing by design: if any step fails it is
+ * swallowed — the upload itself has already succeeded by the time this runs,
+ * and we don't want a points failure to roll the upload back.
  */
 class SalesPointsService {
   /**
@@ -67,73 +55,30 @@ class SalesPointsService {
     agentResolutions: IAgentResolution[],
   ): Promise<void> {
     try {
-      // 1. Fetch the configured rates for this tenant + category=sales. Any
-      //    missing activity defaults to 0 — a missing rate must not block the
-      //    upload.
-      const rates = await this.fetchRates(batch.tenant_id);
+      const rates = await this.fetchRates();
 
-      // 2. Compute fresh awards in-memory: for each agent in the upload, look
-      //    up MTD ACE/NOC (from sales_report_mtd) and derive MTD FYCT (current
-      //    YTD - previous YTD). Skip zero-point rows so the ledger stays clean.
       const awardRows = await this.buildAwardRows(
         batch,
         agentResolutions,
         rates,
       );
 
-      // 3. Atomic reversal+insert in a single Postgres transaction guarded by
-      //    a period-scoped advisory lock. The RPC handles:
-      //      a. acquire pg_advisory_xact_lock on (tenant, year, month)
-      //      b. find prior batches for this period (excluding current)
-      //      c. insert negative offset rows for their point_transactions
-      //      d. insert the fresh `awardRows` we just computed
-      //    All four steps run inside the function's implicit transaction, so
-      //    the second caller in a concurrent re-upload observes the first
-      //    caller's writes when it acquires the lock.
       await pointTransactionRepository.awardWithReversal({
-        tenantId: batch.tenant_id,
         year: batch.year,
         month: batch.month,
         batchId: batch.id,
         activities: SALES_POINTS_ACTIVITIES,
         awards: awardRows,
       });
-
-      loggingService.info('SalesPointsService.awardForBatch completed', {
-        batchId: batch.id,
-        awards: awardRows.length,
-      });
-    } catch (error) {
-      // Non-throwing by design: the upload has already succeeded, points are
-      // a downstream concern. Surface as a Sentry issue (separate from the
-      // log entry, which is breadcrumb-only) so operators can detect schema
-      // drift, RPC outages, or programming errors during reversal — then log
-      // and swallow so the upload response stays unaffected. Admins can
-      // re-trigger an awarding pass if needed.
-      Sentry.captureException(error, {
-        tags: { critical: 'sales_points_awarding' },
-        extra: {
-          batchId: batch.id,
-          tenantId: batch.tenant_id,
-          year: batch.year,
-          month: batch.month,
-        },
-      });
-      loggingService.error('SalesPointsService.awardForBatch failed', error, {
-        batchId: batch.id,
-      });
+    } catch {
+      // Non-throwing by design: the upload has already succeeded and points
+      // are a downstream concern. Admins can re-trigger an awarding pass.
     }
   }
 
-  /**
-   * Fetches the per-tenant rates for the three sales activities. Missing
-   * activities default to 0 (defensive: tenant onboarding case).
-   */
-  private async fetchRates(tenantId: string): Promise<ISalesPointsRates> {
-    const configs = await pointConfigRepository.findByTenantAndCategoryAdmin(
-      tenantId,
-      'sales',
-    );
+  // An activity with no config earns 0, as on a fresh stage before rates are set.
+  private async fetchRates(): Promise<ISalesPointsRates> {
+    const configs = await pointConfigRepository.findByCategory('sales');
     const byActivity = new Map(configs.map((c) => [c.activity, c.points]));
     return {
       noc: byActivity.get('sales_noc') ?? 0,
@@ -156,7 +101,7 @@ class SalesPointsService {
     if (agentResolutions.length === 0) return [];
 
     const userIds = agentResolutions.map((a) => a.user_id);
-    const { tenant_id: tenantId, year, month, id: batchId } = batch;
+    const { year, month, id: batchId } = batch;
 
     // Months we need YTD rows for: the current report month and (when month
     // > 1) the previous month. The previous-month query is skipped for
@@ -164,24 +109,17 @@ class SalesPointsService {
     const ytdMonths = month > 1 ? [month, month - 1] : [month];
 
     const [mtdRows, ytdRows] = await Promise.all([
-      salesReportMtdRepository.findAceNocByTenantYearMonth(
-        tenantId,
-        year,
-        month,
-        userIds,
-      ),
-      salesReportYtdRepository.findFyctByTenantYearMonths(
-        tenantId,
-        year,
-        ytdMonths,
-        userIds,
-      ),
+      salesReportMtdRepository.findAceNocByYearMonth(year, month, userIds),
+      salesReportYtdRepository.findFyctByYearMonths(year, ytdMonths, userIds),
     ]);
 
     // Index lookups by user_id for O(1) joins.
     const mtdByUser = new Map<string, { ace: number; noc: number }>();
     for (const row of mtdRows) {
-      mtdByUser.set(row.user_id, { ace: Number(row.ace), noc: Number(row.noc) });
+      mtdByUser.set(row.user_id, {
+        ace: Number(row.ace),
+        noc: Number(row.noc),
+      });
     }
 
     // YTD: pick the value at the report month and (if available) the prior

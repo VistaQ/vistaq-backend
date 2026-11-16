@@ -1,8 +1,12 @@
+import {
+  AgentCodeConflictError,
+  AgentCodeInUseError,
+  AgentCodeNotFoundError,
+} from '@src/models/errors/agentCode.errors';
 import agentCodeRepository from '@src/repositories/agentCode.repository';
-import { AgentCodeConflictError, AgentCodeInUseError, AgentCodeNotFoundError } from '@src/models/errors/agentCode.errors';
-import { IAgentCode } from '@src/types/agentCode';
+import type { IAgentCode } from '@src/types/agentCode';
 import { handleServiceError } from '@src/utils/errorHandlers';
-import { getRootCause } from '@src/utils/sentry.utils';
+import { getRootCause } from '@src/utils/errors';
 
 /******************************************************************************
                             Interfaces
@@ -10,26 +14,19 @@ import { getRootCause } from '@src/utils/sentry.utils';
 
 interface ICreateManyParams {
   agentCodes: string[];
-  tenantId: string;
-  token: string;
 }
 
 interface IListParams {
   isUsed?: boolean;
-  token: string;
 }
 
 interface IUpdateParams {
   currentAgentCode: string;
   newAgentCode: string;
-  tenantId: string;
-  token: string;
 }
 
 interface IDeleteParams {
   agentCode: string;
-  tenantId: string;
-  token: string;
 }
 
 /******************************************************************************
@@ -40,13 +37,7 @@ class AgentCodeService {
   async createMany(params: ICreateManyParams): Promise<IAgentCode[]> {
     try {
       const distinct = Array.from(new Set(params.agentCodes));
-      const rows = distinct.map((agent_code) => ({
-        tenant_id: params.tenantId,
-        agent_code,
-      }));
-
-      const result = await agentCodeRepository.upsertMany(rows, params.token);
-      return result;
+      return await agentCodeRepository.createMany(distinct);
     } catch (error) {
       return handleServiceError('AgentCodeService.createMany', error);
     }
@@ -59,7 +50,6 @@ class AgentCodeService {
         filters.is_used = params.isUsed;
       }
       return await agentCodeRepository.findAll(
-        params.token,
         Object.keys(filters).length > 0 ? filters : undefined,
       );
     } catch (error) {
@@ -69,13 +59,9 @@ class AgentCodeService {
 
   async update(params: IUpdateParams): Promise<IAgentCode> {
     try {
-      return await agentCodeRepository.update(
-        params.token,
-        { tenant_id: params.tenantId, agent_code: params.currentAgentCode },
-        {
-          agent_code: params.newAgentCode,
-          updated_at: new Date().toISOString(),
-        },
+      return await agentCodeRepository.rename(
+        params.currentAgentCode,
+        params.newAgentCode,
       );
     } catch (error) {
       const rootCause = getRootCause(error);
@@ -91,16 +77,12 @@ class AgentCodeService {
 
   async remove(params: IDeleteParams): Promise<void> {
     try {
-      const existing = await agentCodeRepository.findByTenantAndCode(
-        params.token,
-        { tenant_id: params.tenantId, agent_code: params.agentCode },
-      );
+      const existing = await agentCodeRepository.findByCode(params.agentCode, {
+        consistent: true,
+      });
       if (!existing) throw new AgentCodeNotFoundError();
       if (existing.is_used) throw new AgentCodeInUseError();
-      await agentCodeRepository.deleteByAgentCode(
-        params.token,
-        { tenant_id: params.tenantId, agent_code: params.agentCode },
-      );
+      await agentCodeRepository.deleteByCode(params.agentCode);
     } catch (error) {
       const rootCause = getRootCause(error);
       if (

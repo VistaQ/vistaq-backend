@@ -1,5 +1,5 @@
 import pointActivityTypeRepository from '@src/repositories/pointActivityType.repository';
-import { IPointActivityType } from '@src/types/pointActivityType.types';
+import type { IPointActivityType } from '@src/types/pointActivityType.types';
 import { handleServiceError } from '@src/utils/errorHandlers';
 
 /******************************************************************************

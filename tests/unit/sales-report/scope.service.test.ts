@@ -1,20 +1,24 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import scopeService from '@src/services/scope.service';
+import groupTrainerRepository from '@src/repositories/groupTrainer.repository';
 import userRepository from '@src/repositories/user.repository';
 
-jest.mock('@src/repositories/user.repository', () => ({
+vi.mock('@src/repositories/groupTrainer.repository', () => ({
   __esModule: true,
-  default: {
-    findManagedGroupIdsByUserIds: jest.fn(),
-    findGroupIdById: jest.fn(),
-  },
+  default: { findGroupIdsByTrainerIds: vi.fn() },
 }));
 
-beforeEach(() => jest.resetAllMocks());
+vi.mock('@src/repositories/user.repository', () => ({
+  __esModule: true,
+  default: { findGroupIdById: vi.fn() },
+}));
+
+beforeEach(() => vi.resetAllMocks());
 
 describe('ScopeService.resolveSalesReportScope', () => {
   const baseParams = {
     userId: 'u1',
-    tenantId: 't1',
   };
 
   it('returns { type: "all" } for admin without any DB call', async () => {
@@ -24,7 +28,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
     });
 
     expect(out).toEqual({ type: 'all' });
-    expect(userRepository.findManagedGroupIdsByUserIds).not.toHaveBeenCalled();
+    expect(groupTrainerRepository.findGroupIdsByTrainerIds).not.toHaveBeenCalled();
     expect(userRepository.findGroupIdById).not.toHaveBeenCalled();
   });
 
@@ -35,12 +39,12 @@ describe('ScopeService.resolveSalesReportScope', () => {
     });
 
     expect(out).toEqual({ type: 'all' });
-    expect(userRepository.findManagedGroupIdsByUserIds).not.toHaveBeenCalled();
+    expect(groupTrainerRepository.findGroupIdsByTrainerIds).not.toHaveBeenCalled();
     expect(userRepository.findGroupIdById).not.toHaveBeenCalled();
   });
 
   it('returns the trainer\'s managed groups via group_trainers (multiple groups)', async () => {
-    (userRepository.findManagedGroupIdsByUserIds as jest.Mock).mockResolvedValue(
+    (groupTrainerRepository.findGroupIdsByTrainerIds as Mock).mockResolvedValue(
       new Map([['u1', ['g1', 'g2']]]),
     );
 
@@ -50,13 +54,13 @@ describe('ScopeService.resolveSalesReportScope', () => {
     });
 
     expect(out).toEqual({ type: 'group_ids', groupIds: ['g1', 'g2'] });
-    expect(userRepository.findManagedGroupIdsByUserIds).toHaveBeenCalledWith(
+    expect(groupTrainerRepository.findGroupIdsByTrainerIds).toHaveBeenCalledWith(
       ['u1'],
     );
   });
 
   it('returns empty group_ids for a trainer with no managed groups (NOT forbidden)', async () => {
-    (userRepository.findManagedGroupIdsByUserIds as jest.Mock).mockResolvedValue(
+    (groupTrainerRepository.findGroupIdsByTrainerIds as Mock).mockResolvedValue(
       new Map(),
     );
 
@@ -69,7 +73,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
   });
 
   it('returns the group_leader\'s own users.group_id wrapped in a list', async () => {
-    (userRepository.findGroupIdById as jest.Mock).mockResolvedValue('g-leader');
+    (userRepository.findGroupIdById as Mock).mockResolvedValue('g-leader');
 
     const out = await scopeService.resolveSalesReportScope({
       ...baseParams,
@@ -81,7 +85,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
   });
 
   it('returns empty group_ids for a group_leader with null group_id', async () => {
-    (userRepository.findGroupIdById as jest.Mock).mockResolvedValue(null);
+    (userRepository.findGroupIdById as Mock).mockResolvedValue(null);
 
     const out = await scopeService.resolveSalesReportScope({
       ...baseParams,
@@ -98,7 +102,7 @@ describe('ScopeService.resolveSalesReportScope', () => {
     });
 
     expect(out).toEqual({ type: 'forbidden' });
-    expect(userRepository.findManagedGroupIdsByUserIds).not.toHaveBeenCalled();
+    expect(groupTrainerRepository.findGroupIdsByTrainerIds).not.toHaveBeenCalled();
     expect(userRepository.findGroupIdById).not.toHaveBeenCalled();
   });
 

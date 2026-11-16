@@ -1,9 +1,9 @@
-import { NextFunction, Response } from 'express';
+import type { NextFunction, Response } from 'express';
 import { z } from 'zod';
 
-import { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
+import type { IBaseReq, IBaseRes } from '@src/models/interfaces/base.interface';
 import leaderboardService from '@src/services/leaderboard.service';
-import { ILeaderboardEntry, ILeaderboardStats } from '@src/types/leaderboard.types';
+import type { ILeaderboardEntry, ILeaderboardStats } from '@src/types/leaderboard.types';
 import { handleControllerError } from '@src/utils/errorHandlers';
 import HttpStatusCodes from '@src/utils/HttpStatusCodes';
 
@@ -35,8 +35,7 @@ class LeaderboardController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const tenantId = req.user!.tenant_id;
-      const data = await leaderboardService.getLeaderboard(tenantId);
+      const data = await leaderboardService.getLeaderboard();
 
       const responseBody: IGetLeaderboardRes = {
         success: true,
@@ -63,9 +62,7 @@ class LeaderboardController {
         });
         return;
       }
-
-      const tenantId = req.user!.tenant_id;
-      const data = await leaderboardService.getStats(tenantId, parsed.data);
+      const data = await leaderboardService.getStats(parsed.data);
 
       const responseBody: IGetLeaderboardStatsRes = {
         success: true,

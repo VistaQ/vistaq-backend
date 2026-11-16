@@ -1,33 +1,6 @@
-// Supply env vars before env.ts runs so the validation guards do not throw
-process.env.SUPABASE_URL = 'https://test.supabase.co';
-process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
-jest.mock('@src/services/logging.service', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AsyncLocalStorage } = require('async_hooks');
-  return {
-    __esModule: true,
-    default: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    loggingService: {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-    },
-    asyncLocalStorage: new AsyncLocalStorage(),
-  };
-});
-
-jest.mock('@src/services/supabase.service', () => ({
-  __esModule: true,
-  default: { userUpsert: jest.fn() },
-  supabaseService: { userUpsert: jest.fn() },
-}));
 
 import type { Response, NextFunction } from 'express';
 
@@ -44,7 +17,6 @@ import type { IBaseReq } from '@src/models/interfaces/base.interface';
   Fixtures
 ******************************************************************************/
 
-const TENANT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ADMIN_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 const USER_TOKEN = 'mock-token';
 
@@ -88,29 +60,29 @@ function makeReq(overrides: Partial<ICreateAgentCodesReq> = {}): ICreateAgentCod
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     body: { agentCodes: ['ABC123'] },
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: ADMIN_ID, role: 'admin' },
     ...overrides,
   } as unknown as ICreateAgentCodesReq;
 }
 
-function makeListReq(queryOverrides: Record<string, string> = {}, userOverrides: Partial<{ id: string; tenant_id: string; role: string }> = {}): IBaseReq {
+function makeListReq(queryOverrides: Record<string, string> = {}, userOverrides: Partial<{ id: string; role: string }> = {}): IBaseReq {
   return {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     query: queryOverrides,
     body: {},
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin', ...userOverrides },
+    user: { id: ADMIN_ID, role: 'admin', ...userOverrides },
   } as unknown as IBaseReq;
 }
 
 function makeRes(): Response {
   return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
   } as unknown as Response;
 }
 
-function makeNext(): jest.Mock {
-  return jest.fn();
+function makeNext(): Mock {
+  return vi.fn();
 }
 
 /******************************************************************************
@@ -118,10 +90,10 @@ function makeNext(): jest.Mock {
 ******************************************************************************/
 
 describe('AgentCodeController.createMany', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 with camelCase-mapped agentCodes when role is admin', async () => {
-    jest.spyOn(agentCodeService, 'createMany').mockResolvedValue(mockResult);
+    vi.spyOn(agentCodeService, 'createMany').mockResolvedValue(mockResult);
 
     const req = makeReq();
     const res = makeRes();
@@ -134,8 +106,8 @@ describe('AgentCodeController.createMany', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls service with agentCodes, tenantId from JWT, and bearer token', async () => {
-    const spy = jest
+  it('calls service with agentCodes', async () => {
+    const spy = vi
       .spyOn(agentCodeService, 'createMany')
       .mockResolvedValue(mockResult);
 
@@ -149,14 +121,12 @@ describe('AgentCodeController.createMany', () => {
 
     expect(spy).toHaveBeenCalledWith({
       agentCodes: ['X', 'Y'],
-      tenantId: TENANT_ID,
-      token: USER_TOKEN,
     });
   });
 
   it('calls next(RouteError) with status 403 when role is not admin', async () => {
     const req = makeReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+      user: { id: ADMIN_ID, role: 'agent' },
     } as Partial<ICreateAgentCodesReq>);
     const res = makeRes();
     const next = makeNext();
@@ -173,7 +143,7 @@ describe('AgentCodeController.createMany', () => {
 
   it('calls next(RouteError) with status 403 when role is group_leader', async () => {
     const req = makeReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'group_leader' },
+      user: { id: ADMIN_ID, role: 'group_leader' },
     } as Partial<ICreateAgentCodesReq>);
     const res = makeRes();
     const next = makeNext();
@@ -187,7 +157,7 @@ describe('AgentCodeController.createMany', () => {
   });
 
   it('calls next(ControllerError) when agentCodeService.createMany throws', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'createMany')
       .mockRejectedValue(new Error('db failure'));
 
@@ -210,7 +180,7 @@ describe('AgentCodeController.createMany', () => {
 ******************************************************************************/
 
 describe('AgentCodeController.list', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 403 when role is not admin', async () => {
     const req = makeListReq({}, { role: 'agent' });
@@ -267,8 +237,8 @@ describe('AgentCodeController.list', () => {
     );
   });
 
-  it('calls agentCodeService.list with { isUsed: true, token } when ?isUsed=true', async () => {
-    const spy = jest
+  it('calls agentCodeService.list with { isUsed: true } when ?isUsed=true', async () => {
+    const spy = vi
       .spyOn(agentCodeService, 'list')
       .mockResolvedValue(mockListResult);
 
@@ -278,11 +248,11 @@ describe('AgentCodeController.list', () => {
 
     await agentCodeController.list(req, res, next as NextFunction);
 
-    expect(spy).toHaveBeenCalledWith({ isUsed: true, token: USER_TOKEN });
+    expect(spy).toHaveBeenCalledWith({ isUsed: true });
   });
 
-  it('calls agentCodeService.list with { isUsed: false, token } when ?isUsed=false', async () => {
-    const spy = jest
+  it('calls agentCodeService.list with { isUsed: false } when ?isUsed=false', async () => {
+    const spy = vi
       .spyOn(agentCodeService, 'list')
       .mockResolvedValue(mockListResult);
 
@@ -292,11 +262,11 @@ describe('AgentCodeController.list', () => {
 
     await agentCodeController.list(req, res, next as NextFunction);
 
-    expect(spy).toHaveBeenCalledWith({ isUsed: false, token: USER_TOKEN });
+    expect(spy).toHaveBeenCalledWith({ isUsed: false });
   });
 
-  it('calls agentCodeService.list with { isUsed: undefined, token } when no query param', async () => {
-    const spy = jest
+  it('calls agentCodeService.list with { isUsed: undefined } when no query param', async () => {
+    const spy = vi
       .spyOn(agentCodeService, 'list')
       .mockResolvedValue(mockListResult);
 
@@ -306,11 +276,11 @@ describe('AgentCodeController.list', () => {
 
     await agentCodeController.list(req, res, next as NextFunction);
 
-    expect(spy).toHaveBeenCalledWith({ isUsed: undefined, token: USER_TOKEN });
+    expect(spy).toHaveBeenCalledWith({ isUsed: undefined });
   });
 
   it('returns 200 with { success: true, data: [...] } and maps user_id to userId', async () => {
-    jest.spyOn(agentCodeService, 'list').mockResolvedValue(mockListResult);
+    vi.spyOn(agentCodeService, 'list').mockResolvedValue(mockListResult);
 
     const req = makeListReq();
     const res = makeRes();
@@ -342,7 +312,7 @@ describe('AgentCodeController.list', () => {
   });
 
   it('calls next(ControllerError) when agentCodeService.list throws', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'list')
       .mockRejectedValue(new Error('service failure'));
 
@@ -377,17 +347,17 @@ function makeUpdateReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { agentCode: 'OLD001' },
     body: { agentCode: 'NEW001' },
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: ADMIN_ID, role: 'admin' },
     ...overrides,
   } as unknown as IBaseReq;
 }
 
 describe('AgentCodeController.update', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 403 when role is not admin', async () => {
     const req = makeUpdateReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+      user: { id: ADMIN_ID, role: 'agent' },
     } as Partial<IBaseReq>);
     const res = makeRes();
     const next = makeNext();
@@ -403,7 +373,7 @@ describe('AgentCodeController.update', () => {
   });
 
   it('calls agentCodeService.update with correct params from req', async () => {
-    const spy = jest
+    const spy = vi
       .spyOn(agentCodeService, 'update')
       .mockResolvedValue(mockUpdatedAgentCode);
 
@@ -416,13 +386,11 @@ describe('AgentCodeController.update', () => {
     expect(spy).toHaveBeenCalledWith({
       currentAgentCode: 'OLD001',
       newAgentCode: 'NEW001',
-      tenantId: TENANT_ID,
-      token: USER_TOKEN,
     });
   });
 
   it('returns 200 with { success: true, data: { agentCode, isUsed, userId, createdAt, updatedAt } } on success', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'update')
       .mockResolvedValue(mockUpdatedAgentCode);
 
@@ -447,7 +415,7 @@ describe('AgentCodeController.update', () => {
   });
 
   it('calls next(RouteError) with status 404 when service throws AgentCodeNotFoundError', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'update')
       .mockRejectedValue(new AgentCodeNotFoundError());
 
@@ -466,7 +434,7 @@ describe('AgentCodeController.update', () => {
   });
 
   it('calls next(RouteError) with status 409 when service throws AgentCodeConflictError', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'update')
       .mockRejectedValue(new AgentCodeConflictError());
 
@@ -485,7 +453,7 @@ describe('AgentCodeController.update', () => {
   });
 
   it('calls next(ControllerError) for unexpected service errors', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'update')
       .mockRejectedValue(new Error('unexpected failure'));
 
@@ -512,16 +480,16 @@ function makeRemoveReq(overrides: Partial<IBaseReq> = {}): IBaseReq {
     headers: { authorization: `Bearer ${USER_TOKEN}` },
     params: { agentCode: 'DEL001' },
     body: {},
-    user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'admin' },
+    user: { id: ADMIN_ID, role: 'admin' },
     ...overrides,
   } as unknown as IBaseReq;
 }
 
 describe('AgentCodeController.remove', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns 200 { success: true } on successful deletion', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'remove')
       .mockResolvedValue(undefined);
 
@@ -536,8 +504,8 @@ describe('AgentCodeController.remove', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls agentCodeService.remove with agentCode from params, tenantId from JWT, and bearer token', async () => {
-    const spy = jest
+  it('calls agentCodeService.remove with agentCode from params and bearer token', async () => {
+    const spy = vi
       .spyOn(agentCodeService, 'remove')
       .mockResolvedValue(undefined);
 
@@ -549,14 +517,12 @@ describe('AgentCodeController.remove', () => {
 
     expect(spy).toHaveBeenCalledWith({
       agentCode: 'DEL001',
-      tenantId: TENANT_ID,
-      token: USER_TOKEN,
     });
   });
 
   it('calls next(RouteError) with status 403 when role is not admin', async () => {
     const req = makeRemoveReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'agent' },
+      user: { id: ADMIN_ID, role: 'agent' },
     } as Partial<IBaseReq>);
     const res = makeRes();
     const next = makeNext();
@@ -573,7 +539,7 @@ describe('AgentCodeController.remove', () => {
 
   it('calls next(RouteError) with status 403 when role is group_leader', async () => {
     const req = makeRemoveReq({
-      user: { id: ADMIN_ID, tenant_id: TENANT_ID, role: 'group_leader' },
+      user: { id: ADMIN_ID, role: 'group_leader' },
     } as Partial<IBaseReq>);
     const res = makeRes();
     const next = makeNext();
@@ -587,7 +553,7 @@ describe('AgentCodeController.remove', () => {
   });
 
   it('calls next(RouteError) with status 404 when service throws AgentCodeNotFoundError', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'remove')
       .mockRejectedValue(new AgentCodeNotFoundError());
 
@@ -606,7 +572,7 @@ describe('AgentCodeController.remove', () => {
   });
 
   it('calls next(RouteError) with status 409 when service throws AgentCodeInUseError', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'remove')
       .mockRejectedValue(new AgentCodeInUseError());
 
@@ -625,7 +591,7 @@ describe('AgentCodeController.remove', () => {
   });
 
   it('calls next(ControllerError) for unexpected service errors', async () => {
-    jest
+    vi
       .spyOn(agentCodeService, 'remove')
       .mockRejectedValue(new Error('unexpected failure'));
 

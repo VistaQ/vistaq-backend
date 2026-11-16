@@ -1,8 +1,8 @@
-import { Database } from '@src/types/database.types';
-
-type PointConfigsRow = Database['public']['Tables']['point_configs']['Row'];
-
-export type IPointConfig = Pick<
-  PointConfigsRow,
-  'id' | 'activity' | 'category' | 'points' | 'tenant_id' | 'created_at' | 'updated_at'
->;
+export interface IPointConfig {
+  id: string;
+  activity: string;
+  category: string;
+  points: number;
+  created_at: string;
+  updated_at: string;
+}

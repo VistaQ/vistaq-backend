@@ -1,0 +1,1093 @@
+service: vistaq
+
+frameworkVersion: '4'
+
+params:
+  default:
+    deletionProtection: ACTIVE
+    tableDeletionPolicy: Retain
+    tablePrefix: ${sls:stage}_vistaq_
+  dev:
+    deletionProtection: INACTIVE
+    tableDeletionPolicy: Delete
+    allowedOrigins:
+      - http://localhost:5173
+  staging:
+    tablePrefix: stg_vistaq_
+    allowedOrigins:
+      - https://stg-app.vistaq.co
+      - http://localhost:3000
+    apiDomainName: stg-api.vistaq.co
+    apiCertificateArn: arn:aws:acm:ap-southeast-5:760013760993:certificate/7c4c102e-b957-4dec-a8a8-93851bdec5af
+  production:
+    tablePrefix: prod_vistaq_
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  architecture: arm64
+  region: ap-southeast-5
+  stage: ${opt:stage, 'dev'}
+  memorySize: 1024
+  timeout: 29
+  httpApi:
+    payload: '2.0'
+    cors:
+      allowedOrigins: ${param:allowedOrigins}
+      allowedHeaders:
+        - Authorization
+        - Content-Type
+      allowedMethods:
+        - DELETE
+        - GET
+        - PATCH
+        - POST
+        - PUT
+      allowCredentials: true
+      maxAge: 3600
+    authorizers:
+      cognito:
+        type: jwt
+        identitySource: $request.header.Authorization
+        issuerUrl:
+          Fn::Join:
+            - ''
+            - - https://cognito-idp.
+              - Ref: AWS::Region
+              - .amazonaws.com/
+              - Ref: UserPool
+        audience:
+          - Ref: UserPoolClient
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:AdminDeleteUser
+            - cognito-idp:AdminDisableUser
+            - cognito-idp:AdminEnableUser
+            - cognito-idp:AdminSetUserPassword
+            - cognito-idp:AdminUpdateUserAttributes
+            - cognito-idp:AdminUserGlobalSignOut
+          Resource:
+            Fn::GetAtt: [UserPool, Arn]
+        - Effect: Allow
+          Action:
+            - dynamodb:BatchGetItem
+            - dynamodb:ConditionCheckItem
+            - dynamodb:DeleteItem
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:UpdateItem
+          Resource:
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${param:tablePrefix}*
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeStream
+            - dynamodb:GetRecords
+            - dynamodb:GetShardIterator
+            - dynamodb:ListStreams
+          Resource:
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${param:tablePrefix}*/stream/*
+        - Effect: Allow
+          Action:
+            - s3:DeleteObject
+            - s3:GetObject
+            - s3:PutObject
+          Resource:
+            - Fn::Join:
+                - ''
+                - - Fn::GetAtt: [ReportsBucket, Arn]
+                  - /*
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+          Resource:
+            - Fn::GetAtt: [StatsQueue, Arn]
+            - Fn::GetAtt: [AwardPointsFailureQueue, Arn]
+            - Fn::GetAtt: [StatsStreamFailureQueue, Arn]
+        - Effect: Allow
+          Action:
+            - sqs:ChangeMessageVisibility
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+            - sqs:ReceiveMessage
+          Resource:
+            - Fn::GetAtt: [StatsQueue, Arn]
+  environment:
+    COGNITO_USER_POOL_ID:
+      Ref: UserPool
+    COGNITO_CLIENT_ID:
+      Ref: UserPoolClient
+    TABLE_PREFIX: ${param:tablePrefix}
+    STATS_QUEUE_URL:
+      Ref: StatsQueue
+    REPORTS_BUCKET:
+      Ref: ReportsBucket
+
+package:
+  patterns:
+    - openapi.yaml
+
+functions:
+  api:
+    handler: src/lambda.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /health
+      - httpApi:
+          method: GET
+          path: /openapi.yaml
+      - httpApi:
+          method: POST
+          path: /api/auth/register
+      - httpApi:
+          method: POST
+          path: /api/auth/login
+      - httpApi:
+          method: POST
+          path: /api/auth/login/verify
+      - httpApi:
+          method: ANY
+          path: /api/public/{proxy+}
+      - httpApi:
+          method: ANY
+          path: /api/internal/{proxy+}
+      - httpApi:
+          method: OPTIONS
+          path: /{proxy+}
+      - httpApi:
+          method: ANY
+          path: /{proxy+}
+          authorizer:
+            name: cognito
+  awardPoints:
+    handler: src/handlers/awardPoints.handler
+    timeout: 60
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [ProspectsTable, StreamArn]
+          startingPosition: TRIM_HORIZON
+          batchSize: 25
+          maximumRetryAttempts: 5
+          bisectBatchOnFunctionError: true
+          functionResponseType: ReportBatchItemFailures
+          destinations:
+            onFailure:
+              type: sqs
+              arn:
+                Fn::GetAtt: [AwardPointsFailureQueue, Arn]
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [CoachingAttendanceTable, StreamArn]
+          startingPosition: TRIM_HORIZON
+          batchSize: 25
+          maximumRetryAttempts: 5
+          bisectBatchOnFunctionError: true
+          functionResponseType: ReportBatchItemFailures
+          destinations:
+            onFailure:
+              type: sqs
+              arn:
+                Fn::GetAtt: [AwardPointsFailureQueue, Arn]
+  statsStream:
+    handler: src/handlers/statsStream.handler
+    timeout: 30
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [ProspectsTable, StreamArn]
+          startingPosition: TRIM_HORIZON
+          batchSize: 100
+          maximumRetryAttempts: 5
+          bisectBatchOnFunctionError: true
+          functionResponseType: ReportBatchItemFailures
+          destinations:
+            onFailure:
+              type: sqs
+              arn:
+                Fn::GetAtt: [StatsStreamFailureQueue, Arn]
+  statsRecompute:
+    handler: src/handlers/statsRecompute.handler
+    timeout: 60
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [StatsQueue, Arn]
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+
+resources:
+  Conditions:
+    UseSes:
+      Fn::Not:
+        - Fn::Equals:
+            - ${env:SES_SOURCE_ARN, ''}
+            - ''
+    HasApiDomain:
+      Fn::Not:
+        - Fn::Equals:
+            - ${param:apiDomainName, ''}
+            - ''
+  Resources:
+    # vistaq.co's DNS is on Vercel, so the certificate is requested and
+    # validated outside the stack and only its ARN is passed in.
+    ApiDomainName:
+      Type: AWS::ApiGatewayV2::DomainName
+      Condition: HasApiDomain
+      Properties:
+        DomainName: ${param:apiDomainName, ''}
+        DomainNameConfigurations:
+          - CertificateArn: ${param:apiCertificateArn, ''}
+            EndpointType: REGIONAL
+            SecurityPolicy: TLS_1_2
+    ApiDomainMapping:
+      Type: AWS::ApiGatewayV2::ApiMapping
+      Condition: HasApiDomain
+      DependsOn: HttpApiStage
+      Properties:
+        ApiId:
+          Ref: HttpApi
+        DomainName:
+          Ref: ApiDomainName
+        Stage: $default
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-${sls:stage}
+        UserPoolTier: ESSENTIALS
+        DeletionProtection: ${param:deletionProtection}
+        UsernameAttributes:
+          - email
+        UsernameConfiguration:
+          CaseSensitive: false
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: true
+        Policies:
+          SignInPolicy:
+            AllowedFirstAuthFactors:
+              - PASSWORD
+              - EMAIL_OTP
+        EmailAuthenticationSubject: Your VistaQ sign-in code
+        EmailAuthenticationMessage: 'Your VistaQ sign-in code is {####}'
+        EmailConfiguration:
+          Fn::If:
+            - UseSes
+            - EmailSendingAccount: DEVELOPER
+              From: ${env:SES_FROM_ADDRESS, ''}
+              SourceArn: ${env:SES_SOURCE_ARN, ''}
+            - EmailSendingAccount: COGNITO_DEFAULT
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${sls:stage}-api
+        UserPoolId:
+          Ref: UserPool
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        PreventUserExistenceErrors: ENABLED
+        EnableTokenRevocation: true
+        AccessTokenValidity: 15
+        IdTokenValidity: 15
+        RefreshTokenValidity: 30
+        TokenValidityUnits:
+          AccessToken: minutes
+          IdToken: minutes
+          RefreshToken: days
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}Users
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: group_id
+            AttributeType: S
+          - AttributeName: role
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: name
+            AttributeType: S
+          - AttributeName: agent_code
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byAgentCode
+            KeySchema:
+              - AttributeName: agent_code
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byGroup
+            KeySchema:
+              - AttributeName: group_id
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+              - AttributeName: role
+                KeyType: RANGE
+              - AttributeName: name
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byRoleStatus
+            KeySchema:
+              - AttributeName: role
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+              - AttributeName: name
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    AgentCodesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}AgentCodes
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: agent_code
+            AttributeType: S
+          - AttributeName: used_flag
+            AttributeType: N
+          - AttributeName: user_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: agent_code
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byUser
+            KeySchema:
+              - AttributeName: user_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byUsed
+            KeySchema:
+              - AttributeName: used_flag
+                KeyType: HASH
+              - AttributeName: agent_code
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    GroupTrainersTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}GroupTrainers
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: group_id
+            AttributeType: S
+          - AttributeName: trainer_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: group_id
+            KeyType: HASH
+          - AttributeName: trainer_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byTrainer
+            KeySchema:
+              - AttributeName: trainer_id
+                KeyType: HASH
+              - AttributeName: group_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    PointTransactionsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}PointTransactions
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: created_at_id
+            AttributeType: S
+          - AttributeName: subject_type
+            AttributeType: S
+          - AttributeName: subject_id
+            AttributeType: S
+          - AttributeName: activity
+            AttributeType: S
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: created_at_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: bySubject
+            KeySchema:
+              - AttributeName: subject_type
+                KeyType: HASH
+              - AttributeName: subject_id
+                KeyType: HASH
+              - AttributeName: activity
+                KeyType: RANGE
+              - AttributeName: user_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    GroupsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}Groups
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: name
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byStatus
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: name
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    ProspectsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}Prospects
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: agent_id
+            AttributeType: S
+          - AttributeName: created_at
+            AttributeType: S
+          - AttributeName: current_stage
+            AttributeType: S
+          - AttributeName: updated_at
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byAgent
+            KeySchema:
+              - AttributeName: agent_id
+                KeyType: HASH
+              - AttributeName: created_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byStage
+            KeySchema:
+              - AttributeName: current_stage
+                KeyType: HASH
+              - AttributeName: updated_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+    UserStatsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}UserStats
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: ym
+            AttributeType: N
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: ym
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byMonth
+            KeySchema:
+              - AttributeName: ym
+                KeyType: HASH
+              - AttributeName: user_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    PointTotalsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}PointTotals
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: ym
+            AttributeType: N
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: ym
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byMonth
+            KeySchema:
+              - AttributeName: ym
+                KeyType: HASH
+              - AttributeName: user_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    AwardGuardsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}AwardGuards
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: subject_id
+            AttributeType: S
+          - AttributeName: activity
+            AttributeType: S
+        KeySchema:
+          - AttributeName: subject_id
+            KeyType: HASH
+          - AttributeName: activity
+            KeyType: RANGE
+    SalesAwardsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}SalesAwards
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: ym_activity
+            AttributeType: S
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: ym_activity
+            KeyType: RANGE
+    PointConfigsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}PointConfigs
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: activity
+            AttributeType: S
+          - AttributeName: category
+            AttributeType: S
+        KeySchema:
+          - AttributeName: activity
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byCategory
+            KeySchema:
+              - AttributeName: category
+                KeyType: HASH
+              - AttributeName: activity
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    PointActivityTypesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}PointActivityTypes
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: name
+            AttributeType: S
+        KeySchema:
+          - AttributeName: name
+            KeyType: HASH
+    EventsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}Events
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: start_date
+            AttributeType: S
+          - AttributeName: created_by
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byStatus
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byCreator
+            KeySchema:
+              - AttributeName: created_by
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    EventGroupsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}EventGroups
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: event_id
+            AttributeType: S
+          - AttributeName: group_id
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: start_date
+            AttributeType: S
+        KeySchema:
+          - AttributeName: event_id
+            KeyType: HASH
+          - AttributeName: group_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byGroup
+            KeySchema:
+              - AttributeName: group_id
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    EventAgentsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}EventAgents
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: event_id
+            AttributeType: S
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: start_date
+            AttributeType: S
+        KeySchema:
+          - AttributeName: event_id
+            KeyType: HASH
+          - AttributeName: user_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byUser
+            KeySchema:
+              - AttributeName: user_id
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    CoachingSessionsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}CoachingSessions
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: start_date
+            AttributeType: S
+          - AttributeName: created_by
+            AttributeType: S
+          - AttributeName: audience_all
+            AttributeType: N
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byStatus
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byCreator
+            KeySchema:
+              - AttributeName: created_by
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: allAudience
+            KeySchema:
+              - AttributeName: audience_all
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    CoachingSessionGroupsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}CoachingSessionGroups
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: session_id
+            AttributeType: S
+          - AttributeName: group_id
+            AttributeType: S
+          - AttributeName: start_date
+            AttributeType: S
+        KeySchema:
+          - AttributeName: session_id
+            KeyType: HASH
+          - AttributeName: group_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byGroup
+            KeySchema:
+              - AttributeName: group_id
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    CoachingSessionAgentsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}CoachingSessionAgents
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: session_id
+            AttributeType: S
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: start_date
+            AttributeType: S
+        KeySchema:
+          - AttributeName: session_id
+            KeyType: HASH
+          - AttributeName: user_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byUser
+            KeySchema:
+              - AttributeName: user_id
+                KeyType: HASH
+              - AttributeName: start_date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    CoachingAttendanceTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}CoachingAttendance
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: session_id
+            AttributeType: S
+          - AttributeName: agent_key
+            AttributeType: S
+        KeySchema:
+          - AttributeName: session_id
+            KeyType: HASH
+          - AttributeName: agent_key
+            KeyType: RANGE
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+    SalesReportYtdTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}SalesReportYtd
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: ym
+            AttributeType: N
+          - AttributeName: year
+            AttributeType: N
+          - AttributeName: month
+            AttributeType: N
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: ym
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byPeriod
+            KeySchema:
+              - AttributeName: year
+                KeyType: HASH
+              - AttributeName: month
+                KeyType: RANGE
+              - AttributeName: user_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    SalesReportMtdTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}SalesReportMtd
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: ym
+            AttributeType: N
+          - AttributeName: year
+            AttributeType: N
+          - AttributeName: month
+            AttributeType: N
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: ym
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: byPeriod
+            KeySchema:
+              - AttributeName: year
+                KeyType: HASH
+              - AttributeName: month
+                KeyType: RANGE
+              - AttributeName: user_id
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    UploadBatchesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}UploadBatches
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: year
+            AttributeType: N
+          - AttributeName: month
+            AttributeType: N
+          - AttributeName: created_at
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byPeriod
+            KeySchema:
+              - AttributeName: year
+                KeyType: HASH
+              - AttributeName: month
+                KeyType: HASH
+              - AttributeName: created_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: byYear
+            KeySchema:
+              - AttributeName: year
+                KeyType: HASH
+              - AttributeName: created_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    ReportJobsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}ReportJobs
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: reference
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: created_at
+            AttributeType: S
+        KeySchema:
+          - AttributeName: reference
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byStatus
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: created_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    TaxonomiesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}Taxonomies
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: type
+            AttributeType: S
+          - AttributeName: sort_order
+            AttributeType: N
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: byType
+            KeySchema:
+              - AttributeName: type
+                KeyType: HASH
+              - AttributeName: sort_order
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    LabelsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        TableName: ${param:tablePrefix}Labels
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: key
+            AttributeType: S
+        KeySchema:
+          - AttributeName: key
+            KeyType: HASH
+    ReportsBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: ${param:tableDeletionPolicy}
+      UpdateReplacePolicy: ${param:tableDeletionPolicy}
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerEnforced
+    AwardPointsFailureQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-award-points-failures
+        MessageRetentionPeriod: 1209600
+    StatsStreamFailureQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-stats-stream-failures
+        MessageRetentionPeriod: 1209600
+    StatsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-stats.fifo
+        FifoQueue: true
+        VisibilityTimeout: 360
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt: [StatsDeadLetterQueue, Arn]
+          maxReceiveCount: 5
+    StatsDeadLetterQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${sls:stage}-stats-dlq.fifo
+        FifoQueue: true
+        MessageRetentionPeriod: 1209600
+  Outputs:
+    UsersTableName:
+      Value:
+        Ref: UsersTable
+    AgentCodesTableName:
+      Value:
+        Ref: AgentCodesTable
+    GroupTrainersTableName:
+      Value:
+        Ref: GroupTrainersTable
+    PointTransactionsTableName:
+      Value:
+        Ref: PointTransactionsTable
+    UserPoolId:
+      Value:
+        Ref: UserPool
+    UserPoolClientId:
+      Value:
+        Ref: UserPoolClient
+    ApiDomainTarget:
+      Condition: HasApiDomain
+      Value:
+        Fn::GetAtt:
+          - ApiDomainName
+          - RegionalDomainName
